@@ -23,12 +23,12 @@ const disableAllCss = () => {
 };
 
 const Root = () => {
-  const [view, setView]             = useState('app');
-  const [user, setUser]             = useState(null);
+  const [view, setView]               = useState('app');
+  const [user, setUser]               = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const rootEl = document.getElementById('root');
 
-  // Auth — check session on mount, listen for changes
+  // Auth — vérif session au montage + écoute des changements
   useEffect(() => {
     const sb = window.__supabase;
     if (!sb) { setAuthChecked(true); return; }
@@ -45,18 +45,19 @@ const Root = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // CSS swap based on auth + view
+  // CSS — synchronisé avec l'état auth + vue (filet de sécurité)
   useEffect(() => {
     if (!authChecked) return;
     if (!user) { disableAllCss(); return; }
     applyCss(view);
   }, [authChecked, user, view]);
 
-  // Global helpers
+  // Helpers globaux
   useEffect(() => {
     const navigate = (target) => {
       rootEl.classList.add('fading');
       setTimeout(() => {
+        applyCss(target);   // CSS swap synchrone dans la transition
         setView(target);
         window.scrollTo(0, 0);
         rootEl.classList.remove('fading');
@@ -65,11 +66,12 @@ const Root = () => {
     window.__goToApp     = () => navigate('app');
     window.__goToLanding = () => navigate('landing');
     window.__signOut     = async () => {
-      await window.__supabase?.auth.signOut();
+      disableAllCss();                          // immédiat — pas de flash
+      await window.__supabase?.auth.signOut();  // onAuthStateChange fait setUser(null)
     };
   });
 
-  // Internal link interception
+  // Interception des liens internes
   useEffect(() => {
     const onClick = (e) => {
       const a = e.target.closest('a[href]');
@@ -82,17 +84,15 @@ const Root = () => {
     return () => document.removeEventListener('click', onClick);
   }, []);
 
-  // Loading — session check in progress
   if (!authChecked) return null;
 
   const Auth    = window.__AuthScreen;
   const Landing = window.__LandingApp;
   const App     = window.__SaasApp;
 
-  // Not logged in → auth screen
   if (!user) {
     return Auth
-      ? <Auth onAuth={u => { setUser(u); setView('app'); }}/>
+      ? <Auth onAuth={u => { applyCss('app'); setUser(u); setView('app'); }}/>
       : null;
   }
 

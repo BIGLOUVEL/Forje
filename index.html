@@ -8,21 +8,22 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 
-<!-- Auth CSS — toujours actif (écran standalone) -->
+<!-- Auth CSS — toujours actif -->
 <link rel="stylesheet" href="app-auth.css"/>
 
-<!-- Landing CSS — actif par défaut -->
-<link id="css-l1" rel="stylesheet" href="forje.css"/>
-<link id="css-l2" rel="stylesheet" href="forje-lux.css"/>
-<link id="css-l3" rel="stylesheet" href="forje-mark.css"/>
+<!-- Landing CSS — désactivé jusqu'à navigation explicite -->
+<link id="css-l1" rel="stylesheet" href="forje.css" media="none"/>
+<link id="css-l2" rel="stylesheet" href="forje-lux.css" media="none"/>
+<link id="css-l3" rel="stylesheet" href="forje-mark.css" media="none"/>
 
-<!-- App CSS — inactif par défaut -->
+<!-- App CSS — désactivé par défaut -->
 <link id="css-a1" rel="stylesheet" href="app.css" media="none"/>
 <link id="css-a2" rel="stylesheet" href="app-dashboard.css" media="none"/>
 <link id="css-a3" rel="stylesheet" href="app-screens.css" media="none"/>
 <link id="css-a4" rel="stylesheet" href="app-sources.css" media="none"/>
 
 <style>
+  body { margin:0; background:#FAFAF8; }
   #root { transition: opacity 0.22s ease; }
   #root.fading { opacity: 0; pointer-events: none; }
 </style>
@@ -31,6 +32,20 @@
 <div id="root"></div>
 
 <script>
+  // Activation CSS immédiate basée sur la session Supabase en localStorage
+  // → évite tout flash au chargement
+  (function() {
+    try {
+      var raw = localStorage.getItem('sb-tmsbtjczvjdwzfkoprwq-auth-token');
+      if (raw && JSON.parse(raw).access_token) {
+        ['css-a1','css-a2','css-a3','css-a4'].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) el.media = '';
+        });
+      }
+    } catch(e) {}
+  })();
+
   window.__forjeUnified = true;
   window.TWEAKS = {
     heroObject: 'Normal',
@@ -44,10 +59,12 @@
 <!-- Supabase JS -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
-  window.__supabase = supabase.createClient(
-    'https://tmsbtjczvjdwzfkoprwq.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRtc2J0amN6dmpkd3pma29wcndxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5Njg2MjAsImV4cCI6MjA5MjU0NDYyMH0.Ff0fsL9LDwE6DlUTfYysAdrL5XgYf064-2av1yqyB4A'
-  );
+  try {
+    window.__supabase = supabase.createClient(
+      'https://tmsbtjczvjdwzfkoprwq.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRtc2J0amN6dmpkd3pma29wcndxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5Njg2MjAsImV4cCI6MjA5MjU0NDYyMH0.Ff0fsL9LDwE6DlUTfYysAdrL5XgYf064-2av1yqyB4A'
+    );
+  } catch(e) { console.error('[Forje] Supabase init failed:', e); }
 </script>
 
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
