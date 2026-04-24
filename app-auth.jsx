@@ -34,7 +34,7 @@ const AuthScreen = ({ onAuth }) => {
     <div className="auth-bg">
       <div className="auth-card">
         <div className="auth-logo">
-          <img src="assets/forje-mark.png" alt="Forje"/>
+          <img src="assets/forje-mark.png" alt="Forje" style={{filter:'none'}}/>
           <span className="auth-brand">Forje</span>
         </div>
 
@@ -72,6 +72,7 @@ const AuthScreen = ({ onAuth }) => {
           </button>
         </form>
 
+        <div className="auth-divider"/>
         <div className="auth-switch">
           {mode === 'login'
             ? <>Pas encore de compte ?{' '}<button onClick={() => switchMode('signup')}>Créer un compte</button></>
