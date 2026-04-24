@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/marti/OneDrive/Bureau/**)",
+      "Read(//c/Users/marti/**)",
+      "Bash(ipconfig)",
+      "Bash(python -m http.server 3000 --bind 0.0.0.0)",
+      "Bash(netstat -ano)",
+      "Bash(python -m http.server 4000 --bind 0.0.0.0)",
+      "Bash(cp \"c:/Users/marti/OneDrive/Bureau/CODE/SIGIL/ACTU.png\" \"c:/Users/marti/OneDrive/Bureau/CODE/forje/assets/actu.png\")",
+      "Bash(cp \"c:/Users/marti/OneDrive/Bureau/CODE/SIGIL/CITATION.png\" \"c:/Users/marti/OneDrive/Bureau/CODE/forje/assets/citation.png\")",
+      "Bash(cp \"c:/Users/marti/OneDrive/Bureau/CODE/SIGIL/DEEP DIVE.png\" \"c:/Users/marti/OneDrive/Bureau/CODE/forje/assets/deep-dive.png\")",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(git remote *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\marti\\Downloads",
+      "c:\\Users\\marti\\.claude\\projects\\c--Users-marti-OneDrive-Bureau-CODE-forje\\memory"
+    ]
+  }
+}

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=1440, initial-scale=1.0"/>
+<title>Forje Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+<!-- Landing CSS — actif par défaut -->
+<link id="css-l1" rel="stylesheet" href="forje.css"/>
+<link id="css-l2" rel="stylesheet" href="forje-lux.css"/>
+<link id="css-l3" rel="stylesheet" href="forje-mark.css"/>
+
+<!-- App CSS — inactif par défaut -->
+<link id="css-a1" rel="stylesheet" href="app.css" media="none"/>
+<link id="css-a2" rel="stylesheet" href="app-dashboard.css" media="none"/>
+<link id="css-a3" rel="stylesheet" href="app-screens.css" media="none"/>
+<link id="css-a4" rel="stylesheet" href="app-sources.css" media="none"/>
+
+<style>
+  #root { transition: opacity 0.22s ease; }
+  #root.fading { opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+  window.__forjeUnified = true;
+  window.TWEAKS = {
+    heroObject: 'Normal',
+    hueShift: 0,
+    starfieldDensity: 1.0,
+    headline: 'Forge your brand.',
+    headlineAccent: 'Post forever.'
+  };
+</script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+        integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+        integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+        integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+        crossorigin="anonymous"></script>
+
+<script>
+// Chaque fichier JSX est compilé et injecté dans sa propre IIFE —
+// zéro conflit de scope (useState, App, etc. sont locaux à chaque fichier).
+(async () => {
+  const files = [
+    'forje-atoms.jsx',
+    'forje-hero.jsx',
+    'forje-sections.jsx',
+    'forje-tweaks.jsx',
+    'forje-app.jsx',
+    'app-shell.jsx',
+    'app-dashboard.jsx',
+    'app-screens.jsx',
+    'app-sources.jsx',
+    'app-main.jsx',
+    'root.jsx',
+  ];
+
+  for (const src of files) {
+    try {
+      const res  = await fetch(src);
+      const jsx  = await res.text();
+      const { code } = Babel.transform(jsx, { presets: ['react'] });
+      const el = document.createElement('script');
+      el.text = `(function(){\n${code}\n})();`;
+      document.head.appendChild(el);
+    } catch (e) {
+      console.error(`[Forje] Erreur chargement ${src}:`, e);
+    }
+  }
+})();
+</script>
+</body>
+</html>

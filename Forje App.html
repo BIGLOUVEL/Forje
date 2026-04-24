@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Forje Studio — app</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="app.css?v=5"/>
+<link rel="stylesheet" href="app-dashboard.css?v=5"/>
+<link rel="stylesheet" href="app-screens.css?v=5"/>
+<link rel="stylesheet" href="app-sources.css?v=5"/>
+<style>
+/* Tweaks panel */
+.tweaks-panel {
+  position: fixed; right: 20px; bottom: 20px;
+  width: 260px;
+  background: rgba(10, 16, 48, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--app-line-3);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px -20px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04);
+  z-index: 100;
+  font-family: 'DM Sans', sans-serif;
+}
+.tweaks-head {
+  padding: 12px 16px;
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid var(--app-line);
+  font-size: 13px; font-weight: 600; color: var(--app-fg);
+  letter-spacing: -0.01em;
+}
+.tweaks-close {
+  all: unset; cursor: pointer;
+  font-size: 18px; color: var(--app-fg-3);
+  line-height: 1;
+  padding: 0 4px;
+}
+.tweaks-close:hover { color: var(--app-fg); }
+.tweaks-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+.tweak-group-label {
+  font-size: 10.5px; color: var(--app-fg-4);
+  font-variant: all-small-caps; letter-spacing: 0.1em; font-weight: 600;
+  margin-bottom: 6px;
+}
+.tweak-radio { display: flex; flex-direction: column; gap: 4px; }
+.tweak-radio-opt {
+  all: unset; cursor: pointer;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  color: var(--app-fg-2);
+  transition: all .15s ease;
+  text-align: left;
+}
+.tweak-radio-opt:hover { border-color: var(--app-line-3); }
+.tweak-radio-opt.active {
+  background: var(--app-surface-3);
+  border-color: var(--app-line-3);
+  color: var(--app-fg);
+  font-weight: 500;
+}
+.tweak-quick-nav { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.tweak-nav-btn {
+  all: unset; cursor: pointer;
+  padding: 5px 8px;
+  font-size: 11px;
+  text-align: center;
+  border: 1px solid var(--app-line);
+  border-radius: 5px;
+  color: var(--app-fg-3);
+  text-transform: capitalize;
+}
+.tweak-nav-btn.active { background: var(--app-surface-3); color: var(--app-fg); border-color: var(--app-line-3); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="app-shell.jsx"></script>
+<script type="text/babel" src="app-dashboard.jsx"></script>
+<script type="text/babel" src="app-screens.jsx"></script>
+<script type="text/babel" src="app-sources.jsx"></script>
+<script type="text/babel" src="app-main.jsx"></script>
+</body>
+</html>
