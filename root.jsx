@@ -1,5 +1,5 @@
 /* global React, ReactDOM */
-var { useState, useEffect, useRef } = React;
+var { useState, useEffect } = React;
 
 const LANDING_CSS = ['css-l1', 'css-l2', 'css-l3'];
 const APP_CSS     = ['css-a1', 'css-a2', 'css-a3', 'css-a4'];
@@ -15,41 +15,86 @@ const applyCss = (view) => {
   });
 };
 
+const disableAllCss = () => {
+  [...LANDING_CSS, ...APP_CSS].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.media = 'none';
+  });
+};
+
 const Root = () => {
-  const [view, setView] = useState('landing');
+  const [view, setView]             = useState('app');
+  const [user, setUser]             = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const rootEl = document.getElementById('root');
 
-  const navigate = (target) => {
-    rootEl.classList.add('fading');
-    setTimeout(() => {
-      applyCss(target);
-      setView(target);
-      window.scrollTo(0, 0);
-      rootEl.classList.remove('fading');
-    }, 220);
-  };
-
-  // Expose globalement pour usage éventuel
+  // Auth — check session on mount, listen for changes
   useEffect(() => {
+    const sb = window.__supabase;
+    if (!sb) { setAuthChecked(true); return; }
+
+    sb.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthChecked(true);
+    });
+
+    const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // CSS swap based on auth + view
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!user) { disableAllCss(); return; }
+    applyCss(view);
+  }, [authChecked, user, view]);
+
+  // Global helpers
+  useEffect(() => {
+    const navigate = (target) => {
+      rootEl.classList.add('fading');
+      setTimeout(() => {
+        setView(target);
+        window.scrollTo(0, 0);
+        rootEl.classList.remove('fading');
+      }, 220);
+    };
     window.__goToApp     = () => navigate('app');
     window.__goToLanding = () => navigate('landing');
+    window.__signOut     = async () => {
+      await window.__supabase?.auth.signOut();
+    };
   });
 
-  // Intercepte tous les liens internes entre les deux vues
+  // Internal link interception
   useEffect(() => {
     const onClick = (e) => {
       const a = e.target.closest('a[href]');
       if (!a) return;
       const href = a.getAttribute('href');
-      if (href === 'Forje App.html') { e.preventDefault(); navigate('app'); }
-      if (href === 'Forje Studio.html') { e.preventDefault(); navigate('landing'); }
+      if (href === 'Forje App.html')    { e.preventDefault(); window.__goToApp?.(); }
+      if (href === 'Forje Studio.html') { e.preventDefault(); window.__goToLanding?.(); }
     };
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);
-  }, [view]);
+  }, []);
 
+  // Loading — session check in progress
+  if (!authChecked) return null;
+
+  const Auth    = window.__AuthScreen;
   const Landing = window.__LandingApp;
   const App     = window.__SaasApp;
+
+  // Not logged in → auth screen
+  if (!user) {
+    return Auth
+      ? <Auth onAuth={u => { setUser(u); setView('app'); }}/>
+      : null;
+  }
 
   if (view === 'app'     && App)     return <App />;
   if (view === 'landing' && Landing) return <Landing />;

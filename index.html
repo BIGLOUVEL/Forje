@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 
+<!-- Auth CSS — toujours actif (écran standalone) -->
+<link rel="stylesheet" href="app-auth.css"/>
+
 <!-- Landing CSS — actif par défaut -->
 <link id="css-l1" rel="stylesheet" href="forje.css"/>
 <link id="css-l2" rel="stylesheet" href="forje-lux.css"/>
@@ -38,6 +41,15 @@
   };
 </script>
 
+<!-- Supabase JS -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+  window.__supabase = supabase.createClient(
+    'https://tmsbtjczvjdwzfkoprwq.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRtc2J0amN6dmpkd3pma29wcndxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5Njg2MjAsImV4cCI6MjA5MjU0NDYyMH0.Ff0fsL9LDwE6DlUTfYysAdrL5XgYf064-2av1yqyB4A'
+  );
+</script>
+
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
         integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
         crossorigin="anonymous"></script>
@@ -49,8 +61,6 @@
         crossorigin="anonymous"></script>
 
 <script>
-// Chaque fichier JSX est compilé et injecté dans sa propre IIFE —
-// zéro conflit de scope (useState, App, etc. sont locaux à chaque fichier).
 (async () => {
   const files = [
     'forje-atoms.jsx',
@@ -63,6 +73,7 @@
     'app-screens.jsx',
     'app-sources.jsx',
     'app-main.jsx',
+    'app-auth.jsx',
     'root.jsx',
   ];
 
