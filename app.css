@@ -319,6 +319,20 @@ button { font-family: inherit; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.sidebar-logout-btn {
+  all: unset;
+  display: grid; place-items: center;
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  color: var(--app-fg-4);
+  cursor: pointer;
+  transition: color .12s, background .12s;
+  flex-shrink: 0;
+}
+.sidebar-logout-btn:hover {
+  color: var(--app-fg);
+  background: var(--app-surface-3);
+}
 
 /* ═══ Main content area ═════════════════════════════════════════════════ */
 .app-main {

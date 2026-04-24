@@ -45,6 +45,7 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
     heart:    <><path d="M8 13.5s-5-3-5-7a2.5 2.5 0 015-1 2.5 2.5 0 015 1c0 4-5 7-5 7z"/></>,
     eye:      <><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></>,
     bolt:     <><path d="M9 2L3.5 9H8l-1 5 5.5-7H8l1-5z"/></>,
+    logout:   <><path d="M6 3H3.5C3.2 3 3 3.2 3 3.5v9c0 .3.2.5.5.5H6M10 5l3 3-3 3M13 8H6"/></>,
   };
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none"
@@ -130,7 +131,12 @@ const Sidebar = ({ current, onNav, counts = {} }) => {
         <div className="sidebar-user">
           <div className="sidebar-user-avatar">CT</div>
           <span className="sidebar-user-name">Claire Tessier</span>
-          <AppIcon name="more" size={14} style={{color:'var(--app-fg-4)'}}/>
+          <button
+            className="sidebar-logout-btn"
+            title="Se déconnecter"
+            onClick={() => window.__signOut?.()}>
+            <AppIcon name="logout" size={14}/>
+          </button>
         </div>
       </div>
     </aside>
