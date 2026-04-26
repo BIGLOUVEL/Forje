@@ -291,16 +291,19 @@ button { font-family: inherit; }
 }
 
 .sidebar-user {
+  position: relative;
+  margin-top: 4px;
+}
+.sidebar-user-trigger {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  margin-top: 4px;
   border-radius: var(--radius);
   cursor: pointer;
   transition: background .12s ease;
 }
-.sidebar-user:hover { background: var(--app-surface-2); }
+.sidebar-user-trigger:hover { background: var(--app-surface-2); }
 .sidebar-user-avatar {
   width: 26px; height: 26px;
   border-radius: 50%;
@@ -319,19 +322,68 @@ button { font-family: inherit; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sidebar-logout-btn {
-  all: unset;
-  display: grid; place-items: center;
-  width: 24px; height: 24px;
-  border-radius: 6px;
+.sidebar-user-chev {
   color: var(--app-fg-4);
-  cursor: pointer;
-  transition: color .12s, background .12s;
   flex-shrink: 0;
+  transition: transform .15s ease;
 }
-.sidebar-logout-btn:hover {
-  color: var(--app-fg);
-  background: var(--app-surface-3);
+.sidebar-user-chev.open { transform: rotate(180deg); }
+
+/* User dropdown menu */
+.sidebar-user-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0; right: 0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15,21,40,0.1), 0 2px 6px rgba(15,21,40,0.06);
+  overflow: hidden;
+  padding: 6px 0;
+  z-index: 200;
+}
+.sum-email {
+  padding: 7px 14px 4px;
+  font-size: 12px;
+  color: var(--app-fg-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sum-badge {
+  display: inline-block;
+  margin: 2px 14px 8px;
+  padding: 2px 8px;
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-line);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-fg-3);
+  text-transform: capitalize;
+}
+.sum-divider {
+  height: 1px;
+  background: var(--app-line);
+  margin: 2px 0;
+}
+.sum-signout {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--app-fg-2);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.sum-signout:hover {
+  background: rgba(197,48,48,0.06);
+  color: #C53030;
 }
 
 /* ═══ Main content area ═════════════════════════════════════════════════ */

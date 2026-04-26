@@ -34,11 +34,13 @@ const Root = () => {
     if (!sb) { setAuthChecked(true); return; }
 
     sb.auth.getSession().then(({ data: { session } }) => {
+      window.__currentUser = session?.user ?? null;
       setUser(session?.user ?? null);
       setAuthChecked(true);
     });
 
     const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+      window.__currentUser = session?.user ?? null;
       setUser(session?.user ?? null);
     });
 

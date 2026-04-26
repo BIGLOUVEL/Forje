@@ -46,6 +46,7 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
     eye:      <><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></>,
     bolt:     <><path d="M9 2L3.5 9H8l-1 5 5.5-7H8l1-5z"/></>,
     logout:   <><path d="M6 3H3.5C3.2 3 3 3.2 3 3.5v9c0 .3.2.5.5.5H6M10 5l3 3-3 3M13 8H6"/></>,
+    refresh:  <><path d="M13 4.5A6 6 0 108 14M13 2v3h-3"/></>,
   };
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none"
@@ -56,11 +57,34 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
 };
 
 // ═══ SIDEBAR ═══════════════════════════════════════════════════════════════
-const Sidebar = ({ current, onNav, counts = {} }) => {
+const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null }) => {
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setUserMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [userMenuOpen]);
+
+  const email = authUser?.email || '';
+  const fullName = authUser?.user_metadata?.full_name;
+  const displayName = fullName || email.split('@')[0] || 'Compte';
+  const initials = fullName
+    ? fullName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()
+    : (email.split('@')[0] || '?').slice(0,2).toUpperCase();
+  const plan = profile?.plan || 'free';
+  const credits = profile?.credits ?? 0;
+  const creditsMax = plan === 'pro' ? 150 : 30;
+  const creditsPct = Math.min(100, credits > 0 ? Math.round(credits / creditsMax * 100) : 0);
+  const planLabel = { pro: 'Pro', free: 'Free', starter: 'Starter' }[plan] || 'Free';
+
   const mainItems = [
     { key: 'home',     icon: 'home',     label: 'Accueil' },
     { key: 'generate', icon: 'sparkle',  label: 'Générer' },
-    { key: 'queue',    icon: 'layers',   label: 'File de validation', count: counts.queue || 7, badge: true },
     { key: 'calendar', icon: 'calendar', label: 'Calendrier' },
     { key: 'published',icon: 'archive',  label: 'Publiés' },
   ];
@@ -77,10 +101,10 @@ const Sidebar = ({ current, onNav, counts = {} }) => {
       </div>
 
       <div className="workspace-switcher">
-        <div className="workspace-avatar">MT</div>
+        <div className="workspace-avatar">{initials}</div>
         <div className="workspace-meta">
-          <div className="workspace-name">Maison Tessier</div>
-          <div className="workspace-plan">Atelier · Pro</div>
+          <div className="workspace-name">{displayName}</div>
+          <div className="workspace-plan">Atelier · {planLabel}</div>
         </div>
         <AppIcon name="chevDown" size={14} className="workspace-chev"/>
       </div>
@@ -123,20 +147,31 @@ const Sidebar = ({ current, onNav, counts = {} }) => {
         <div className="sidebar-usage">
           <div className="sidebar-usage-header">
             <span className="sidebar-usage-label">Crédits de création</span>
-            <span className="sidebar-usage-count">68 / 150</span>
+            <span className="sidebar-usage-count">{credits} / {creditsMax}</span>
           </div>
-          <div className="sidebar-usage-bar"><div className="sidebar-usage-fill" style={{width:'45%'}}/></div>
+          <div className="sidebar-usage-bar">
+            <div className="sidebar-usage-fill" style={{width: creditsPct + '%'}}/>
+          </div>
           <span className="sidebar-usage-cta">Augmenter la cadence →</span>
         </div>
-        <div className="sidebar-user">
-          <div className="sidebar-user-avatar">CT</div>
-          <span className="sidebar-user-name">Claire Tessier</span>
-          <button
-            className="sidebar-logout-btn"
-            title="Se déconnecter"
-            onClick={() => window.__signOut?.()}>
-            <AppIcon name="logout" size={14}/>
-          </button>
+
+        <div className="sidebar-user" ref={menuRef}>
+          {userMenuOpen && (
+            <div className="sidebar-user-menu">
+              <div className="sum-email">{email}</div>
+              <span className="sum-badge">{planLabel}</span>
+              <div className="sum-divider"/>
+              <button className="sum-signout" onClick={() => { setUserMenuOpen(false); window.__signOut?.(); }}>
+                <AppIcon name="logout" size={14}/>
+                Se déconnecter
+              </button>
+            </div>
+          )}
+          <div className="sidebar-user-trigger" onClick={() => setUserMenuOpen(o => !o)}>
+            <div className="sidebar-user-avatar">{initials}</div>
+            <span className="sidebar-user-name">{displayName}</span>
+            <AppIcon name="chevDown" size={13} className={`sidebar-user-chev${userMenuOpen ? ' open' : ''}`}/>
+          </div>
         </div>
       </div>
     </aside>

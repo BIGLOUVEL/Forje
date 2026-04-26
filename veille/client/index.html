@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Veille ⚡</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<style>
+  :root {
+    --bg:          #08080C;
+    --surface:     #10101A;
+    --surface-2:   #17172A;
+    --surface-3:   #1F1F35;
+    --border:      rgba(255,255,255,0.07);
+    --border-hi:   rgba(255,255,255,0.13);
+    --accent:      #6366F1;
+    --accent-dim:  rgba(99,102,241,0.18);
+    --accent-glow: rgba(99,102,241,0.35);
+    --text:        #EAEAF4;
+    --text-2:      #9090A8;
+    --text-3:      #52526A;
+    --success:     #22C55E;
+    --warning:     #F59E0B;
+    --danger:      #EF4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+    opacity: 0.4;
+  }
+  #root { position: relative; z-index: 1; }
+
+  /* ── Inputs ── */
+  .v-input {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    outline: none;
+    width: 100%;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .v-input::placeholder { color: var(--text-3); }
+  .v-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  .v-input-url {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: var(--surface-2);
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 13px 28px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: -0.01em;
+    transition: background .15s, transform .1s, box-shadow .15s;
+    box-shadow: 0 2px 12px var(--accent-glow);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #4F52D8;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px var(--accent-glow);
+  }
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-hi);
+    border-radius: 10px;
+    padding: 11px 20px;
+    color: var(--text-2);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .btn-ghost:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-hi); }
+
+  /* ── Tags ── */
+  .tag-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-hi);
+    border-radius: 6px;
+    padding: 3px 9px 3px 10px;
+    font-size: 12px;
+    color: var(--text-2);
+    cursor: default;
+  }
+  .tag-chip-remove {
+    all: unset;
+    display: grid; place-items: center;
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    transition: color .1s, background .1s;
+  }
+  .tag-chip-remove:hover { color: var(--danger); background: rgba(239,68,68,.12); }
+
+  /* ── Score badge ── */
+  .score-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 13px; font-weight: 600;
+    border: 1px solid;
+  }
+  .score-badge.high  { background: rgba(34,197,94,.1); border-color: rgba(34,197,94,.3); color: var(--success); }
+  .score-badge.mid   { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.3); color: var(--warning); }
+  .score-badge.low   { background: rgba(239,68,68,.1);  border-color: rgba(239,68,68,.3);  color: var(--danger);  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 14px;
+  }
+
+  /* ── Field ── */
+  .field-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 6px;
+  }
+
+  /* ── Loading dot ── */
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: .3; }
+  }
+  .pulse-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse-dot 1.2s ease-in-out infinite;
+  }
+
+  /* ── Message slide-in ── */
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg-in { animation: msg-in .35s ease forwards; }
+
+  /* ── Gradient background glow ── */
+  .bg-glow {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 900px 600px at 20% -5%, rgba(99,102,241,0.08), transparent 65%),
+      radial-gradient(ellipse 700px 500px at 90% 110%, rgba(14,165,198,0.05), transparent 60%);
+  }
+  /* ── Card ── */
+  .v-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.03) inset,
+      0 8px 40px rgba(0,0,0,0.5),
+      0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ═══ Helpers ═════════════════════════════════════════════════════════════════
+const LOADING_STEPS = [
+  { msg: 'Recherche du compte…',            delay: 0    },
+  { msg: 'Analyse de la ligne éditoriale…', delay: 4500 },
+  { msg: 'Identification des concurrents…', delay: 10000 },
+  { msg: 'Génération du profil…',           delay: 17000 },
+];
+
+const FIELD_GROUPS = [
+  {
+    id: 'identite', title: 'Identité', icon: '◎',
+    fields: [
+      { key: 'nom',     label: 'Nom du compte', type: 'text'   },
+      { key: 'langue',  label: 'Langue',         type: 'text'   },
+      { key: 'abonnes', label: 'Abonnés',         type: 'number' },
+    ],
+  },
+  {
+    id: 'editorial', title: 'Éditorial', icon: '◈',
+    fields: [
+      { key: 'niche_principale',          label: 'Niche principale',          type: 'text' },
+      { key: 'sous_niches',               label: 'Sous-niches',               type: 'tags' },
+      { key: 'ton',                       label: 'Ton éditorial',             type: 'text' },
+      { key: 'angle_editorial',           label: 'Angle éditorial',           type: 'text' },
+      { key: 'niveau_expertise_audience', label: "Niveau d'expertise audience", type: 'text' },
+      { key: 'references_culturelles',    label: 'Références culturelles',    type: 'tags' },
+      { key: 'sujets_a_eviter',           label: 'Sujets à éviter',           type: 'tags' },
+    ],
+  },
+  {
+    id: 'formats', title: 'Formats & Rythme', icon: '◧',
+    fields: [
+      { key: 'formats_favoris',            label: 'Formats favoris',         type: 'tags' },
+      { key: 'ratio_contenu',              label: 'Ratio de contenu',        type: 'text' },
+      { key: 'horaires_pic_engagement',    label: "Créneaux d'engagement",   type: 'tags' },
+      { key: 'fenetre_reaction_breaking',  label: 'Fenêtre breaking',        type: 'text' },
+      { key: 'fenetre_reaction_trending',  label: 'Fenêtre trending',        type: 'text' },
+    ],
+  },
+  {
+    id: 'audience', title: 'Audience', icon: '◉',
+    fields: [
+      { key: 'audience_age',  label: "Tranche d'âge",  type: 'text' },
+      { key: 'audience_type', label: "Type d'audience", type: 'text' },
+    ],
+  },
+  {
+    id: 'sources', title: 'Sources & Concurrents', icon: '◑',
+    fields: [
+      { key: 'sources_prioritaires', label: 'Sources prioritaires', type: 'tags' },
+      { key: 'sources_secondaires',  label: 'Sources secondaires',  type: 'tags' },
+      { key: 'concurrents',          label: 'Comptes concurrents',   type: 'tags' },
+      { key: 'keywords_niche',       label: 'Keywords niche',        type: 'tags' },
+      { key: 'hashtags_typiques',    label: 'Hashtags typiques',     type: 'tags' },
+    ],
+  },
+];
+
+// ═══ TagInput ═════════════════════════════════════════════════════════════════
+const TagInput = ({ value = [], onChange }) => {
+  const [input, setInput] = useState('');
+  const inputRef = useRef(null);
+
+  const add = (raw) => {
+    const val = raw.trim().replace(/^[@#]/, '');
+    if (val && !value.includes(val)) onChange([...value, val]);
+    setInput('');
+  };
+
+  const onKeyDown = (e) => {
+    if ((e.key === 'Enter' || e.key === ',') && input.trim()) {
+      e.preventDefault();
+      add(input);
+    }
+    if (e.key === 'Backspace' && !input && value.length) {
+      onChange(value.slice(0, -1));
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
+        background: 'var(--surface-2)', border: '1px solid var(--border)',
+        borderRadius: 10, padding: '7px 10px', cursor: 'text', minHeight: 42,
+      }}
+      onClick={() => inputRef.current?.focus()}
+    >
+      {value.map((tag, i) => (
+        <span key={i} className="tag-chip">
+          {tag}
+          <button className="tag-chip-remove" onClick={(e) => { e.stopPropagation(); onChange(value.filter((_, j) => j !== i)); }}>×</button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={() => input.trim() && add(input)}
+        placeholder={value.length === 0 ? 'Ajouter… (Entrée)' : ''}
+        style={{
+          background: 'transparent', border: 'none', outline: 'none',
+          color: 'var(--text)', fontSize: 13, fontFamily: 'DM Sans, sans-serif',
+          flex: 1, minWidth: 80,
+        }}
+      />
+    </div>
+  );
+};
+
+// ═══ FieldRow ═════════════════════════════════════════════════════════════════
+const FieldRow = ({ field, value, onChange }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="field-label">{field.label}</div>
+    {field.type === 'tags' ? (
+      <TagInput value={Array.isArray(value) ? value : []} onChange={onChange}/>
+    ) : (
+      <input
+        type={field.type}
+        className="v-input"
+        value={value ?? ''}
+        onChange={e => onChange(field.type === 'number' ? (e.target.value ? parseInt(e.target.value) : null) : e.target.value)}
+        placeholder="—"
+      />
+    )}
+  </div>
+);
+
+// ═══ InputStep ════════════════════════════════════════════════════════════════
+const InputStep = ({ onAnalyze }) => {
+  const [url, setUrl] = useState('');
+  const [err, setErr] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const v = url.trim();
+    if (!v) { setErr('Colle une URL Instagram.'); return; }
+    if (!v.includes('instagram.com') && !v.startsWith('@')) {
+      setErr('URL Instagram invalide.');
+      return;
+    }
+    onAnalyze(v);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 24 }}>
+      <div className="bg-glow"/>
+      <div className="v-card" style={{ width: '100%', maxWidth: 520, padding: '52px 44px', position: 'relative' }}>
+        {/* Logo */}
+        <div style={{ marginBottom: 40, textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>⚡</div>
+          <div style={{ fontFamily: 'DM Sans, sans-serif', fontSize: 26, fontWeight: 700, letterSpacing: '-0.04em', color: 'var(--text)' }}>
+            Veille
+          </div>
+          <div style={{ marginTop: 8, fontSize: 14, color: 'var(--text-3)', letterSpacing: '-0.01em' }}>
+            Veille Instagram temps réel · Scoring IA · Apprentissage
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <div className="field-label" style={{ marginBottom: 8 }}>Compte Instagram à analyser</div>
+            <input
+              type="text"
+              className="v-input v-input-url"
+              value={url}
+              onChange={e => { setUrl(e.target.value); setErr(''); }}
+              placeholder="https://instagram.com/compte  ou  @compte"
+              autoFocus
+            />
+            {err && (
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)' }}>{err}</div>
+            )}
+          </div>
+
+          <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: 8 }}>
+            Analyser le compte
+          </button>
+        </form>
+
+        <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center', gap: 32 }}>
+          {['Analyse IA','Scoring','Apprentissage'].map(f => (
+            <div key={f} style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--text-3)' }}>
+              <div style={{ marginBottom: 3, fontSize: 16 }}>
+                {f === 'Analyse IA' ? '🔍' : f === 'Scoring' ? '⚡' : '🧠'}
+              </div>
+              {f}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══ LoadingStep ══════════════════════════════════════════════════════════════
+const LoadingStep = ({ url }) => {
+  const [msgs, setMsgs] = useState([LOADING_STEPS[0].msg]);
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const timers = LOADING_STEPS.slice(1).map(({ msg, delay }) =>
+      setTimeout(() => setMsgs(prev => [...prev, msg]), delay)
+    );
+    const dotTimer = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 400);
+    return () => { timers.forEach(clearTimeout); clearInterval(dotTimer); };
+  }, []);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 24 }}>
+      <div className="bg-glow"/>
+      <div className="v-card" style={{ width: '100%', maxWidth: 460, padding: '48px 40px' }}>
+        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+          <div style={{ fontSize: 30, marginBottom: 8 }}>⚡</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+            Analyse en cours
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace', wordBreak: 'break-all' }}>
+            {url}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {msgs.map((msg, i) => (
+            <div key={i} className="msg-in" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {i === msgs.length - 1 ? (
+                <div className="pulse-dot"/>
+              ) : (
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--success)' }}/>
+              )}
+              <span style={{ fontSize: 14, color: i === msgs.length - 1 ? 'var(--text)' : 'var(--text-3)' }}>
+                {msg}{i === msgs.length - 1 ? dots : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 36, background: 'var(--surface-2)', borderRadius: 10, height: 3, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%',
+            background: `linear-gradient(90deg, var(--accent), #818CF8)`,
+            width: `${Math.min(95, (msgs.length / LOADING_STEPS.length) * 100)}%`,
+            transition: 'width 1.5s ease',
+            borderRadius: 10,
+          }}/>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══ ValidationStep ═══════════════════════════════════════════════════════════
+const ValidationStep = ({ profil: initialProfil, onSave }) => {
+  const [profil, setProfil] = useState(initialProfil);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const score = profil.score_confiance ?? 0;
+  const scorePct = Math.round(score * 100);
+  const scoreClass = score >= 0.7 ? 'high' : score >= 0.5 ? 'mid' : 'low';
+  const scoreLabel = score >= 0.7 ? '✓ Profil fiable' : score >= 0.5 ? '⚠ Données partielles' : '⚠ Peu de données — vérifie les champs';
+
+  const update = (key, val) => setProfil(p => ({ ...p, [key]: val }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/onboarding/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profil }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      localStorage.setItem('veille_compte_id', json.compte_id);
+      localStorage.setItem('veille_profil', JSON.stringify(profil));
+      onSave(json.compte_id);
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
+      <div className="bg-glow"/>
+      <div style={{ maxWidth: 860, margin: '0 auto', position: 'relative' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span style={{ fontSize: 22 }}>⚡</span>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.03em' }}>Profil détecté</div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+                Vérifie et ajuste avant d'accéder au board
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className={`score-badge ${scoreClass}`}>
+              <span style={{ fontSize: 16 }}>{score >= 0.7 ? '●' : '◐'}</span>
+              Profil détecté à {scorePct}%
+            </span>
+          </div>
+        </div>
+
+        {/* Warning si score faible */}
+        {score < 0.5 && (
+          <div style={{
+            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+            borderRadius: 12, padding: '12px 18px', marginBottom: 24,
+            fontSize: 13, color: '#FCA5A5', display: 'flex', alignItems: 'center', gap: 10
+          }}>
+            <span>⚠</span>
+            <span>Données insuffisantes — le compte est peut-être privé ou peu référencé. Complète les champs manuellement pour de meilleurs résultats.</span>
+          </div>
+        )}
+
+        {/* URL du compte (lecture seule) */}
+        <div className="v-card" style={{ padding: '18px 24px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--accent-dim)', display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 }}>
+            📸
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>Compte analysé</div>
+            <div style={{ fontSize: 14, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>{profil.instagram_url}</div>
+          </div>
+        </div>
+
+        {/* Field groups */}
+        <div style={{ display: 'grid', gap: 16 }}>
+          {FIELD_GROUPS.map(group => (
+            <div key={group.id} className="v-card" style={{ padding: '24px 28px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
+                <span style={{ fontSize: 15, opacity: 0.6 }}>{group.icon}</span>
+                <div className="section-label" style={{ margin: 0 }}>{group.title}</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '18px 24px' }}>
+                {group.fields.map(field => (
+                  <div key={field.key} style={field.type === 'tags' ? { gridColumn: '1 / -1' } : {}}>
+                    <FieldRow
+                      field={field}
+                      value={profil[field.key]}
+                      onChange={val => update(field.key, val)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Submit */}
+        {error && (
+          <div style={{ marginTop: 20, padding: '12px 18px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, fontSize: 13, color: '#FCA5A5' }}>
+            {error}
+          </div>
+        )}
+        <div style={{ marginTop: 28, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+          <button className="btn-primary" onClick={handleSave} disabled={saving} style={{ padding: '14px 36px', fontSize: 15 }}>
+            {saving ? 'Enregistrement…' : 'Accéder au board →'}
+          </button>
+        </div>
+        <div style={{ height: 60 }}/>
+      </div>
+    </div>
+  );
+};
+
+// ═══ Board placeholder (Step 4) ═══════════════════════════════════════════════
+const BoardPlaceholder = ({ compteId }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 16 }}>
+    <div className="bg-glow"/>
+    <div style={{ fontSize: 48 }}>⚡</div>
+    <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.04em' }}>Board prêt</div>
+    <div style={{ fontSize: 14, color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>compte_id: {compteId}</div>
+    <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 8 }}>Pipeline RSS + Agent 2 → Step 3 & 4</div>
+  </div>
+);
+
+// ═══ OnboardingApp ════════════════════════════════════════════════════════════
+const OnboardingApp = ({ onComplete }) => {
+  const [step, setStep] = useState('input');
+  const [url, setUrl]   = useState('');
+  const [profil, setProfil] = useState(null);
+  const [apiError, setApiError] = useState(null);
+
+  const handleAnalyze = async (inputUrl) => {
+    setUrl(inputUrl);
+    setStep('loading');
+    setApiError(null);
+    try {
+      const res  = await fetch('/api/onboarding/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: inputUrl }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Erreur inconnue');
+      setProfil(json.profil);
+      setStep('validation');
+    } catch (err) {
+      setApiError(err.message);
+      setStep('input');
+    }
+  };
+
+  if (step === 'loading') return <LoadingStep url={url}/>;
+  if (step === 'validation' && profil) return <ValidationStep profil={profil} onSave={onComplete}/>;
+
+  return (
+    <>
+      <InputStep onAnalyze={handleAnalyze}/>
+      {apiError && (
+        <div style={{
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)',
+          borderRadius: 10, padding: '12px 20px', fontSize: 13, color: '#FCA5A5',
+          whiteSpace: 'nowrap', zIndex: 100,
+        }}>
+          ⚠ {apiError}
+        </div>
+      )}
+    </>
+  );
+};
+
+// ═══ App root ═════════════════════════════════════════════════════════════════
+const App = () => {
+  const [compteId, setCompteId] = useState(() => localStorage.getItem('veille_compte_id'));
+
+  if (compteId) return <BoardPlaceholder compteId={compteId}/>;
+  return <OnboardingApp onComplete={id => setCompteId(id)}/>;
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

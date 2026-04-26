@@ -1,16 +1,34 @@
 /* global React, AppIcon, Btn */
 var { useState } = React;
 
+const formatDateFr = () => {
+  const now = new Date();
+  const days = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+  const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  return `${days[now.getDay()]} · ${now.getDate()} ${months[now.getMonth()]} · ${h}:${m}`;
+};
+
 // ═══ DASHBOARD / HOME ══════════════════════════════════════════════════════
-const DashboardScreen = ({ onNav, onCreateFromSource }) => {
+const DashboardScreen = ({ onNav, onCreateFromSource, authUser }) => {
+  const fullName = authUser?.user_metadata?.full_name;
+  const email = authUser?.email || '';
+  const firstName = fullName
+    ? fullName.split(' ')[0]
+    : email.split('@')[0] || null;
+  const greeting = firstName
+    ? `Bonjour ${firstName.charAt(0).toUpperCase() + firstName.slice(1)}.`
+    : 'Bonjour.';
+
   return (
     <div className="page-body">
       <div className="page-header">
         <div>
           <div className="page-hello-row">
-            <span className="page-hello-hour">Lundi · 14 octobre · 09:42</span>
+            <span className="page-hello-hour">{formatDateFr()}</span>
           </div>
-          <h1 className="page-title">Bonjour Claire.</h1>
+          <h1 className="page-title">{greeting}</h1>
           <p className="page-subtitle">
             7 posts attendent ton œil, 3 actus dans ton univers pourraient devenir des publications.
           </p>

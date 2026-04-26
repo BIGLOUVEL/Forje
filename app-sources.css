@@ -1,5 +1,95 @@
 /* Sources & veille — board */
 
+/* ═══ ONGLETS BOARD / LATEST ══════════════════════════════════════════════ */
+.view-tabs {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px 0;
+  gap: 12px;
+}
+.view-tabs-inner { display: flex; gap: 4px; }
+.view-tabs-actions { display: flex; align-items: center; gap: 6px; }
+
+.view-tab {
+  all: unset; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 500; color: var(--app-fg-3);
+  transition: background .12s, color .12s;
+}
+.view-tab:hover { background: var(--app-surface-2); color: var(--app-fg); }
+.view-tab.active {
+  background: var(--app-surface-2);
+  color: var(--app-fg);
+  font-weight: 600;
+}
+.view-tab-hot {
+  background: rgba(220,38,38,.1); color: #DC2626;
+  border-radius: 10px; padding: 1px 6px;
+  font-size: 11px; font-weight: 700;
+}
+.view-tab-count {
+  background: var(--app-surface); border: 1px solid var(--app-line);
+  border-radius: 10px; padding: 1px 6px;
+  font-size: 11px; color: var(--app-fg-3);
+}
+
+/* ═══ LATEST LIST ══════════════════════════════════════════════════════════ */
+.latest-wrapper {
+  padding: 0 24px 24px;
+  display: flex; flex-direction: column;
+}
+.latest-header {
+  padding: 10px 2px 8px;
+  font-size: 11.5px; color: var(--app-fg-4);
+}
+.latest-list {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--app-line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--app-surface);
+}
+.latest-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--app-line);
+  text-decoration: none;
+  color: inherit;
+  transition: background .1s;
+}
+.latest-row:last-child { border-bottom: none; }
+.latest-row:hover { background: var(--app-surface-2); }
+.latest-row-left {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
+.latest-time {
+  font-size: 11px; color: var(--app-fg-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.latest-source {
+  font-size: 11.5px; font-weight: 600; color: var(--app-fg-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.latest-row-title {
+  font-size: 13px; color: var(--app-fg);
+  line-height: 1.35;
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.latest-row-right { display: flex; justify-content: flex-end; }
+.latest-score {
+  font-size: 11.5px; font-weight: 700;
+  padding: 3px 7px; border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .sources-page {
   padding: 0;
   display: flex; flex-direction: column;
@@ -231,7 +321,7 @@
 }
 
 .news-row {
-  all: unset; cursor: pointer;
+  cursor: pointer;
   position: relative;
   display: grid;
   grid-template-columns: 90px 1fr;
@@ -242,6 +332,20 @@
 }
 .news-row:hover { background: var(--app-surface); }
 .news-row.active { background: var(--app-surface-2); }
+.news-row-dismiss {
+  all: unset;
+  position: absolute; top: 8px; right: 8px;
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  font-size: 14px; line-height: 1;
+  color: var(--app-fg-4);
+  border-radius: 4px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity .15s, background .15s, color .15s;
+}
+.news-row:hover .news-row-dismiss { opacity: 1; }
+.news-row-dismiss:hover { background: rgba(197,48,48,.08); color: #C53030; }
 .news-row-indicator {
   position: absolute; left: 0; top: 10px; bottom: 10px;
   width: 2px;

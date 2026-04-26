@@ -18,6 +18,15 @@ const App = () => {
   const [preset, setPreset] = useState(null);
   const [tweaks, setTweaks] = useState(TWEAKS);
   const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    const sb = window.__supabase;
+    const user = window.__currentUser;
+    if (!sb || !user) return;
+    sb.from('clients').select('plan, credits').eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => { if (data) setProfile(data); });
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('forje_app_screen', screen);
@@ -67,10 +76,12 @@ const App = () => {
       <div className="app-shell">
         <Sidebar current={screen === 'generate' && preset ? 'generate' : screen}
                  onNav={(k) => { setScreen(k); setPreset(null); }}
-                 counts={{ queue: 7, sources: 3 }}/>
+                 counts={{ queue: 7, sources: 3 }}
+                 profile={profile}
+                 authUser={window.__currentUser}/>
         <main className="app-main">
           <Topbar breadcrumb={crumbs}/>
-          {screen === 'home' && <DashboardScreen onNav={setScreen} onCreateFromSource={handleCreateFromSource}/>}
+          {screen === 'home' && <DashboardScreen onNav={setScreen} onCreateFromSource={handleCreateFromSource} authUser={window.__currentUser}/>}
           {screen === 'generate' && (
             <GenerateScreen
               layoutVariant={tweaks.genLayout}

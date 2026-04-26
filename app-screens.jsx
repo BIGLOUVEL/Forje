@@ -63,7 +63,7 @@ const GenerateHub = ({ onPick }) => (
 
     <div className="gen-recent">
       <div className="gen-section-label">
-        <span>Reprendre où tu t'étais arrêtée</span>
+        <span>Reprendre un brouillon</span>
       </div>
       <div className="gen-recent-row">
         <RecentCard type="Citation" when="il y a 12 min" title="« Un geste qui ne change pas depuis 1987. »" swatch="quote"/>
@@ -626,7 +626,7 @@ const QueueGrid = () => (
       <span><i className="legend-dot legend-dot--done"/>À publier cette semaine</span>
       <span><i className="legend-dot legend-dot--published"/>Publié</span>
       <span style={{marginLeft:'auto', color:'var(--app-fg-4)', fontSize:11}}>
-        Aperçu du feed @maison.tessier — 9 dernières cases
+        Aperçu du feed Instagram — 9 dernières cases
       </span>
     </div>
     <div className="ig-grid">
