@@ -250,7 +250,7 @@ router.get('/board', async (req, res) => {
       .select('*, news_raw(*)')
       .eq('compte_id', compte_id)
       .neq('flag', 'exclu')
-      .order('score_total', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(parseInt(limit));
 
     if (flag) query = query.eq('flag', flag);

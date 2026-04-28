@@ -20,6 +20,16 @@ RECHERCHES À EFFECTUER (dans cet ordre) :
    - Extrais l'URL RSS directe depuis les résultats (format .xml, /feed, /rss, etc.)
    - N'inclus une source dans sources_rss QUE si tu as trouvé une URL RSS valide
    - Cherche au minimum pour les 5 sources les plus importantes du compte
+7. TWITTER SOURCES — Identifie les 10 meilleurs comptes Twitter/X à surveiller dans cette niche.
+   Fais des recherches web : "meilleurs comptes Twitter [niche]", "best [niche] Twitter accounts journalists",
+   "[niche] insider Twitter breaking news", "[niche] journalists Twitter verified".
+   - FIABLES uniquement : journalistes vérifiés, médias officiels, insiders reconnus dans le milieu
+   - RAPIDES : connus pour breaker l'info avant tout le monde dans leur domaine
+   - SPÉCIALISÉS : experts de cette niche précise, pas des comptes généralistes
+   - Ne retourne QUE des comptes avec fiabilite >= 7 sur 10
+   - Pour chaque compte retourne exactement ce schéma :
+     {"handle": string, "nom": string, "type": "insider|media_officiel|journaliste|club_officiel|aggregateur",
+      "pourquoi": string, "vitesse": "breaking|rapide|analyse", "langue": string, "fiabilite": number}
 
 RÈGLES :
 - Réponds UNIQUEMENT avec un objet JSON valide
@@ -54,21 +64,89 @@ SCHÉMA DE SORTIE (uniquement les vraies données trouvées) :
   "concurrents": string[],
   "keywords_niche": string[],
   "hashtags_typiques": string[],
+  "comptes_twitter_sources": [{"handle": string, "nom": string, "type": string, "pourquoi": string, "vitesse": string, "langue": string, "fiabilite": number}],
   "score_confiance": number
 }`;
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Tronque les vieux résultats de recherche pour borner les input tokens.
+// web_search_20250305 retourne des blocs "web_search_tool_result" dans response.content.
+// Après N recherches, l'historique dépasse facilement 30k tokens (limite org).
+// On conserve les KEEP_RECENT derniers résultats complets, les anciens sont résumés.
+const KEEP_RECENT = 4;
+const TRUNCATE_TO = 350; // chars par vieux résultat
+
+function pruneSearchHistory(msgs) {
+  let seenResults = 0;
+  // Parcourir à rebours pour identifier les N plus récents
+  const recentSet = new WeakSet();
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const content = msgs[i].content;
+    if (!Array.isArray(content)) continue;
+    for (let j = content.length - 1; j >= 0; j--) {
+      const b = content[j];
+      if (b.type === 'web_search_tool_result') {
+        seenResults++;
+        if (seenResults <= KEEP_RECENT) recentSet.add(b);
+      }
+    }
+  }
+  if (seenResults <= KEEP_RECENT) return msgs; // rien à faire
+
+  return msgs.map(msg => {
+    if (!Array.isArray(msg.content)) return msg;
+    const newContent = msg.content.map(b => {
+      if (b.type !== 'web_search_tool_result' || recentSet.has(b)) return b;
+      // Tronque les vieux résultats
+      let summary;
+      if (typeof b.content === 'string') {
+        summary = b.content.slice(0, TRUNCATE_TO) + (b.content.length > TRUNCATE_TO ? '…' : '');
+      } else if (Array.isArray(b.content)) {
+        // Extrait le texte brut des blocs de contenu
+        const text = b.content.map(c => c.text || c.content || '').join(' ').slice(0, TRUNCATE_TO);
+        summary = text + '…';
+      } else {
+        summary = '[résultat tronqué]';
+      }
+      return { ...b, content: summary };
+    });
+    return { ...msg, content: newContent };
+  });
+}
+
+// Retry avec backoff exponentiel sur les rate limits (429)
+async function callWithRetry(client, params, maxRetries = 4) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await client.messages.create(params);
+    } catch (err) {
+      const isRateLimit = err.status === 429 || err.message?.includes('rate_limit');
+      if (isRateLimit && attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt + 1) * 5000; // 10s, 20s, 40s
+        console.warn(`[Agent 1] Rate limit — retry dans ${delay / 1000}s… (tentative ${attempt + 1}/${maxRetries})`);
+        await sleep(delay);
+      } else {
+        throw err;
+      }
+    }
+  }
+}
 
 // ─── Boucle agentique Agent 1 ────────────────────────────────────────────────
 async function runAgent1(url) {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const messages = [{ role: 'user', content: `Analyse ce compte Instagram : ${url}` }];
 
-  for (let i = 0; i < 25; i++) {
-    const response = await client.messages.create({
+  for (let i = 0; i < 35; i++) {
+    if (i > 0) await sleep(2000); // 2s entre chaque appel
+
+    const response = await callWithRetry(client, {
       model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
+      max_tokens: 8000,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       system: SYSTEM_PROMPT,
-      messages,
+      messages: pruneSearchHistory(messages), // historique élagué
     });
 
     messages.push({ role: 'assistant', content: response.content });
@@ -77,21 +155,43 @@ async function runAgent1(url) {
       const textBlock = response.content.filter(b => b.type === 'text').pop();
       if (!textBlock) throw new Error('Aucune réponse texte de Claude');
       const raw = textBlock.text.trim();
-      // Extract the first JSON object found (robuste face au texte parasite)
-      const match = raw.match(/(\{[\s\S]*\})/);
-      if (!match) throw new Error('Pas de JSON dans la réponse Claude');
-      return JSON.parse(match[1]);
+
+      // Extrait le JSON — supporte JSON brut, JSON dans markdown ```json...```, ou JSON avec texte parasite
+      const patterns = [
+        /```json\s*([\s\S]*?)\s*```/,   // ```json...```
+        /```\s*([\{][\s\S]*?)\s*```/,   // ```{...}```
+        /(\{[\s\S]*\})/,                // greedy {…}
+      ];
+      let parsed = null;
+      for (const pat of patterns) {
+        const m = raw.match(pat);
+        if (m) {
+          try { parsed = JSON.parse(m[1]); break; }
+          catch (_) { /* essaie le pattern suivant */ }
+        }
+      }
+      if (!parsed) {
+        console.error('[Agent 1] Réponse sans JSON — raw (500 chars):', raw.slice(0, 500));
+        throw new Error('Pas de JSON dans la réponse Claude');
+      }
+      return parsed;
     }
 
     if (response.stop_reason === 'tool_use') {
+      // web_search_20250305 est server-side : les résultats sont déjà dans response.content
+      // (web_search_tool_result blocks). On envoie juste un accusé de réception vide.
       const toolResults = response.content
         .filter(b => b.type === 'tool_use')
         .map(b => ({ type: 'tool_result', tool_use_id: b.id, content: '' }));
-      messages.push({ role: 'user', content: toolResults });
+      if (toolResults.length > 0) messages.push({ role: 'user', content: toolResults });
+    }
+
+    if (response.stop_reason === 'max_tokens') {
+      console.warn(`[Agent 1] max_tokens hit à l'itération ${i}`);
     }
   }
 
-  throw new Error('Boucle agent dépassée (25 itérations)');
+  throw new Error('Boucle agent dépassée (35 itérations)');
 }
 
 // ─── POST /api/onboarding/analyze ────────────────────────────────────────────
@@ -141,6 +241,7 @@ router.post('/save', async (req, res) => {
       hashtags_typiques:          profil.hashtags_typiques,
       sources_rss:                profil.sources_rss || [],
       score_confiance_onboarding: profil.score_confiance,
+      user_id:                    req.body.user_id || null,
     };
 
     const { data, error } = await supabase
@@ -151,17 +252,43 @@ router.post('/save', async (req, res) => {
 
     if (error) throw error;
 
-    // Pipeline automatique en arrière-plan : RSS niche → scoring
     const compteId = data.id;
+
+    // Sauvegarde des sources Twitter sélectionnées par l'utilisateur
+    const twitterSourcesToSave = req.body.twitter_sources || [];
+    if (twitterSourcesToSave.length > 0) {
+      const tsRows = twitterSourcesToSave.map(s => ({
+        compte_id: compteId,
+        handle:    s.handle,
+        nom:       s.nom    || null,
+        type:      s.type   || null,
+        pourquoi:  s.pourquoi || null,
+        vitesse:   s.vitesse  || null,
+        langue:    s.langue   || null,
+        fiabilite: s.fiabilite ?? null,
+        actif:     true,
+      }));
+      const { error: tsErr } = await supabase
+        .from('twitter_sources')
+        .upsert(tsRows, { onConflict: 'compte_id,handle' });
+      if (tsErr) console.error('[Onboarding] twitter_sources save:', tsErr.message);
+      else console.log(`[Onboarding] ${tsRows.length} source(s) Twitter sauvegardées`);
+    }
+
     res.json({ compte_id: compteId });
 
+    // Pipeline automatique en arrière-plan : RSS + Twitter sources → scoring
     setImmediate(async () => {
       try {
         console.log(`[Onboarding] Pipeline RSS+score pour ${row.nom} (${compteId})…`);
         const { fetchAllFeeds } = require('./rss');
+        const { fetchTwitterSources } = require('./twitter');
         const { scoreForCompte } = require('./scoring');
-        const results  = await fetchAllFeeds();
-        const inserted = results.reduce((s, r) => s + (r.inserted ?? 0), 0);
+        const [rssResults, twResults] = await Promise.all([
+          fetchAllFeeds(),
+          fetchTwitterSources(compteId),
+        ]);
+        const inserted = [...rssResults, ...twResults].reduce((s, r) => s + (r.inserted ?? 0), 0);
         console.log(`[Onboarding] +${inserted} articles fetchés`);
         const scored = await scoreForCompte(compteId);
         console.log(`[Onboarding] ${row.nom} → +${scored.scored} scorés`);

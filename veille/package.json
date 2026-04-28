@@ -9,10 +9,18 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@fontsource/bebas-neue": "^5.2.7",
+    "@fontsource/dm-serif-display": "^5.2.8",
+    "@fontsource/playfair-display": "^5.2.8",
+    "@fontsource/space-grotesk": "^5.2.10",
+    "@fontsource/syne": "^5.2.7",
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.39.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.18.3",
-    "rss-parser": "^3.13.0"
+    "openai": "^6.34.0",
+    "rss-parser": "^3.13.0",
+    "sharp": "^0.34.5"
   }
 }

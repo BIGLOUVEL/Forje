@@ -93,7 +93,7 @@ const App = () => {
           {screen === 'calendar' && <QueueScreen defaultView="calendar"/>}
           {screen === 'published' && <QueueScreen defaultView="grid"/>}
           {screen === 'brand' && <BrandScreen/>}
-          {screen === 'sources' && <SourcesScreen/>}
+          {screen === 'sources' && <SourcesScreen authUser={window.__currentUser}/>}
           {screen === 'settings' && <PlaceholderScreen title="Paramètres" desc="Comptes connectés, équipe, facturation."/>}
         </main>
       </div>

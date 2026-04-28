@@ -291,10 +291,31 @@ const SetupLoading = ({ url }) => {
 };
 
 // ─── Step 3 : Validation ──────────────────────────────────────────────────────
-const SetupValidation = ({ profil: init, onSave }) => {
+const SetupValidation = ({ profil: init, onSave, authUser }) => {
   const [profil, setProfil] = useState(init);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // Twitter sources — détectées par Agent 1 + ajouts manuels
+  const detected = init.comptes_twitter_sources || [];
+  const [enabledHandles, setEnabledHandles] = useState(() => new Set(detected.map(s => s.handle)));
+  const [extraSources, setExtraSources]     = useState([]);
+  const [extraInput, setExtraInput]         = useState('');
+
+  const toggleHandle = (handle) => setEnabledHandles(prev => {
+    const n = new Set(prev);
+    n.has(handle) ? n.delete(handle) : n.add(handle);
+    return n;
+  });
+
+  const addExtraSource = () => {
+    const h = extraInput.replace(/^@/, '').replace(/^(?:https?:\/\/)?(?:www\.)?(?:twitter|x)\.com\//, '').split(/[/?]/)[0].trim();
+    if (!h) return;
+    if ([...detected, ...extraSources].some(s => s.handle === h)) { setExtraInput(''); return; }
+    setExtraSources(prev => [...prev, { handle: h, nom: null, type: 'journaliste', vitesse: 'rapide', fiabilite: 8, pourquoi: 'Ajouté manuellement' }]);
+    setEnabledHandles(prev => new Set([...prev, h]));
+    setExtraInput('');
+  };
 
   const score = profil.score_confiance ?? 0;
   const pct   = Math.round(score * 100);
@@ -309,7 +330,11 @@ const SetupValidation = ({ profil: init, onSave }) => {
     try {
       const res  = await fetch(`${VEILLE_API}/onboarding/save`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ profil }),
+        body: JSON.stringify({
+          profil,
+          user_id: authUser?.id || null,
+          twitter_sources: [...detected, ...extraSources].filter(s => enabledHandles.has(s.handle)),
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
@@ -381,6 +406,113 @@ const SetupValidation = ({ profil: init, onSave }) => {
           </div>
         ))}
       </div>
+
+      {/* ── Sources Twitter détectées ── */}
+      {(detected.length > 0 || extraSources.length > 0) && (
+        <div className="card card-pad" style={{ marginTop:14 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ color:'var(--app-fg-2)' }}>
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              <span style={{ fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--app-fg-3)' }}>
+                Sources Twitter détectées ({[...detected, ...extraSources].length})
+              </span>
+            </div>
+            <span style={{ fontSize:11, color:'var(--app-fg-4)' }}>{enabledHandles.size} actives</span>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(290px, 1fr))', gap:10, marginBottom:16 }}>
+            {[...detected, ...extraSources].map(src => {
+              const on = enabledHandles.has(src.handle);
+              return (
+                <div key={src.handle} style={{
+                  display:'flex', gap:12, padding:'12px 14px',
+                  background: on ? 'var(--app-surface-2)' : 'var(--app-surface)',
+                  border:`1px solid ${on ? 'var(--app-line)' : 'var(--app-line)'}`,
+                  borderRadius:10, opacity: on ? 1 : 0.45, transition:'all .15s', position:'relative',
+                }}>
+                  <img
+                    src={`https://unavatar.io/twitter/${src.handle}`}
+                    alt={`@${src.handle}`}
+                    style={{ width:38, height:38, borderRadius:'50%', objectFit:'cover', flexShrink:0, background:'var(--app-line)' }}
+                    onError={e => { e.target.src = ''; e.target.style.background='var(--app-line)'; }}
+                  />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:6 }}>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:700, color:'var(--app-fg)' }}>@{src.handle}</div>
+                        {src.nom && <div style={{ fontSize:11, color:'var(--app-fg-3)', marginTop:1 }}>{src.nom}</div>}
+                      </div>
+                      <button
+                        onClick={() => toggleHandle(src.handle)}
+                        style={{
+                          all:'unset', cursor:'pointer', flexShrink:0,
+                          width:36, height:20, borderRadius:10,
+                          background: on ? 'var(--app-accent)' : 'var(--app-line)',
+                          position:'relative', transition:'background .2s',
+                        }}
+                      >
+                        <span style={{
+                          position:'absolute', top:2, left: on ? 18 : 2,
+                          width:16, height:16, borderRadius:'50%', background:'#fff',
+                          transition:'left .2s', boxShadow:'0 1px 3px rgba(0,0,0,.2)',
+                        }}/>
+                      </button>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginTop:6 }}>
+                      {src.type && (
+                        <span style={{ fontSize:10, fontWeight:600, letterSpacing:'0.05em', textTransform:'uppercase', padding:'2px 7px', borderRadius:5, background:'rgba(79,91,213,.08)', color:'var(--app-accent)' }}>
+                          {src.type.replace('_', ' ')}
+                        </span>
+                      )}
+                      {src.vitesse === 'breaking' && <span style={{ fontSize:11 }}>🔴 breaking</span>}
+                      {src.vitesse === 'rapide'   && <span style={{ fontSize:11 }}>🟡 rapide</span>}
+                      {src.vitesse === 'analyse'  && <span style={{ fontSize:11 }}>🔵 analyse</span>}
+                      {src.fiabilite && (
+                        <span style={{ fontSize:11, color:'var(--app-fg-3)', marginLeft:'auto' }}>★ {src.fiabilite}/10</span>
+                      )}
+                    </div>
+                    {src.pourquoi && (
+                      <div style={{ fontSize:11, color:'var(--app-fg-3)', marginTop:5, lineHeight:1.4 }}>{src.pourquoi}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Ajout manuel */}
+          <div style={{ display:'flex', gap:10 }}>
+            <input
+              type="text"
+              value={extraInput}
+              onChange={e => setExtraInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addExtraSource()}
+              placeholder="Ajouter @handle manuellement…"
+              style={{
+                flex:1, background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
+                borderRadius:'var(--radius)', padding:'8px 12px',
+                color:'var(--app-fg)', fontFamily:'DM Sans, sans-serif', fontSize:13,
+                outline:'none', transition:'border-color .15s',
+              }}
+              onFocus={e => e.target.style.borderColor='var(--app-accent)'}
+              onBlur={e  => e.target.style.borderColor='var(--app-line)'}
+            />
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={addExtraSource}
+              disabled={!extraInput.trim()}
+              style={{ whiteSpace:'nowrap' }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              Ajouter
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div style={{ marginTop:16, padding:'10px 14px', background:'rgba(197,48,48,.06)', border:'1px solid rgba(197,48,48,.15)', borderRadius:8, fontSize:13, color:'#C53030' }}>
@@ -470,7 +602,13 @@ const NewsRow = ({ item, active, onClick, onHover3s, onDismiss }) => {
         </div>
         <div className="news-row-body">
           <div className="news-row-top">
-            <span className="news-source">{item.source}</span>
+            {item.source?.startsWith('@') ? (
+              <span className="news-source news-source--twitter">
+                <span style={{ color:'var(--app-accent)', fontWeight:700 }}>⚡</span> {item.source}
+              </span>
+            ) : (
+              <span className="news-source">{item.source}</span>
+            )}
             {item.cat && <><span className="news-sep">·</span><span className="news-cat">{item.cat}</span></>}
             {item.match >= 0.7 && <span className="match-badge match-badge--strong">◆ {Math.round(item.match*100)}% pertinent</span>}
             {item.match >= 0.5 && item.match < 0.7 && <span className="match-badge">{Math.round(item.match*100)}%</span>}
@@ -588,10 +726,16 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
   const [learning, setLearning]     = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [sourcesRss, setSourcesRss] = useState([]);
+  const [compteInfo, setCompteInfo] = useState(null); // { nom, instagram_url }
   const [latestRaw, setLatestRaw]   = useState([]);
   const [addInput, setAddInput]     = useState('');
   const [addingSource, setAddingSource] = useState(false);
   const [addSourceMsg, setAddSourceMsg] = useState(null); // { type:'ok'|'err', text }
+  const [twitterAccounts, setTwitterAccounts] = useState([]);
+  const [curatedSources, setCuratedSources]   = useState([]);
+  const [addTwInput, setAddTwInput]   = useState('');
+  const [addingTw, setAddingTw]       = useState(false);
+  const [addTwMsg, setAddTwMsg]       = useState(null);
 
   const track = React.useCallback((newsScoredId, action, extra = {}) => {
     if (!newsScoredId || !compteId) return;
@@ -620,10 +764,54 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const loadSources = async () => {
     try {
-      const res  = await fetch(`${VEILLE_API}/rss/sources?compte_id=${compteId}`);
-      const json = await res.json();
-      if (res.ok) setSourcesRss(json.sources_rss || []);
+      const [rssRes, curatedRes] = await Promise.all([
+        fetch(`${VEILLE_API}/rss/sources?compte_id=${compteId}`),
+        fetch(`${VEILLE_API}/twitter/curated-sources?compte_id=${compteId}`),
+      ]);
+      const rssJson = await rssRes.json();
+      if (rssRes.ok) {
+        setSourcesRss(rssJson.sources_rss || []);
+        setTwitterAccounts(rssJson.twitter_accounts || []);
+        if (rssJson.nom || rssJson.instagram_url) setCompteInfo({ nom: rssJson.nom, instagram_url: rssJson.instagram_url });
+      }
+      if (curatedRes.ok) {
+        const curatedJson = await curatedRes.json();
+        setCuratedSources(curatedJson.sources || []);
+      }
     } catch (err) { console.error('[Sources]', err.message); }
+  };
+
+  const handleAddTwitter = async () => {
+    const raw = addTwInput.trim();
+    if (!raw) return;
+    setAddingTw(true);
+    setAddTwMsg(null);
+    try {
+      const res  = await fetch(`${VEILLE_API}/twitter/add-account`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ compte_id: compteId, handle: raw }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      setAddTwInput('');
+      const label = json.already_exists
+        ? `@${json.handle} était déjà suivi.`
+        : `✓ @${json.handle} ajouté — ${json.inserted ?? 0} tweets récupérés.`;
+      setAddTwMsg({ type: 'ok', text: label });
+      await loadSources();
+    } catch (err) {
+      setAddTwMsg({ type: 'err', text: err.message });
+    } finally { setAddingTw(false); }
+  };
+
+  const handleRemoveTwitter = async (handle) => {
+    try {
+      await fetch(`${VEILLE_API}/twitter/remove-account`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ compte_id: compteId, handle }),
+      });
+      setTwitterAccounts(prev => prev.filter(h => h !== handle));
+    } catch (err) { console.error('[RemoveTwitter]', err.message); }
   };
 
   const handleAddSource = async () => {
@@ -720,7 +908,9 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const fmtAge = (createdAt) => {
     if (!createdAt) return '—';
-    const min = Math.round((Date.now() - new Date(createdAt).getTime()) / 60000);
+    // Postgres retourne les timestamps sans 'Z' — le navigateur les lirait comme heure locale sinon
+    const ts = createdAt.endsWith('Z') || /[+\-]\d{2}:?\d{2}$/.test(createdAt) ? createdAt : createdAt + 'Z';
+    const min = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
     if (min < 1)  return 'à l\'instant';
     if (min < 60) return `il y a ${min} min`;
     const h = Math.floor(min / 60), m = min % 60;
@@ -806,6 +996,19 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
       {/* ── Onglets Board / Latest ── */}
       <div className="view-tabs">
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {compteInfo?.instagram_url && (() => {
+            const handle = compteInfo.instagram_url.replace(/\/$/, '').split('/').pop();
+            return (
+              <img
+                src={`https://unavatar.io/instagram/${handle}`}
+                alt={compteInfo.nom || handle}
+                title={`@${handle}`}
+                style={{ width:26, height:26, borderRadius:'50%', objectFit:'cover', border:'1.5px solid var(--app-line)', flexShrink:0 }}
+                onError={e => { e.target.style.display='none'; }}
+              />
+            );
+          })()}
         <div className="view-tabs-inner">
           <button className={`view-tab ${view==='board'?'active':''}`} onClick={() => setView('board')}>
             <AppIcon name="bolt" size={12}/> Board
@@ -821,6 +1024,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
             <AppIcon name="globe" size={12}/> Sources
             <span className="view-tab-count">{sourcesRss.length}</span>
           </button>
+        </div>
         </div>
         <div className="view-tabs-actions">
           {learning && <span style={{ fontSize:12, color:'var(--app-accent)', fontWeight:600 }}>⚡ Apprentissage…</span>}
@@ -845,21 +1049,31 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
               <div style={{ padding:'40px 24px', textAlign:'center', color:'var(--app-fg-3)', fontSize:13 }}>
                 Aucune news — clique ↻ pour rafraîchir.
               </div>
-            ) : latestRaw.map(item => (
-              <a
-                key={item.id}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="latest-row"
-              >
-                <div className="latest-row-left">
-                  <span className="latest-time">{fmtAge(item.published_at || item.created_at)}</span>
-                  <span className="latest-source">{item.source}</span>
-                </div>
-                <div className="latest-row-title">{item.titre}</div>
-              </a>
-            ))}
+            ) : latestRaw.map(item => {
+              const isTweet = item.source?.startsWith('@');
+              return (
+                <a
+                  key={item.id}
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="latest-row"
+                >
+                  <div className="latest-row-left">
+                    <span className="latest-time">{fmtAge(item.published_at || item.created_at)}</span>
+                    <span className="latest-source" style={isTweet ? { display:'inline-flex', alignItems:'center', gap:4 } : {}}>
+                      {isTweet && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink:0, opacity:0.7 }}>
+                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        </svg>
+                      )}
+                      {item.source}
+                    </span>
+                  </div>
+                  <div className="latest-row-title">{item.titre}</div>
+                </a>
+              );
+            })}
           </div>
         </div>
       )}
@@ -951,6 +1165,156 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
             <AppIcon name="bolt" size={12} style={{ marginTop:1, flexShrink:0 }}/>
             <span>En dehors de ces sources, Forje utilise aussi un ensemble de feeds généralistes (Le Monde, BFMTV, BBC, NYT…) et des feeds thématiques détectés automatiquement selon ta niche.</span>
           </div>
+
+          {/* ── Comptes Twitter / X ── */}
+          <div style={{ marginTop:32 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style={{ color:'var(--app-fg-2)', flexShrink:0 }}>
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--app-fg-3)' }}>
+                Comptes Twitter / X ({twitterAccounts.length})
+              </div>
+            </div>
+
+            {/* Add Twitter account */}
+            <div className="card card-pad" style={{ marginBottom:12, padding:'20px 24px' }}>
+              <div style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)', marginBottom:4 }}>
+                Suivre un compte Twitter
+              </div>
+              <div style={{ fontSize:12, color:'var(--app-fg-3)', marginBottom:14 }}>
+                Colle un @handle ou une URL x.com — les tweets récents entrent dans le board et sont scorés comme les autres actus.
+              </div>
+              <div style={{ display:'flex', gap:10 }}>
+                <input
+                  type="text"
+                  value={addTwInput}
+                  onChange={e => { setAddTwInput(e.target.value); setAddTwMsg(null); }}
+                  onKeyDown={e => e.key === 'Enter' && !addingTw && handleAddTwitter()}
+                  placeholder="@handle  ou  https://x.com/handle"
+                  disabled={addingTw}
+                  style={{
+                    flex:1, background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
+                    borderRadius:'var(--radius)', padding:'9px 12px',
+                    color:'var(--app-fg)', fontFamily:'DM Sans, sans-serif', fontSize:13,
+                    outline:'none', opacity: addingTw ? 0.6 : 1,
+                    transition:'border-color .15s',
+                  }}
+                  onFocus={e => e.target.style.borderColor='var(--app-accent)'}
+                  onBlur={e  => e.target.style.borderColor='var(--app-line)'}
+                />
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleAddTwitter}
+                  disabled={addingTw || !addTwInput.trim()}
+                  style={{ whiteSpace:'nowrap', minWidth:110, background:'#000', borderColor:'#000' }}
+                >
+                  {addingTw
+                    ? <><span style={{ display:'inline-block', width:10, height:10, border:'1.5px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite', marginRight:6 }}/>Ajout…</>
+                    : <>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink:0 }}>
+                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        </svg>
+                        Ajouter
+                      </>
+                  }
+                </button>
+              </div>
+              {addTwMsg && (
+                <div style={{
+                  marginTop:10, padding:'8px 12px', borderRadius:7, fontSize:12,
+                  background: addTwMsg.type === 'ok' ? 'rgba(34,197,94,.08)' : 'rgba(197,48,48,.06)',
+                  border: `1px solid ${addTwMsg.type === 'ok' ? 'rgba(34,197,94,.2)' : 'rgba(197,48,48,.15)'}`,
+                  color: addTwMsg.type === 'ok' ? '#15803D' : '#C53030',
+                }}>
+                  {addTwMsg.text}
+                </div>
+              )}
+            </div>
+
+            {/* Liste des comptes suivis manuellement */}
+            {twitterAccounts.length > 0 && (
+              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                {twitterAccounts.map((handle, i) => (
+                  <div key={i} className="card" style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 16px' }}>
+                    <div style={{ width:28, height:28, borderRadius:7, background:'rgba(0,0,0,.06)', display:'grid', placeItems:'center', flexShrink:0 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ color:'#000' }}>
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                      </svg>
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)' }}>@{handle}</div>
+                    </div>
+                    <a href={`https://x.com/${handle}`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-icon btn-sm" title="Voir le profil" style={{ flexShrink:0 }}>
+                      <AppIcon name="arrowRight" size={12}/>
+                    </a>
+                    <button className="btn btn-ghost btn-icon btn-sm" title="Retirer" style={{ flexShrink:0 }} onClick={() => handleRemoveTwitter(handle)}>
+                      <AppIcon name="trash" size={12}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Sources curatées par l'IA lors de l'onboarding */}
+            {curatedSources.length > 0 && (
+              <div style={{ marginTop:20 }}>
+                <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--app-fg-4)', marginBottom:10 }}>
+                  Sources détectées par l'IA ({curatedSources.length})
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {curatedSources.map(src => (
+                    <div key={src.id} className="card" style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 16px', opacity: src.actif ? 1 : 0.5 }}>
+                      <img
+                        src={`https://unavatar.io/twitter/${src.handle}`}
+                        alt={src.handle}
+                        style={{ width:32, height:32, borderRadius:'50%', objectFit:'cover', flexShrink:0, background:'var(--app-surface-2)' }}
+                        onError={e => { e.target.style.display='none'; }}
+                      />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <span style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)' }}>@{src.handle}</span>
+                          {src.nom && <span style={{ fontSize:11, color:'var(--app-fg-4)' }}>{src.nom}</span>}
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:2 }}>
+                          {src.vitesse && (
+                            <span style={{
+                              fontSize:10, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase',
+                              padding:'1px 6px', borderRadius:4,
+                              background: src.vitesse === 'breaking' ? 'rgba(239,68,68,.1)' : src.vitesse === 'rapide' ? 'rgba(245,158,11,.1)' : 'rgba(99,102,241,.1)',
+                              color: src.vitesse === 'breaking' ? '#DC2626' : src.vitesse === 'rapide' ? '#D97706' : '#4F46E5',
+                            }}>
+                              {src.vitesse}
+                            </span>
+                          )}
+                          {src.type && <span style={{ fontSize:10, color:'var(--app-fg-4)' }}>{src.type}</span>}
+                          {src.fiabilite && <span style={{ fontSize:10, color:'var(--app-fg-4)' }}>{'★'.repeat(Math.round(src.fiabilite/2))}</span>}
+                        </div>
+                      </div>
+                      <a href={`https://x.com/${src.handle}`} target="_blank" rel="noopener noreferrer"
+                        className="btn btn-ghost btn-icon btn-sm" title="Voir le profil" style={{ flexShrink:0 }}>
+                        <AppIcon name="arrowRight" size={12}/>
+                      </a>
+                      <button
+                        className="btn btn-ghost btn-icon btn-sm"
+                        title={src.actif ? 'Désactiver' : 'Activer'}
+                        style={{ flexShrink:0 }}
+                        onClick={async () => {
+                          await fetch(`${VEILLE_API}/twitter/curated-sources/${src.id}`, {
+                            method:'PATCH', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify({ actif: !src.actif }),
+                          });
+                          setCuratedSources(cs => cs.map(s => s.id === src.id ? {...s, actif: !s.actif} : s));
+                        }}
+                      >
+                        <AppIcon name={src.actif ? 'eye' : 'eyeOff'} size={12}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1024,12 +1388,23 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 // ═══════════════════════════════════════════════════════════════════════════
 // SourcesScreen — point d'entrée
 // ═══════════════════════════════════════════════════════════════════════════
-const SourcesScreen = () => {
+const SourcesScreen = ({ authUser }) => {
   const [compteId, setCompteId] = useState(() => localStorage.getItem('veille_compte_id'));
   const [step, setStep]         = useState('input');
   const [url, setUrl]           = useState('');
   const [profil, setProfil]     = useState(null);
   const [apiError, setApiError] = useState(null);
+
+  // Récupère le compte lié à l'user si localStorage vide
+  useEffect(() => {
+    if (compteId || !authUser?.id) return;
+    const sb = window.__supabase;
+    if (!sb) return;
+    sb.from('comptes').select('id').eq('user_id', authUser.id).maybeSingle()
+      .then(({ data }) => {
+        if (data?.id) { localStorage.setItem('veille_compte_id', data.id); setCompteId(data.id); }
+      });
+  }, [authUser]);
 
   const handleAnalyze = async (inputUrl) => {
     setUrl(inputUrl);
@@ -1061,7 +1436,7 @@ const SourcesScreen = () => {
 
   if (compteId) return <VeilleBoard compteId={compteId} freshSetup={step === 'saved'} onReset={handleReset}/>;
   if (step === 'loading')    return <SetupLoading url={url}/>;
-  if (step === 'validation') return <SetupValidation profil={profil} onSave={id => { setCompteId(id); setStep('saved'); }}/>;
+  if (step === 'validation') return <SetupValidation profil={profil} authUser={authUser} onSave={id => { setCompteId(id); setStep('saved'); }}/>;
   return <SetupInput onAnalyze={handleAnalyze} error={apiError}/>;
 };
 

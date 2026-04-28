@@ -471,8 +471,18 @@
   display: grid; place-items: center;
   padding: 28px;
   overflow: auto;
+  min-height: 0;
   background:
     radial-gradient(ellipse 500px 300px at 50% 40%, rgba(110,123,255,0.04), transparent 70%);
+}
+.gen-preview-stage img {
+  max-width: 100%;
+  max-height: calc(100vh - 180px);
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+  display: block;
+  object-fit: contain;
 }
 .post-preview {
   width: 420px;

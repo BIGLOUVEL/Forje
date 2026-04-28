@@ -1,6 +1,50 @@
 const express   = require('express');
 const RSSParser = require('rss-parser');
+const https     = require('https');
 const { supabase } = require('../lib/supabase');
+
+const NEWSMESH_KEY = process.env.NEWSMESH_API_KEY;
+
+// ─── Fetch NewsMesh par query ─────────────────────────────────────────────────
+async function fetchNewsMesh(query, category = null) {
+  if (!NEWSMESH_KEY) return { source: 'NewsMesh', inserted: 0, skipped: 0 };
+  try {
+    let url = `https://api.newsmesh.co/v1/search?apiKey=${NEWSMESH_KEY}&q=${encodeURIComponent(query)}&limit=10&sortBy=date_descending`;
+    if (category) url += `&category=${category}`;
+
+    const data = await new Promise((resolve, reject) => {
+      https.get(url, res => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
+      }).on('error', reject).setTimeout(10000, function() { this.destroy(); reject(new Error('timeout')); });
+    });
+
+    const articles = data.data || [];
+    if (!articles.length) return { source: 'NewsMesh', inserted: 0, skipped: 0 };
+
+    const rows = articles
+      .filter(a => a.link && a.title)
+      .map(a => ({
+        url:          a.link,
+        source:       a.source || 'NewsMesh',
+        titre:        a.title,
+        description:  a.description || null,
+        published_at: a.published_date ? new Date(a.published_date).toISOString() : null,
+      }));
+
+    const { data: inserted, error } = await supabase
+      .from('news_raw')
+      .upsert(rows, { onConflict: 'url', ignoreDuplicates: true })
+      .select('id');
+
+    if (error) throw error;
+    return { source: `NewsMesh:${query}`, inserted: inserted?.length ?? 0, skipped: rows.length - (inserted?.length ?? 0) };
+  } catch (err) {
+    console.error(`[NewsMesh] ${query}: ${err.message}`);
+    return { source: `NewsMesh:${query}`, error: err.message };
+  }
+}
 
 const router = express.Router();
 const parser = new RSSParser({
@@ -138,8 +182,37 @@ async function fetchAllFeeds(extraFeeds = []) {
   }
 
   const feeds   = [...DEFAULT_FEEDS, ...customFeeds, ...nicheFeeds, ...extraFeeds];
-  const results = await Promise.allSettled(feeds.map(fetchFeed));
-  return results.map(r => r.status === 'fulfilled' ? r.value : { error: r.reason?.message });
+  const rssResults = await Promise.allSettled(feeds.map(fetchFeed));
+
+  // NewsMesh : queries courtes (2-3 mots) déduites de la niche de chaque compte
+  const newsMeshResults = [];
+  if (NEWSMESH_KEY) {
+    const NICHE_TO_QUERY = {
+      foot: 'football soccer', sport: 'sport', scien: 'science discovery',
+      tech: 'technology startup', ia: 'artificial intelligence AI',
+      culture: 'cinema film series', cinéma: 'cinema film', streaming: 'netflix streaming series',
+      musique: 'music album artist', business: 'business economy finance',
+      santé: 'health wellness', mode: 'fashion style', gaming: 'gaming video games',
+      'pop culture': 'entertainment pop culture', photo: 'photography art',
+    };
+    const nmQueries = new Set();
+    for (const c of (comptes || [])) {
+      const text = [c.niche_principale, ...(c.keywords_niche || [])].join(' ').toLowerCase();
+      for (const [key, query] of Object.entries(NICHE_TO_QUERY)) {
+        if (text.includes(key)) { nmQueries.add(query); break; }
+      }
+    }
+    if (!nmQueries.size) nmQueries.add('breaking news');
+    const nmFetches = await Promise.allSettled([...nmQueries].map(q => fetchNewsMesh(q)));
+    nmFetches.forEach(r => newsMeshResults.push(r.status === 'fulfilled' ? r.value : { error: r.reason?.message }));
+    const nmInserted = newsMeshResults.reduce((s, r) => s + (r.inserted ?? 0), 0);
+    console.log(`[NewsMesh] ${nmQueries.size} queries → +${nmInserted} articles`);
+  }
+
+  return [
+    ...rssResults.map(r => r.status === 'fulfilled' ? r.value : { error: r.reason?.message }),
+    ...newsMeshResults,
+  ];
 }
 
 // ─── GET /api/rss/fetch ───────────────────────────────────────────────────────
@@ -189,9 +262,13 @@ router.get('/refresh', async (req, res) => {
   if (!compte_id) return res.status(400).json({ error: 'compte_id manquant' });
 
   try {
-    // 1. Fetch RSS (sync, rapide ~5-15s)
-    const results  = await fetchAllFeeds();
-    const inserted = results.reduce((s, r) => s + (r.inserted ?? 0), 0);
+    // 1. Fetch RSS + Twitter en parallèle
+    const { fetchAllTwitterAccounts } = require('./twitter');
+    const [rssResults, twResults] = await Promise.all([
+      fetchAllFeeds(),
+      fetchAllTwitterAccounts(compte_id),
+    ]);
+    const inserted = [...rssResults, ...twResults].reduce((s, r) => s + (r.inserted ?? 0), 0);
 
     // 2. Scoring en arrière-plan — ne bloque pas la réponse
     setImmediate(async () => {
@@ -217,11 +294,11 @@ router.get('/sources', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('comptes')
-      .select('sources_rss, sources_prioritaires')
+      .select('sources_rss, sources_prioritaires, nom, instagram_url, twitter_accounts')
       .eq('id', compte_id)
       .single();
     if (error) throw error;
-    res.json({ sources_rss: data.sources_rss || [], sources_noms: data.sources_prioritaires || [] });
+    res.json({ sources_rss: data.sources_rss || [], sources_noms: data.sources_prioritaires || [], nom: data.nom, instagram_url: data.instagram_url, twitter_accounts: data.twitter_accounts || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
