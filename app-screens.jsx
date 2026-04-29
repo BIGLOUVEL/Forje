@@ -380,10 +380,36 @@ const GenFormFields = ({ preset, s }) => {
       <GenFormInput value={s.newsText} onChange={s.setNewsText} rows={4}
         placeholder="Decris l actu : qui, quoi, pourquoi ca compte..."/>
     </ToolSection>
-    <ToolSection title="Photo (optionnel)" icon="image">
-      <PhotoDropzone photoData={s.photoData} setPhotoData={s.setPhotoData}
-        photoUrl={s.photoUrl} setPhotoUrl={s.setPhotoUrl}/>
-      <div className="tool-sub">Sans photo, Forje cherche automatiquement via Serper</div>
+    <ToolSection title="Visuel" icon="image">
+      <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+        {['ai','classic'].map(function(mode) {
+          var active = s.imageMode === mode;
+          return (
+            <button key={mode} onClick={function(){ s.setImageMode(mode); }}
+              style={{ flex:1, padding:'7px 0', borderRadius:6, fontSize:12, fontFamily:'DM Sans,sans-serif',
+                cursor:'pointer', transition:'all .15s',
+                background: active ? 'var(--app-accent)' : 'var(--app-surface-2)',
+                color: active ? '#fff' : 'var(--app-fg-3)',
+                border: active ? '1px solid var(--app-accent)' : '1px solid var(--app-line)',
+                fontWeight: active ? 600 : 400 }}>
+              {mode === 'ai' ? '✦ IA — Cinématique' : 'Photo Google'}
+            </button>
+          );
+        })}
+      </div>
+      {s.imageMode === 'classic' && (
+        <div>
+          <PhotoDropzone photoData={s.photoData} setPhotoData={s.setPhotoData}
+            photoUrl={s.photoUrl} setPhotoUrl={s.setPhotoUrl}/>
+          <div className="tool-sub">Sans photo, Forje cherche via Serper</div>
+        </div>
+      )}
+      {s.imageMode === 'ai' && (
+        <div className="tool-sub" style={{ lineHeight:1.6 }}>
+          Gemini génère un visuel cinématique sur-mesure.<br/>
+          <span style={{ opacity:.65 }}>Personne réelle → Gemini · Ambiance/Objet → GPT-Image-1</span>
+        </div>
+      )}
     </ToolSection>
   </>);
 
@@ -426,6 +452,11 @@ const GenLoader = ({ preset }) => (
     <div style={{ width:28, height:28, border:'2.5px solid var(--app-line)',
       borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .8s linear infinite' }}/>
     <span style={{ fontSize:13 }}>Génération en cours…</span>
+    {preset?.id === 'actu' && (
+      <span style={{ fontSize:11, color:'var(--app-fg-4)', textAlign:'center', maxWidth:160, lineHeight:1.5 }}>
+        L'IA compose le visuel — 20-40 sec
+      </span>
+    )}
   </div>
 );
 
@@ -437,13 +468,15 @@ const GenerateChat = ({ preset, onBack }) => {
   const [authorName,  setAuthorName]  = useState('');
   const [authorTitle, setAuthorTitle] = useState('');
   const [topic,       setTopic]       = useState('');
+  const [imageMode,   setImageMode]   = useState('ai');
   const [generating,  setGenerating]  = useState(false);
   const [result,      setResult]      = useState(null);
   const [error,       setError]       = useState(null);
   const [activeSlide, setActiveSlide] = useState(0);
 
   const s = { newsText, setNewsText, photoUrl, setPhotoUrl, photoData, setPhotoData, quoteText, setQuoteText,
-              authorName, setAuthorName, authorTitle, setAuthorTitle, topic, setTopic };
+              authorName, setAuthorName, authorTitle, setAuthorTitle, topic, setTopic,
+              imageMode, setImageMode };
 
   const canGenerate = {
     actu:     newsText.trim().length > 10,
@@ -460,7 +493,7 @@ const GenerateChat = ({ preset, onBack }) => {
       const userId = window.__currentUser?.id;
       const ep   = { actu:'/generate/actu', citation:'/generate/citation', deepdive:'/generate/deepdive' }[preset.id];
       const body = {
-        actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId },
+        actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, imageMode },
         citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId },
         deepdive: { topic, userId },
       }[preset.id];
@@ -1743,4 +1776,434 @@ const BrandScreen = () => {
   );
 };
 
-Object.assign(window, { GenerateScreen, QueueScreen, BrandScreen });
+// ═══════════════════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SettingsToggle = function({ checked, onChange }) {
+  return (
+    <button
+      className="settings-toggle"
+      onClick={function() { onChange(!checked); }}
+      style={{ background: checked ? 'var(--app-accent)' : 'var(--app-line-3)' }}
+    >
+      <span className="settings-toggle-knob" style={{ left: checked ? 18 : 2 }}/>
+    </button>
+  );
+};
+
+const SettingsSection = function({ title, sub, children }) {
+  return (
+    <div className="settings-section">
+      <div className="settings-section-head">
+        <div className="settings-section-title">{title}</div>
+        {sub && <div className="settings-section-sub">{sub}</div>}
+      </div>
+      <div className="settings-section-body">{children}</div>
+    </div>
+  );
+};
+
+const SettingsRow = function({ label, sub, right, danger }) {
+  return (
+    <div className={'settings-row' + (danger ? ' settings-row--danger' : '')}>
+      <div className="settings-row-l">
+        <div className="settings-row-label">{label}</div>
+        {sub && <div className="settings-row-sub">{sub}</div>}
+      </div>
+      {right && <div className="settings-row-r">{right}</div>}
+    </div>
+  );
+};
+
+const SettingsScreen = function() {
+  var [tab, setTab] = useState('compte');
+  var [notifEmail, setNotifEmail] = useState(true);
+  var [notifPush,  setNotifPush]  = useState(false);
+  var [autoScore,  setAutoScore]  = useState(true);
+  var [confirmDel, setConfirmDel] = useState(false);
+  var [profile, setProfile] = useState(null);
+
+  var user = window.__currentUser;
+  var sb   = window.__supabase;
+  var email = user?.email || '';
+  var fullName = user?.user_metadata?.full_name || '';
+  var displayName = fullName || email.split('@')[0] || 'Utilisateur';
+  var initials = (fullName
+    ? fullName.split(' ').map(function(w){ return w[0]; }).join('').slice(0,2)
+    : displayName.slice(0,2)).toUpperCase();
+
+  useEffect(function() {
+    if (!sb || !user) return;
+    sb.from('clients').select('plan,credits').eq('user_id', user.id).maybeSingle()
+      .then(function({ data }) { if (data) setProfile(data); });
+  }, []);
+
+  var plan = profile?.plan || 'free';
+  var credits = profile?.credits ?? 0;
+  var creditsMax = plan === 'pro' ? 150 : plan === 'starter' ? 80 : 30;
+  var creditsPct = Math.min(100, Math.round(credits / creditsMax * 100));
+  var planLabel = { pro:'Pro', starter:'Starter', free:'Free' }[plan] || 'Free';
+
+  var NAV = [
+    { id:'compte',      icon:'target',   label:'Mon compte'     },
+    { id:'plan',        icon:'bolt',     label:'Plan & crédits' },
+    { id:'connexions',  icon:'link',     label:'Connexions'     },
+    { id:'preferences', icon:'settings', label:'Préférences'    },
+  ];
+
+  var handleSignOut = async function() {
+    if (!sb) return;
+    await sb.auth.signOut();
+    window.location.reload();
+  };
+
+  var handlePwdReset = async function() {
+    if (!sb || !email) return;
+    await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    alert('Email de réinitialisation envoyé à ' + email);
+  };
+
+  return (
+    <div className="page-body">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Paramètres</h1>
+          <p className="page-subtitle">Compte, plan, connexions et préférences.</p>
+        </div>
+      </div>
+
+      <div className="settings-layout">
+
+        {/* ── Left nav ── */}
+        <nav className="settings-nav">
+          {NAV.map(function(item) {
+            return (
+              <button key={item.id}
+                className={'settings-nav-item' + (tab === item.id ? ' active' : '')}
+                onClick={function(){ setTab(item.id); }}>
+                <AppIcon name={item.icon} size={13}/>
+                {item.label}
+              </button>
+            );
+          })}
+          <div className="settings-nav-divider"/>
+          <button className="settings-nav-item settings-nav-item--danger" onClick={handleSignOut}>
+            <AppIcon name="logout" size={13}/>
+            Déconnexion
+          </button>
+        </nav>
+
+        {/* ── Content ── */}
+        <div className="settings-content">
+
+          {/* ────────── MON COMPTE ────────── */}
+          {tab === 'compte' && (
+            <div>
+              <div className="settings-avatar-card">
+                <div className="settings-avatar">{initials}</div>
+                <div>
+                  <div style={{ fontFamily:"'Fraunces',serif", fontSize:20, fontWeight:600,
+                    letterSpacing:'-0.03em', color:'var(--app-fg)', lineHeight:1.15 }}>
+                    {displayName}
+                  </div>
+                  <div style={{ fontSize:12, color:'var(--app-fg-4)', marginTop:3 }}>{email}</div>
+                  <div style={{ marginTop:8, display:'flex', gap:6 }}>
+                    <span className="settings-tag settings-tag--accent">{planLabel}</span>
+                    <span className="settings-tag settings-tag--neutral">{credits} / {creditsMax} crédits</span>
+                  </div>
+                </div>
+              </div>
+
+              <SettingsSection title="Informations du compte" sub="Vos données d'authentification Forje Studio.">
+                <SettingsRow
+                  label="Adresse email"
+                  sub={email}
+                  right={<span className="settings-tag">Vérifiée</span>}
+                />
+                <SettingsRow
+                  label="Mot de passe"
+                  sub="Réinitialisez votre mot de passe par email."
+                  right={
+                    <button className="btn btn-ghost btn-sm" onClick={handlePwdReset}>
+                      Réinitialiser
+                    </button>
+                  }
+                />
+                <SettingsRow
+                  label="Identifiant compte"
+                  sub="Référence interne — ne peut pas être modifié."
+                  right={
+                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11,
+                      color:'var(--app-fg-4)', background:'var(--app-surface-2)',
+                      padding:'3px 8px', borderRadius:4, border:'1px solid var(--app-line)' }}>
+                      {user?.id ? user.id.slice(0,12) + '…' : '—'}
+                    </span>
+                  }
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Zone de danger"
+                sub="Ces actions sont irréversibles. Procédez avec précaution.">
+                <SettingsRow danger
+                  label="Supprimer mon compte"
+                  sub="Efface définitivement vos posts, votre identité de marque et toutes vos données."
+                  right={
+                    !confirmDel
+                      ? <button className="btn btn-sm"
+                          style={{ color:'var(--app-danger)', border:'1px solid rgba(209,69,69,.25)',
+                            background:'transparent', fontFamily:'inherit' }}
+                          onClick={function(){ setConfirmDel(true); }}>
+                          Supprimer
+                        </button>
+                      : <div style={{ display:'flex', gap:7, alignItems:'center' }}>
+                          <span style={{ fontSize:12, color:'var(--app-fg-4)' }}>Confirmer ?</span>
+                          <button className="btn btn-sm"
+                            style={{ background:'var(--app-danger)', color:'#fff', border:'none', fontFamily:'inherit' }}>
+                            Oui, supprimer
+                          </button>
+                          <button className="btn btn-ghost btn-sm"
+                            onClick={function(){ setConfirmDel(false); }}>
+                            Annuler
+                          </button>
+                        </div>
+                  }
+                />
+              </SettingsSection>
+            </div>
+          )}
+
+          {/* ────────── PLAN & CRÉDITS ────────── */}
+          {tab === 'plan' && (
+            <div>
+              <div className="settings-plan-hero">
+                <div className="settings-plan-tier">
+                  <AppIcon name="bolt" size={11}/>
+                  {planLabel}
+                </div>
+                <div style={{ fontFamily:"'Fraunces',serif", fontSize:26, fontWeight:600,
+                  letterSpacing:'-0.04em', lineHeight:1.1, color:'var(--app-fg)' }}>
+                  {plan === 'free' ? 'Forfait gratuit' : plan === 'starter' ? 'Forfait Starter' : 'Forfait Pro'}
+                </div>
+                <div style={{ fontSize:13, color:'var(--app-fg-3)', marginTop:6 }}>
+                  {plan === 'free'
+                    ? '30 créations / mois · 1 identité de marque · Qualité standard'
+                    : plan === 'starter'
+                    ? '80 créations / mois · 3 identités · Génération IA incluse'
+                    : 'Illimité · 10 identités · IA premium · Équipe jusqu\'à 5'}
+                </div>
+                {plan === 'free' && (
+                  <button className="btn btn-primary" style={{ marginTop:20, width:'fit-content' }}>
+                    <AppIcon name="bolt" size={13}/>
+                    Passer à Pro — 29 €/mois
+                  </button>
+                )}
+              </div>
+
+              <SettingsSection title="Utilisation ce mois-ci"
+                sub="Les crédits se réinitialisent le 1er de chaque mois.">
+                <SettingsRow
+                  label="Créations utilisées"
+                  sub={creditsMax - credits + ' restantes ce mois'}
+                  right={
+                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                      <div className="settings-credits-bar">
+                        <div className="settings-credits-fill" style={{ width: creditsPct + '%' }}/>
+                      </div>
+                      <span style={{ fontSize:12, fontWeight:600, color:'var(--app-fg-2)',
+                        fontVariantNumeric:'tabular-nums', minWidth:42, textAlign:'right' }}>
+                        {credits} / {creditsMax}
+                      </span>
+                    </div>
+                  }
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Comparer les offres">
+                {[
+                  { id:'free',    name:'Free',    price:'0 €',  features:['30 créations / mois','1 identité de marque','Actu · Citation · Deep Dive','Export JPEG'] },
+                  { id:'starter', name:'Starter', price:'12 €', features:['80 créations / mois','3 identités de marque','Génération IA cinématique','Planification Instagram'] },
+                  { id:'pro',     name:'Pro',     price:'29 €', features:['Illimité','10 identités de marque','IA image premium','Équipe jusqu\'à 5 membres','API access'] },
+                ].map(function(p) {
+                  var isCurrent = plan === p.id;
+                  return (
+                    <div key={p.id} className={'settings-plan-compare-row' + (isCurrent ? ' spc--current' : '')}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                        <span style={{ fontSize:13.5, fontWeight:600, color: isCurrent ? 'var(--app-accent)' : 'var(--app-fg)' }}>
+                          {p.name}
+                        </span>
+                        {isCurrent && <span className="settings-tag settings-tag--accent">Actuel</span>}
+                      </div>
+                      <div style={{ display:'flex', gap:24, alignItems:'flex-end' }}>
+                        <div style={{ flex:1 }}>
+                          {p.features.map(function(f, i) {
+                            return (
+                              <div key={i} style={{ display:'flex', alignItems:'center', gap:6,
+                                fontSize:12, color:'var(--app-fg-3)', lineHeight:1.9 }}>
+                                <span style={{ color:'var(--app-accent)', opacity: isCurrent ? 1 : .5, fontSize:10 }}>◆</span>
+                                {f}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{ textAlign:'right', flexShrink:0 }}>
+                          <div style={{ fontFamily:"'Fraunces',serif", fontSize:20, fontWeight:600,
+                            letterSpacing:'-0.03em', lineHeight:1 }}>
+                            {p.price}
+                            <span style={{ fontSize:11, fontWeight:400, color:'var(--app-fg-4)' }}>/mois</span>
+                          </div>
+                          {!isCurrent && (
+                            <button className="btn btn-ghost btn-sm" style={{ marginTop:8 }}>
+                              Choisir
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </SettingsSection>
+            </div>
+          )}
+
+          {/* ────────── CONNEXIONS ────────── */}
+          {tab === 'connexions' && (
+            <div>
+              <SettingsSection title="Réseaux sociaux"
+                sub="Connectez vos comptes pour publier directement depuis Forje Studio.">
+                {[
+                  { name:'Instagram', emoji:'📸', color:'#E1306C', bg:'rgba(225,48,108,.1)', status:'disconnected', live:true },
+                  { name:'LinkedIn',  emoji:'💼', color:'#0A66C2', bg:'rgba(10,102,194,.08)', status:'soon', live:false },
+                  { name:'X · Twitter',emoji:'𝕏', color:'#000', bg:'rgba(0,0,0,.06)', status:'soon', live:false },
+                  { name:'Buffer',    emoji:'🗓', color:'#4A90D9', bg:'rgba(74,144,217,.1)', status:'soon', live:false },
+                ].map(function(conn) {
+                  return (
+                    <div key={conn.name} className="settings-conn-row">
+                      <div className="settings-conn-icon"
+                        style={{ background: conn.live ? conn.bg : 'var(--app-surface-2)' }}>
+                        <span style={{ fontSize:17, opacity: conn.live ? 1 : .45 }}>{conn.emoji}</span>
+                      </div>
+                      <div className="settings-conn-info">
+                        <div className="settings-conn-name"
+                          style={{ color: conn.live ? 'var(--app-fg)' : 'var(--app-fg-4)' }}>
+                          {conn.name}
+                        </div>
+                        <div className={'settings-conn-status' + (conn.status === 'connected' ? ' connected' : '')}>
+                          {conn.status === 'connected' ? '● Connecté' : conn.status === 'soon' ? 'Bientôt disponible' : 'Non connecté'}
+                        </div>
+                      </div>
+                      {conn.live
+                        ? <button className="btn btn-ghost btn-sm">
+                            {conn.status === 'connected' ? 'Déconnecter' : 'Connecter'}
+                          </button>
+                        : <span className="settings-tag settings-tag--neutral" style={{ opacity:.6, fontSize:10 }}>
+                            Bientôt
+                          </span>}
+                    </div>
+                  );
+                })}
+              </SettingsSection>
+
+              <SettingsSection title="Intégrations"
+                sub="Outils tiers pour planifier et analyser vos publications.">
+                {[
+                  { name:'Later', emoji:'🕐', status:'soon' },
+                  { name:'Hootsuite', emoji:'🦉', status:'soon' },
+                  { name:'Make / Zapier', emoji:'⚡', status:'soon' },
+                ].map(function(tool) {
+                  return (
+                    <div key={tool.name} className="settings-conn-row">
+                      <div className="settings-conn-icon" style={{ background:'var(--app-surface-2)' }}>
+                        <span style={{ fontSize:17, opacity:.4 }}>{tool.emoji}</span>
+                      </div>
+                      <div className="settings-conn-info">
+                        <div className="settings-conn-name" style={{ color:'var(--app-fg-4)' }}>{tool.name}</div>
+                        <div className="settings-conn-status">Bientôt disponible</div>
+                      </div>
+                      <span className="settings-tag settings-tag--neutral" style={{ opacity:.6, fontSize:10 }}>Bientôt</span>
+                    </div>
+                  );
+                })}
+              </SettingsSection>
+            </div>
+          )}
+
+          {/* ────────── PRÉFÉRENCES ────────── */}
+          {tab === 'preferences' && (
+            <div>
+              <SettingsSection title="Notifications"
+                sub="Choisissez comment Forje vous tient informé.">
+                <SettingsRow
+                  label="Résumé quotidien par email"
+                  sub="Un brief des meilleures actus à 8h chaque matin."
+                  right={<SettingsToggle checked={notifEmail} onChange={setNotifEmail}/>}
+                />
+                <SettingsRow
+                  label="Notifications push"
+                  sub="Alertes en temps réel sur les articles très scorés."
+                  right={<SettingsToggle checked={notifPush} onChange={setNotifPush}/>}
+                />
+                <SettingsRow
+                  label="Score automatique des articles"
+                  sub="Forje évalue chaque article entrant selon votre ligne éditoriale."
+                  right={<SettingsToggle checked={autoScore} onChange={setAutoScore}/>}
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Interface"
+                sub="Personnalisez votre expérience Forje Studio.">
+                <SettingsRow
+                  label="Langue"
+                  sub="Langue de l'interface utilisateur."
+                  right={
+                    <select style={{ background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
+                      borderRadius:'var(--radius-sm)', padding:'5px 10px', color:'var(--app-fg)',
+                      fontSize:12, fontFamily:'inherit', cursor:'pointer', outline:'none' }}>
+                      <option>🇫🇷  Français</option>
+                      <option>🇬🇧  English</option>
+                    </select>
+                  }
+                />
+                <SettingsRow
+                  label="Format de post par défaut"
+                  sub="Affiché en premier sur l'écran Générer."
+                  right={
+                    <select style={{ background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
+                      borderRadius:'var(--radius-sm)', padding:'5px 10px', color:'var(--app-fg)',
+                      fontSize:12, fontFamily:'inherit', cursor:'pointer', outline:'none' }}>
+                      <option>Actualité</option>
+                      <option>Citation</option>
+                      <option>Deep Dive</option>
+                    </select>
+                  }
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Données & Confidentialité"
+                sub="Contrôlez comment Forje utilise vos données.">
+                <SettingsRow
+                  label="Améliorer Forje avec mes données"
+                  sub="Vos posts et interactions servent à entraîner les modèles de personnalisation."
+                  right={<SettingsToggle checked={true} onChange={function(){}}/>}
+                />
+                <SettingsRow
+                  label="Politique de confidentialité"
+                  sub="Consultez la politique complète sur forje.studio/privacy."
+                  right={
+                    <button className="btn btn-ghost btn-sm">
+                      <AppIcon name="arrowRight" size={12}/>
+                      Lire
+                    </button>
+                  }
+                />
+              </SettingsSection>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+Object.assign(window, { GenerateScreen, QueueScreen, BrandScreen, SettingsScreen });

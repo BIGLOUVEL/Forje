@@ -94,7 +94,7 @@ const App = () => {
           {screen === 'published' && <QueueScreen defaultView="grid"/>}
           {screen === 'brand' && <BrandScreen/>}
           {screen === 'sources' && <SourcesScreen authUser={window.__currentUser}/>}
-          {screen === 'settings' && <PlaceholderScreen title="Paramètres" desc="Comptes connectés, équipe, facturation."/>}
+          {screen === 'settings' && <SettingsScreen/>}
         </main>
       </div>
 

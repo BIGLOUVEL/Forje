@@ -83,10 +83,8 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null 
   const planLabel = { pro: 'Pro', free: 'Free', starter: 'Starter' }[plan] || 'Free';
 
   const mainItems = [
-    { key: 'home',     icon: 'home',     label: 'Accueil' },
     { key: 'generate', icon: 'sparkle',  label: 'Générer' },
     { key: 'calendar', icon: 'calendar', label: 'Calendrier' },
-    { key: 'published',icon: 'archive',  label: 'Publiés' },
   ];
   const workspaceItems = [
     { key: 'brand',    icon: 'palette',  label: 'Identité de marque' },

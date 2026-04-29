@@ -1,5 +1,6 @@
 const express = require('express');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const OpenAI  = require('openai');
 const https   = require('https');
 const http    = require('http');
 const { URL } = require('url');
@@ -7,6 +8,8 @@ const { URL } = require('url');
 const router = express.Router();
 const genai  = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const GEMINI_MODEL = 'gemini-2.5-pro';
+let openaiClient;
+try { openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); } catch (_) {}
 
 const { supabase }  = require('../lib/supabase');
 const { fontDefs, PACK_FONTS_GF } = require('../lib/fontLoader');
@@ -150,30 +153,110 @@ function getPack(graphicStyle) {
   return FONT_PACKS_SRV[id] || FONT_PACKS_SRV['impact-news'];
 }
 
+// ─── Image generation ────────────────────────────────────────────────────────
+
+function buildImagePrompt(brief, client) {
+  const mood = client?.mood || 'dramatique';
+  const moodLights = {
+    dramatique: 'dramatic cinematic lighting, deep shadows, high contrast, chiaroscuro',
+    energique:  'vibrant dynamic lighting, energetic composition, strong sense of motion',
+    premium:    'soft elegant lighting, refined composition, luxury editorial aesthetic',
+    populaire:  'bold direct lighting, maximum contrast, immediate visual impact',
+    factuel:    'clean neutral documentary lighting, journalistic credibility',
+  };
+  const light  = moodLights[mood] || moodLights.dramatique;
+  const colors = client?.brand_colors || [];
+  return [
+    brief.visual_brief,
+    `Mood: ${brief.emotion || mood}. ${light}.`,
+    colors.length >= 2 ? `Color palette: dominant ${colors[0]}, accent ${colors[1]}.` : '',
+    'Portrait format 4:5. Cinematic photorealistic editorial quality.',
+    'Absolutely NO text, NO watermarks, NO captions in the image.',
+    'Bottom 35% of the frame must be slightly darker (room for text overlay).',
+  ].filter(Boolean).join(' ');
+}
+
+async function generateImageGPT(prompt) {
+  if (!openaiClient) throw new Error('OpenAI client not initialized');
+  const response = await openaiClient.images.generate({
+    model:   'gpt-image-1',
+    prompt:  prompt,
+    size:    '1024x1536',
+    quality: 'high',
+  });
+  const b64 = response.data?.[0]?.b64_json;
+  if (!b64) throw new Error('No image data from GPT-Image-1');
+  return Buffer.from(b64, 'base64');
+}
+
+async function generateImageGemini(prompt, referenceBuffers = []) {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) throw new Error('GOOGLE_API_KEY manquant');
+  const MODEL = 'gemini-2.0-flash-exp';
+  const parts = [
+    { text: prompt },
+    ...referenceBuffers.slice(0, 2).map(buf => ({
+      inline_data: { data: buf.toString('base64'), mime_type: 'image/jpeg' },
+    })),
+  ];
+  const body = JSON.stringify({
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+  });
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'generativelanguage.googleapis.com',
+      path:     `/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
+      method:   'POST',
+      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout:  90000,
+    }, (res) => {
+      let raw = '';
+      res.on('data', c => raw += c);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(raw);
+          for (const p of (data.candidates?.[0]?.content?.parts || [])) {
+            if (p.inlineData?.data) { resolve(Buffer.from(p.inlineData.data, 'base64')); return; }
+          }
+          reject(new Error('Gemini image: no inline data — ' + raw.slice(0, 300)));
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Gemini image timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
 // ─── POST /api/generate/actu ──────────────────────────────────────────────────
 router.post('/actu', async (req, res) => {
   if (!sharp) return res.status(500).json({ error: 'Sharp non installe (npm install sharp)' });
 
-  const { newsText, photoUrl, photoData, userId } = req.body;
+  const { newsText, photoUrl, photoData, userId, imageMode = 'classic' } = req.body;
   if (!newsText) return res.status(400).json({ error: 'newsText manquant' });
 
   try {
-    const client  = await getClientBrand(userId);
-    const brandCtx = buildBrandContext(client);
+    const client       = await getClientBrand(userId);
+    const brandCtx     = buildBrandContext(client);
     const packId       = getPackId(client?.graphic_style);
     const primaryColor = client?.brand_colors?.[0] || null;
     const accentColor  = client?.brand_colors?.[1] || null;
 
-    // 1. Gemini -> brief editorial
+    // 1. Gemini -> brief éditorial + visuel
     const raw = await gemini(
       'Tu es directeur artistique d\'un media Instagram.' + brandCtx + '\n\n' +
       'Actu : "' + newsText + '"\n\n' +
       'Genere un JSON :\n' +
       '{\n' +
-      '  "search_query": "requete Google Images (en anglais) pour trouver la meilleure photo de la personne ou du sujet concerne",\n' +
+      '  "has_real_person": true or false (l\'actu met-elle en scene une personne reelle nommee ?),\n' +
+      '  "search_query": "requete Google Images en anglais pour trouver la meilleure photo",\n' +
+      '  "visual_brief": "description cinematique de l\'image a generer, 2-3 phrases style shot description",\n' +
+      '  "emotion": "dramatique | energique | premium | populaire | factuel",\n' +
       '  "title": "titre percutant en MAJUSCULES, 4-6 mots max",\n' +
       '  "subtitle": "sous-titre factuel, 8-12 mots",\n' +
-      '  "category": "categorie 1 mot : SPORT | POLITIQUE | ECONOMIE | CULTURE | TECH | SOCIETE"\n' +
+      '  "category": "SPORT | POLITIQUE | ECONOMIE | CULTURE | TECH | SOCIETE"\n' +
       '}\n\n' +
       'Retourne UNIQUEMENT le JSON.'
     );
@@ -185,24 +268,54 @@ router.post('/actu', async (req, res) => {
       const m = raw.match(/\{[\s\S]*\}/);
       brief = m ? JSON.parse(m[0]) : {};
     }
-    const { search_query, title = 'BREAKING', subtitle = newsText.slice(0, 60), category = 'ACTU' } = brief;
+    const {
+      search_query, title = 'BREAKING', subtitle = newsText.slice(0, 60),
+      category = 'ACTU', has_real_person = false, visual_brief,
+    } = brief;
 
-    // 2. Photo : base64 > URL > Serper
-    let photoBuffer = null;
+    // 2. Serper reference photos (used by Gemini OR as classic/fallback background)
+    let serperBuffers = [];
     if (photoData) {
       const b64 = photoData.split(',')[1];
-      if (b64) photoBuffer = Buffer.from(b64, 'base64');
+      if (b64) serperBuffers.push(Buffer.from(b64, 'base64'));
     }
-    if (!photoBuffer && photoUrl) {
-      try { photoBuffer = await downloadBuffer(photoUrl); } catch (_) {}
+    if (serperBuffers.length === 0 && photoUrl) {
+      try { serperBuffers.push(await downloadBuffer(photoUrl)); } catch (_) {}
     }
-    if (!photoBuffer && search_query && process.env.SERPER_API_KEY) {
-      const images = await serperImages(search_query);
-      const urls   = images.map(img => img.imageUrl).filter(Boolean);
-      photoBuffer  = await tryDownloadFirst(urls);
+    if (serperBuffers.length === 0 && search_query && process.env.SERPER_API_KEY) {
+      const images  = await serperImages(search_query);
+      const urls    = images.map(img => img.imageUrl).filter(Boolean).slice(0, 3);
+      const results = await Promise.all(urls.map(u => downloadBuffer(u).catch(() => null)));
+      serperBuffers = results.filter(b => b && b.length > 5000);
     }
 
-    // 3. Sharp composite 1080x1350
+    // 3. Image : AI mode ou classic
+    let photoBuffer = null;
+    if (imageMode === 'ai' && visual_brief) {
+      const prompt = buildImagePrompt(brief, client);
+      try {
+        if (has_real_person) {
+          photoBuffer = await generateImageGemini(prompt, serperBuffers);
+          console.log('[Actu] Gemini image OK');
+        } else {
+          photoBuffer = await generateImageGPT(prompt);
+          console.log('[Actu] GPT-Image-1 OK');
+        }
+      } catch (aiErr) {
+        console.warn('[Actu] AI image failed, trying GPT-Image-1 fallback:', aiErr.message);
+        try {
+          photoBuffer = await generateImageGPT(prompt);
+          console.log('[Actu] GPT-Image-1 fallback OK');
+        } catch (gptErr) {
+          console.warn('[Actu] GPT-Image-1 also failed, using Serper:', gptErr.message);
+          photoBuffer = serperBuffers[0] || null;
+        }
+      }
+    } else {
+      photoBuffer = serperBuffers[0] || null;
+    }
+
+    // 4. Sharp composite 1080x1350
     const W = 1080, H = 1350;
 
     let base;
