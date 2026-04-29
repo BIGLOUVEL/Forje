@@ -57,7 +57,8 @@ ${arr(compte.concurrents)}
 
 Seuils : <5 exclure | 5-6.9 faible_priorite | 7-8.4 a_traiter | ≥8.5 urgent
 
-━━ CAPTIONS (score ≥ 7 uniquement) ━━
+━━ CAPTIONS (urgent ≥ 8.5 uniquement) ━━
+- Pour les articles flag="urgent" SEULEMENT, génère une caption. Les autres : caption=null.
 - Ton : ${val(compte.ton)}
 - Jamais de langue de bois, angle spécifique
 - Utilise le vocabulaire naturel de l'audience : ${arr(compte.vocabulaire_audience)}
@@ -114,9 +115,9 @@ JSON valide uniquement, aucun texte autour :
 // ─── Appel Agent 2 ────────────────────────────────────────────────────────────
 async function runAgent2(compte, newsLot) {
   const response = await client.messages.create({
-    model:      'claude-sonnet-4-6',
-    max_tokens: 8000,
-    system:     buildSystemPrompt(compte),
+    model:      'claude-haiku-4-5-20251001',
+    max_tokens: 1500,
+    system: [{ type: 'text', text: buildSystemPrompt(compte), cache_control: { type: 'ephemeral' } }],
     messages: [{
       role:    'user',
       content: JSON.stringify({

@@ -23,7 +23,7 @@ async function gemini(prompt) {
 async function getClientBrand(userId) {
   if (!userId) return null;
   const { data } = await supabase.from('clients').select(
-    'name,logo_url,brand_colors,font_primary,mood,graphic_style,tone_tags,topics,preferred_format'
+    'name,logo_url,brand_colors,font_primary,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
   ).eq('user_id', userId).maybeSingle();
   return data || null;
 }
@@ -176,11 +176,42 @@ function buildImagePrompt(brief, client) {
   ].filter(Boolean).join(' ');
 }
 
-async function generateImageGPT(prompt) {
+// Extrait des descripteurs de style depuis une image via GPT-4o Vision
+// Utilisé pour injecter le style dans le prompt GPT-Image-1
+async function extractStyleDescriptors(styleRefBuffer) {
+  if (!openaiClient || !styleRefBuffer) return null;
+  try {
+    const b64 = styleRefBuffer.toString('base64');
+    const resp = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 120,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}`, detail: 'low' } },
+          { type: 'text', text: 'Describe ONLY the visual style of this image in 2-3 sentences: composition style, lighting mood, aesthetic direction, graphic treatment. Do NOT describe the objects, people or colors. Be concise and technical, like a shot description for a photographer.' },
+        ],
+      }],
+    });
+    return resp.choices?.[0]?.message?.content?.trim() || null;
+  } catch (e) {
+    console.warn('[StyleRef] Vision extraction failed:', e.message);
+    return null;
+  }
+}
+
+async function generateImageGPT(prompt, styleRefBuffer = null) {
   if (!openaiClient) throw new Error('OpenAI client not initialized');
+  let finalPrompt = prompt;
+  if (styleRefBuffer) {
+    const styleDesc = await extractStyleDescriptors(styleRefBuffer);
+    if (styleDesc) {
+      finalPrompt = prompt + ` Visual style reference (follow this aesthetic, not the objects): ${styleDesc}`;
+    }
+  }
   const response = await openaiClient.images.generate({
     model:   'gpt-image-1',
-    prompt:  prompt,
+    prompt:  finalPrompt,
     size:    '1024x1536',
     quality: 'high',
   });
@@ -189,12 +220,21 @@ async function generateImageGPT(prompt) {
   return Buffer.from(b64, 'base64');
 }
 
-async function generateImageGemini(prompt, referenceBuffers = []) {
+async function generateImageGemini(prompt, referenceBuffers = [], styleRefBuffer = null) {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) throw new Error('GOOGLE_API_KEY manquant');
   const MODEL = 'gemini-2.0-flash-exp';
+
+  const styleInstruction = styleRefBuffer
+    ? 'The next image is a STYLE REFERENCE ONLY. Reproduce its visual aesthetic, composition style, lighting mood and graphic treatment — but NOT its specific objects, subjects, or colors. The text prompt takes absolute priority in case of conflict.'
+    : null;
+
   const parts = [
     { text: prompt },
+    ...(styleRefBuffer ? [
+      { text: styleInstruction },
+      { inline_data: { data: styleRefBuffer.toString('base64'), mime_type: 'image/jpeg' } },
+    ] : []),
     ...referenceBuffers.slice(0, 2).map(buf => ({
       inline_data: { data: buf.toString('base64'), mime_type: 'image/jpeg' },
     })),
@@ -234,7 +274,7 @@ async function generateImageGemini(prompt, referenceBuffers = []) {
 router.post('/actu', async (req, res) => {
   if (!sharp) return res.status(500).json({ error: 'Sharp non installe (npm install sharp)' });
 
-  const { newsText, photoUrl, photoData, userId, imageMode = 'classic' } = req.body;
+  const { newsText, photoUrl, photoData, userId, imageMode = 'classic', styleRefData } = req.body;
   if (!newsText) return res.status(400).json({ error: 'newsText manquant' });
 
   try {
@@ -245,15 +285,16 @@ router.post('/actu', async (req, res) => {
     const accentColor  = client?.brand_colors?.[1] || null;
 
     // 1. Gemini -> brief éditorial + visuel
+    const needsVisual = imageMode === 'ai';
     const raw = await gemini(
       'Tu es directeur artistique d\'un media Instagram.' + brandCtx + '\n\n' +
       'Actu : "' + newsText + '"\n\n' +
       'Genere un JSON :\n' +
       '{\n' +
-      '  "has_real_person": true or false (l\'actu met-elle en scene une personne reelle nommee ?),\n' +
+      (needsVisual ? '  "has_real_person": true or false (l\'actu met-elle en scene une personne reelle nommee ?),\n' : '') +
       '  "search_query": "requete Google Images en anglais pour trouver la meilleure photo",\n' +
-      '  "visual_brief": "description cinematique de l\'image a generer, 2-3 phrases style shot description",\n' +
-      '  "emotion": "dramatique | energique | premium | populaire | factuel",\n' +
+      (needsVisual ? '  "visual_brief": "description cinematique de l\'image a generer, 2-3 phrases style shot description",\n' : '') +
+      (needsVisual ? '  "emotion": "dramatique | energique | premium | populaire | factuel",\n' : '') +
       '  "title": "titre percutant en MAJUSCULES, 4-6 mots max",\n' +
       '  "subtitle": "sous-titre factuel, 8-12 mots",\n' +
       '  "category": "SPORT | POLITIQUE | ECONOMIE | CULTURE | TECH | SOCIETE"\n' +
@@ -289,22 +330,31 @@ router.post('/actu', async (req, res) => {
       serperBuffers = results.filter(b => b && b.length > 5000);
     }
 
-    // 3. Image : AI mode ou classic
+    // 3. Style ref : one-shot (request) > persistent (brand)
+    let styleRefBuffer = null;
+    if (styleRefData) {
+      const b64 = styleRefData.split(',')[1] || styleRefData;
+      if (b64) styleRefBuffer = Buffer.from(b64, 'base64');
+    } else if (client?.style_ref_url) {
+      try { styleRefBuffer = await downloadBuffer(client.style_ref_url); } catch (_) {}
+    }
+
+    // 4. Image : AI mode ou classic
     let photoBuffer = null;
     if (imageMode === 'ai' && visual_brief) {
       const prompt = buildImagePrompt(brief, client);
       try {
         if (has_real_person) {
-          photoBuffer = await generateImageGemini(prompt, serperBuffers);
+          photoBuffer = await generateImageGemini(prompt, serperBuffers, styleRefBuffer);
           console.log('[Actu] Gemini image OK');
         } else {
-          photoBuffer = await generateImageGPT(prompt);
+          photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
           console.log('[Actu] GPT-Image-1 OK');
         }
       } catch (aiErr) {
         console.warn('[Actu] AI image failed, trying GPT-Image-1 fallback:', aiErr.message);
         try {
-          photoBuffer = await generateImageGPT(prompt);
+          photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
           console.log('[Actu] GPT-Image-1 fallback OK');
         } catch (gptErr) {
           console.warn('[Actu] GPT-Image-1 also failed, using Serper:', gptErr.message);

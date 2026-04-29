@@ -22,7 +22,7 @@ async function renderActuCanvas(data) {
   var doUppercase = pack ? (pack.headStyle.textTransform === 'uppercase') : true;
   var catFamily   = pack ? pack.catStyle.fontFamily : 'Arial,sans-serif';
 
-  // 3. Load pack font via FontFace API from local server (fast, reliable, no Google Fonts needed)
+  // 3. Load pack font via @font-face injection + document.fonts.load() (plus fiable que FontFace API pour Canvas)
   var PACK_FONT_SRCS = {
     'impact-news':    { family:'Bebas Neue',       url:'/fonts/bebas-neue/bebas-neue-latin-400-normal.woff',              weight:400, style:'normal' },
     'edito-luxe':     { family:'Playfair Display',  url:'/fonts/playfair-display/playfair-display-latin-900-italic.woff',  weight:900, style:'italic' },
@@ -32,14 +32,21 @@ async function renderActuCanvas(data) {
   };
   var fi = PACK_FONT_SRCS[data.packId];
   if (fi) {
-    var checkSpec = fi.style + ' ' + fi.weight + ' 72px \'' + fi.family + '\'';
-    if (!document.fonts.check(checkSpec)) {
-      try {
-        var face = new FontFace(fi.family, 'url(' + fi.url + ')', { weight: String(fi.weight), style: fi.style });
-        var loaded = await face.load();
-        document.fonts.add(loaded);
-      } catch(e) { console.warn('[Font]', e.message); }
+    // Injecte @font-face dans le DOM si pas encore présent (1 seule fois par famille)
+    var styleId = 'ff-' + data.packId;
+    if (!document.getElementById(styleId)) {
+      var style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = '@font-face{font-family:\'' + fi.family + '\';src:url(\'' + fi.url + '\') format(\'woff\');font-weight:' + fi.weight + ';font-style:' + fi.style + ';}';
+      document.head.appendChild(style);
     }
+    // Attend que la police soit prête pour le Canvas
+    try {
+      await Promise.race([
+        document.fonts.load(fi.style + ' ' + fi.weight + ' 72px \'' + fi.family + '\''),
+        new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('font timeout')); }, 4000); }),
+      ]);
+    } catch(e) { console.warn('[Font]', e.message); }
     headFamily = '\'' + fi.family + '\',' + headFamily;
   }
 
@@ -374,6 +381,44 @@ const PhotoDropzone = ({ photoData, setPhotoData, photoUrl, setPhotoUrl }) => {
   );
 };
 
+// Dropzone légère pour une image de référence de style
+const StyleRefDropzone = ({ value, onChange, label = 'Référence de style', hint = 'Influence l\'esthétique uniquement — le prompt prime' }) => {
+  var readFile = function(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    var reader = new FileReader();
+    reader.onload = function(e) { onChange(e.target.result); };
+    reader.readAsDataURL(file);
+  };
+  return (
+    <div style={{ marginTop:10 }}>
+      <div style={{ fontSize:11, fontWeight:700, color:'var(--app-fg-4)', letterSpacing:'0.08em',
+        textTransform:'uppercase', marginBottom:6 }}>{label}</div>
+      {value ? (
+        <div style={{ position:'relative', display:'inline-block' }}>
+          <img src={value} style={{ width:72, height:72, borderRadius:8, objectFit:'cover',
+            border:'1px solid var(--app-line)', display:'block' }}/>
+          <button onClick={function(){ onChange(null); }}
+            style={{ position:'absolute', top:-7, right:-7, background:'var(--app-surface-3)',
+              border:'1px solid var(--app-line)', borderRadius:'50%', width:18, height:18, color:'var(--app-fg-3)',
+              cursor:'pointer', fontSize:11, lineHeight:'18px', textAlign:'center', padding:0 }}>×</button>
+          <div style={{ fontSize:10, color:'var(--app-fg-4)', marginTop:4, maxWidth:72, lineHeight:1.4 }}>{hint}</div>
+        </div>
+      ) : (
+        <div onClick={function(){
+          var inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
+          inp.onchange = function(e){ readFile(e.target.files[0]); }; inp.click();
+        }} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px',
+          border:'1.5px dashed var(--app-line)', borderRadius:8, cursor:'pointer',
+          background:'var(--app-surface)', transition:'border-color .15s',
+          color:'var(--app-fg-4)', fontSize:12 }}>
+          <AppIcon name="image" size={14}/>
+          <span>Ajouter une ref de style <span style={{opacity:.55, fontSize:11}}>— {hint}</span></span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const GenFormFields = ({ preset, s }) => {
   if (preset.id === 'actu') return (<>
     <ToolSection title="Actu" icon="news">
@@ -405,9 +450,16 @@ const GenFormFields = ({ preset, s }) => {
         </div>
       )}
       {s.imageMode === 'ai' && (
-        <div className="tool-sub" style={{ lineHeight:1.6 }}>
-          Gemini génère un visuel cinématique sur-mesure.<br/>
-          <span style={{ opacity:.65 }}>Personne réelle → Gemini · Ambiance/Objet → GPT-Image-1</span>
+        <div>
+          <div className="tool-sub" style={{ lineHeight:1.6 }}>
+            Gemini génère un visuel cinématique sur-mesure.<br/>
+            <span style={{ opacity:.65 }}>Personne réelle → Gemini · Ambiance/Objet → GPT-Image-1</span>
+          </div>
+          <StyleRefDropzone
+            value={s.styleRefData}
+            onChange={s.setStyleRefData}
+            label="Ref de style (cette génération)"
+            hint="usage unique — esthétique uniquement"/>
         </div>
       )}
     </ToolSection>
@@ -468,15 +520,16 @@ const GenerateChat = ({ preset, onBack }) => {
   const [authorName,  setAuthorName]  = useState('');
   const [authorTitle, setAuthorTitle] = useState('');
   const [topic,       setTopic]       = useState('');
-  const [imageMode,   setImageMode]   = useState('ai');
-  const [generating,  setGenerating]  = useState(false);
-  const [result,      setResult]      = useState(null);
-  const [error,       setError]       = useState(null);
-  const [activeSlide, setActiveSlide] = useState(0);
+  const [imageMode,    setImageMode]    = useState('ai');
+  const [styleRefData, setStyleRefData] = useState(null);
+  const [generating,   setGenerating]   = useState(false);
+  const [result,       setResult]       = useState(null);
+  const [error,        setError]        = useState(null);
+  const [activeSlide,  setActiveSlide]  = useState(0);
 
   const s = { newsText, setNewsText, photoUrl, setPhotoUrl, photoData, setPhotoData, quoteText, setQuoteText,
               authorName, setAuthorName, authorTitle, setAuthorTitle, topic, setTopic,
-              imageMode, setImageMode };
+              imageMode, setImageMode, styleRefData, setStyleRefData };
 
   const canGenerate = {
     actu:     newsText.trim().length > 10,
@@ -493,7 +546,7 @@ const GenerateChat = ({ preset, onBack }) => {
       const userId = window.__currentUser?.id;
       const ep   = { actu:'/generate/actu', citation:'/generate/citation', deepdive:'/generate/deepdive' }[preset.id];
       const body = {
-        actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, imageMode },
+        actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, imageMode, styleRefData: styleRefData || undefined },
         citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId },
         deepdive: { topic, userId },
       }[preset.id];
@@ -1188,6 +1241,8 @@ const BrandScreen = () => {
   var [name,            setName]            = useState('');
   var [logoUrl,         setLogoUrl]         = useState('');
   var [logoUploading,   setLogoUploading]   = useState(false);
+  var [styleRefUrl,     setStyleRefUrl]     = useState('');
+  var [styleRefUploading, setStyleRefUploading] = useState(false);
   var [primaryColor,    setPrimaryColor]    = useState('#6366F1');
   var [accentColor,     setAccentColor]     = useState('#10B981');
   var [fontPrimary,     setFontPrimary]     = useState('DM Sans');
@@ -1230,6 +1285,7 @@ const BrandScreen = () => {
           setInstaHandle(d.instagram_handle || '');
           setHashtags(d.hashtags || []);
           setPreferredFormat(d.preferred_format || '4:5');
+          setStyleRefUrl(d.style_ref_url || '');
         }
         setLoading(false);
       });
@@ -1266,6 +1322,24 @@ const BrandScreen = () => {
           setLogoUrl(pub.data.publicUrl + '?t=' + Date.now());
         }
         setLogoUploading(false);
+      });
+  };
+
+  var handleStyleRefUpload = function(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    var sb = window.__supabase; var user = window.__currentUser;
+    if (!sb || !user) return;
+    setStyleRefUploading(true); setSaveErr('');
+    var ext = file.type === 'image/png' ? 'png' : 'jpg';
+    var path = user.id + '/style-ref.' + ext;
+    sb.storage.from('brand-assets').upload(path, file, { upsert:true, contentType:file.type })
+      .then(function(res) {
+        if (res.error) { setSaveErr('Upload echoue : ' + res.error.message); }
+        else {
+          var pub = sb.storage.from('brand-assets').getPublicUrl(path);
+          setStyleRefUrl(pub.data.publicUrl + '?t=' + Date.now());
+        }
+        setStyleRefUploading(false);
       });
   };
 
@@ -1336,6 +1410,7 @@ const BrandScreen = () => {
       instagram_handle: instaHandle,
       hashtags:         hashtags,
       preferred_format: preferredFormat,
+      style_ref_url:    styleRefUrl || null,
     }, { onConflict:'user_id' })
       .then(function(res) {
         if (res.error) { setSaveErr(res.error.message); }
@@ -1562,8 +1637,60 @@ const BrandScreen = () => {
             )}
           </BrandSect>
 
-          {/* 03 Palette */}
-          <BrandSect num="03" title="Palette de couleurs"
+          {/* 03 Référence visuelle */}
+          <BrandSect num="03" title="Référence visuelle de style"
+            desc="Une image dont l'IA s'inspirera pour l'esthétique de TOUS tes visuels générés. Style, ambiance, composition — pas les objets ni les couleurs forcément."
+            tip="Le prompt texte prime toujours. Cette ref influence uniquement l'atmosphère et le traitement visuel.">
+            {styleRefUrl ? (
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px',
+                background:'var(--app-surface-3)', borderRadius:'var(--radius)',
+                border:'1px solid var(--app-line-3)' }}>
+                <img src={styleRefUrl} style={{ width:64, height:64, borderRadius:8,
+                  objectFit:'cover', flexShrink:0, border:'1px solid var(--app-line)' }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:12, color:'var(--app-fg-3)', marginBottom:3 }}>Référence de style active</div>
+                  <div style={{ fontSize:11, color:'var(--app-fg-4)' }}>Influence toutes les générations de visuels</div>
+                </div>
+                <button onClick={function(){
+                    var inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
+                    inp.onchange = function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click();
+                  }} style={{ all:'unset', cursor:'pointer', fontSize:12, color:'var(--app-accent)',
+                    padding:'4px 10px', borderRadius:6, border:'1px solid var(--app-accent)' }}>
+                  Changer
+                </button>
+                <button onClick={function(){ setStyleRefUrl(''); }}
+                  style={{ all:'unset', cursor:'pointer', fontSize:12, color:'#ef4444',
+                    padding:'4px 10px', borderRadius:6, border:'1px solid #ef4444' }}>
+                  Supprimer
+                </button>
+              </div>
+            ) : (
+              <div onClick={function(){
+                  var inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
+                  inp.onchange = function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click();
+                }}
+                style={{ border:'2px dashed var(--app-line)', borderRadius:8, padding:'22px 16px',
+                  textAlign:'center', cursor:'pointer', transition:'border-color .15s, background .15s',
+                  background: styleRefUploading ? 'var(--app-surface-2)' : 'transparent' }}>
+                {styleRefUploading ? (
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                    fontSize:13, color:'var(--app-fg-4)' }}>
+                    <div style={{ width:14, height:14, border:'2px solid var(--app-line)',
+                      borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/>
+                    Upload en cours...
+                  </div>
+                ) : (
+                  <div style={{ fontSize:13, color:'var(--app-fg-4)', lineHeight:1.8 }}>
+                    Clique pour ajouter une image de référence<br/>
+                    <span style={{ fontSize:11, opacity:.65 }}>JPG, PNG, WebP — style/ambiance uniquement</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </BrandSect>
+
+          {/* 04 Palette */}
+          <BrandSect num="04" title="Palette de couleurs"
             desc="Principale = badges, barres de progression, elements structurants. Accent = highlights et details."
             tip="Ces couleurs structurent visuellement tous tes posts.">
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
@@ -1597,7 +1724,7 @@ const BrandScreen = () => {
           </BrandSect>
 
           {/* 04 Pack typographique */}
-          <BrandSect num="04" title="Pack typographique"
+          <BrandSect num="05" title="Pack typographique"
             desc="Typo + style graphique de tous tes posts. Chaque pack est cale sur les medias qui performent le plus sur Instagram en 2026."
             tip="L'analyse Instagram peut suggerer le bon pack automatiquement.">
             <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8, marginBottom:10 }}>
@@ -1624,7 +1751,7 @@ const BrandScreen = () => {
           </BrandSect>
 
           {/* 05 Mood */}
-          <BrandSect num="05" title="Mood editorial"
+          <BrandSect num="06" title="Mood editorial"
             desc="L'ambiance visuelle globale. Gemini l'utilise pour definir lumiere, contraste et traitement de chaque visuel."
             tip="Ce mood est l'ame visuelle de chaque image generee.">
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
@@ -1648,7 +1775,7 @@ const BrandScreen = () => {
           </BrandSect>
 
           {/* 06 Ton */}
-          <BrandSect num="06" title="Ton editorial"
+          <BrandSect num="07" title="Ton editorial"
             desc="3 mots max. Calibrent le ton des titres generes et briefent Gemini sur l'ambiance."
             tip="Selectionne jusqu'a 3 mots. Ils definissent comment ton media parle.">
             <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginBottom:8 }}>
@@ -1676,7 +1803,7 @@ const BrandScreen = () => {
           </BrandSect>
 
           {/* 07 Sujets */}
-          <BrandSect num="07" title="Sujets couverts"
+          <BrandSect num="08" title="Sujets couverts"
             desc="L'agent de veille score chaque actu selon ces topics. Les actus 85+ declenchent une alerte Actu Chaude."
             tip="Minimum 3 sujets requis. Maximum 10 recommandes. Tape un sujet puis Entree.">
             <BrandTagInput tags={topics} setTags={setTopics}

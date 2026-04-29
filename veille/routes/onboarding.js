@@ -138,12 +138,12 @@ async function runAgent1(url) {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const messages = [{ role: 'user', content: `Analyse ce compte Instagram : ${url}` }];
 
-  for (let i = 0; i < 35; i++) {
+  for (let i = 0; i < 12; i++) {
     if (i > 0) await sleep(2000); // 2s entre chaque appel
 
     const response = await callWithRetry(client, {
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4000,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       system: SYSTEM_PROMPT,
       messages: pruneSearchHistory(messages), // historique élagué
