@@ -19,7 +19,7 @@ const ProofMark = ({ kind, name }) => {
 
 const SocialProof = () => (
   <section className="proof">
-    <div className="label">Trusted by 50+ editorial teams</div>
+    <div className="label">Utilisé par 50+ équipes éditoriales</div>
     <div className="proof-logos">
       <ProofMark kind="raplume" />
       <ProofMark kind="foot" />
@@ -367,7 +367,7 @@ const Pricing = () => (
 // ───── Closing CTA ──────────────────────────────────────────────────────
 const Closing = () => (
   <section className="closing">
-    <h2>Your brand.<br /><span className="accent">Forged in AI.</span></h2>
+    <h2>Ta marque.<br /><span className="accent">Forgée par l'IA.</span></h2>
     <p>Rejoignez les 50+ équipes éditoriales qui génèrent leur contenu Instagram
        dans leur identité visuelle exacte — chaque jour, à l'infini.</p>
     <a href="Forje App.html" className="btn btn-primary btn-lg" style={{textDecoration:'none'}}>Rejoindre le studio <Icon.Arrow /></a>

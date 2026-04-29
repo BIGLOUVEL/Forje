@@ -174,7 +174,7 @@ body { min-width: 1440px; }
 .btn-lg { padding: 16px 26px; font-size: 15px; }
 
 /* ───── Hero ─────────────────────────────────────────────────────────────── */
-.hero { position: relative; padding: 72px 72px 120px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
+.hero { position: relative; padding: 120px 72px 140px; display: flex; flex-direction: column; align-items: flex-start; max-width: 780px; }
 
 .eyebrow {
   display: inline-flex; align-items: center; gap: 10px;

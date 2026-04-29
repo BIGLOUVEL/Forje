@@ -23,7 +23,8 @@
 <link id="css-a4" rel="stylesheet" href="app-sources.css" media="none"/>
 
 <style>
-  body { margin:0; background:#FAFAF8; }
+  body { margin:0; background:#000004; }
+  body.app-mode { background:#FAFAF8; }
   #root { transition: opacity 0.22s ease; }
   #root.fading { opacity: 0; pointer-events: none; }
 </style>
@@ -42,6 +43,7 @@
           var el = document.getElementById(id);
           if (el) el.media = '';
         });
+        document.body.classList.add('app-mode');
       }
     } catch(e) {}
   })();
@@ -51,8 +53,8 @@
     heroObject: 'Normal',
     hueShift: 0,
     starfieldDensity: 1.0,
-    headline: 'Forge your brand.',
-    headlineAccent: 'Post forever.'
+    headline: 'Forge ta marque.',
+    headlineAccent: 'Publie à l\'infini.'
   };
 </script>
 

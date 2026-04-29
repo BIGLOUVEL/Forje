@@ -255,25 +255,6 @@ body.scrolled .nav::before { opacity: 1; }
 }
 @keyframes chromaRot { to { transform: translateX(-50%) rotate(360deg); } }
 
-/* God rays */
-.hero-stage .rays {
-  position: absolute; top: -20%; left: 50%; transform: translateX(-50%);
-  width: 600px; height: 600px; pointer-events: none;
-  background: conic-gradient(from 90deg at 50% 0%,
-    transparent 0deg, rgba(200,220,255,0.14) 8deg, transparent 16deg,
-    transparent 40deg, rgba(200,220,255,0.1) 48deg, transparent 56deg,
-    transparent 80deg, rgba(200,220,255,0.08) 88deg, transparent 96deg,
-    transparent 120deg, rgba(200,220,255,0.12) 128deg, transparent 136deg,
-    transparent 360deg);
-  mix-blend-mode: screen;
-  filter: blur(2px);
-  animation: rayDrift 16s ease-in-out infinite;
-  opacity: 0.85;
-}
-@keyframes rayDrift {
-  0%, 100% { transform: translateX(-50%) rotate(-3deg); opacity: 0.7; }
-  50%      { transform: translateX(-50%) rotate(3deg);  opacity: 1; }
-}
 
 /* Slab — better iridescent prism edges & specular sweep */
 .slab {

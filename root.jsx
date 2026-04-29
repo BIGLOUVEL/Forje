@@ -22,8 +22,16 @@ const disableAllCss = () => {
   });
 };
 
+const getInitialView = () => {
+  try {
+    var raw = localStorage.getItem('sb-tmsbtjczvjdwzfkoprwq-auth-token');
+    if (raw && JSON.parse(raw).access_token) return 'app';
+  } catch(e) {}
+  return 'landing';
+};
+
 const Root = () => {
-  const [view, setView]               = useState('app');
+  const [view, setView]               = useState(getInitialView);
   const [user, setUser]               = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const rootEl = document.getElementById('root');
@@ -42,16 +50,22 @@ const Root = () => {
     const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
       window.__currentUser = session?.user ?? null;
       setUser(session?.user ?? null);
+      if (!session?.user) setView('landing');
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // CSS — synchronisé avec l'état auth + vue (filet de sécurité)
+  // CSS + body class — synchronisés avec l'état auth + vue
   useEffect(() => {
     if (!authChecked) return;
-    if (!user) { disableAllCss(); return; }
+    if (!user) {
+      applyCss('landing');
+      document.body.classList.remove('app-mode');
+      return;
+    }
     applyCss(view);
+    document.body.classList.toggle('app-mode', view === 'app');
   }, [authChecked, user, view]);
 
   // Helpers globaux
@@ -59,17 +73,20 @@ const Root = () => {
     const navigate = (target) => {
       rootEl.classList.add('fading');
       setTimeout(() => {
-        applyCss(target);   // CSS swap synchrone dans la transition
+        applyCss(target);
+        if (target === 'app') document.body.classList.add('app-mode');
+        else                  document.body.classList.remove('app-mode');
         setView(target);
         window.scrollTo(0, 0);
         rootEl.classList.remove('fading');
       }, 220);
     };
-    window.__goToApp     = () => navigate('app');
+    window.__goToApp     = () => user ? navigate('app') : navigate('auth');
     window.__goToLanding = () => navigate('landing');
     window.__signOut     = async () => {
-      disableAllCss();                          // immédiat — pas de flash
-      await window.__supabase?.auth.signOut();  // onAuthStateChange fait setUser(null)
+      applyCss('landing');                       // landing CSS immédiat — pas de flash
+      document.body.classList.remove('app-mode');
+      await window.__supabase?.auth.signOut();   // onAuthStateChange fait setUser(null)
     };
   });
 
@@ -93,9 +110,13 @@ const Root = () => {
   const App     = window.__SaasApp;
 
   if (!user) {
-    return Auth
-      ? <Auth onAuth={u => { applyCss('app'); setUser(u); setView('app'); }}/>
-      : null;
+    if (view === 'auth') {
+      return Auth
+        ? <Auth onAuth={u => { applyCss('app'); setUser(u); setView('app'); }}/>
+        : null;
+    }
+    // landing par défaut pour les visiteurs non-connectés
+    return Landing ? <Landing /> : null;
   }
 
   if (view === 'app'     && App)     return <App />;

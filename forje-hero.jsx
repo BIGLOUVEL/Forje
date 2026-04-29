@@ -28,7 +28,7 @@ const Hero = ({ tweaks }) => {
       <div>
         <div className="eyebrow">
           <span className="eyebrow-dot" />
-          Instagram Engine <span className="sep">·</span> Powered by AI
+          Moteur Instagram <span className="sep">·</span> Propulsé par l'IA
         </div>
 
         <h1 className="hero-title">
@@ -59,8 +59,6 @@ const Hero = ({ tweaks }) => {
           <span>50+ équipes éditoriales</span>
         </div>
       </div>
-
-      <HeroObject variant={tweaks.heroObject} />
 
       {demoOpen && (
         <div onClick={() => setDemoOpen(false)} style={{
