@@ -20,11 +20,13 @@ async function gemini(prompt) {
   return result.response.text();
 }
 
-async function getClientBrand(userId) {
+async function getClientBrand(userId, clientId) {
   if (!userId) return null;
-  const { data } = await supabase.from('clients').select(
+  let q = supabase.from('clients').select(
     'name,logo_url,brand_colors,font_primary,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
-  ).eq('user_id', userId).maybeSingle();
+  ).eq('user_id', userId);
+  if (clientId) q = q.eq('id', clientId);
+  const { data } = await q.order('created_at').limit(1).maybeSingle();
   return data || null;
 }
 
@@ -274,11 +276,11 @@ async function generateImageGemini(prompt, referenceBuffers = [], styleRefBuffer
 router.post('/actu', async (req, res) => {
   if (!sharp) return res.status(500).json({ error: 'Sharp non installe (npm install sharp)' });
 
-  const { newsText, photoUrl, photoData, userId, imageMode = 'classic', styleRefData } = req.body;
+  const { newsText, photoUrl, photoData, userId, clientId, imageMode = 'classic', styleRefData } = req.body;
   if (!newsText) return res.status(400).json({ error: 'newsText manquant' });
 
   try {
-    const client       = await getClientBrand(userId);
+    const client       = await getClientBrand(userId, clientId);
     const brandCtx     = buildBrandContext(client);
     const packId       = getPackId(client?.graphic_style);
     const primaryColor = client?.brand_colors?.[0] || null;

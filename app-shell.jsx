@@ -57,7 +57,7 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
 };
 
 // ═══ SIDEBAR ═══════════════════════════════════════════════════════════════
-const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null }) => {
+const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null, clients = [], activeClientId = null, onSelectClient, onNewClient }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -86,8 +86,7 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null 
     { key: 'generate', icon: 'sparkle',  label: 'Générer' },
     { key: 'calendar', icon: 'calendar', label: 'Calendrier' },
   ];
-  const workspaceItems = [
-    { key: 'brand',    icon: 'palette',  label: 'Identité de marque' },
+  const bottomItems = [
     { key: 'sources',  icon: 'news',     label: 'Sources & veille', count: counts.sources || 3 },
     { key: 'settings', icon: 'settings', label: 'Paramètres' },
   ];
@@ -130,7 +129,48 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null 
 
       <div className="sidebar-section">
         <div className="sidebar-section-label">Atelier</div>
-        {workspaceItems.map(item => (
+
+        {/* Identité de marque */}
+        <div className={`sidebar-item ${current === 'brand' ? 'active' : ''}`}
+             onClick={() => onNav('brand')}>
+          <AppIcon name="palette" className="icon"/>
+          <span>Identité de marque</span>
+        </div>
+
+        {/* Switcher de comptes */}
+        <div className="sidebar-accounts">
+          {clients.map(function(c) {
+            var initials = (c.name || '?').replace(/[^a-zA-Z0-9À-ɏ]/g, '').slice(0, 2).toUpperCase() || '?';
+            var isActive = c.id === activeClientId;
+            return (
+              <div key={c.id}
+                   className={'sidebar-account-item' + (isActive ? ' active' : '')}
+                   onClick={function() { onSelectClient && onSelectClient(c.id); }}>
+                <div className="sidebar-account-avatar">
+                  {c.logo_url
+                    ? <img src={c.logo_url} alt=""/>
+                    : initials}
+                </div>
+                <div className="sidebar-account-meta">
+                  <div className="sidebar-account-name">{c.name || 'Sans nom'}</div>
+                  {c.instagram_handle && (
+                    <div className="sidebar-account-handle">{c.instagram_handle}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {clients.length < 5 && (
+            <div className="sidebar-account-add"
+                 onClick={function() { onNewClient && onNewClient(); }}>
+              <AppIcon name="plus" size={12}/>
+              <span>Nouveau compte</span>
+            </div>
+          )}
+        </div>
+
+        {/* Autres items */}
+        {bottomItems.map(item => (
           <div key={item.key}
                className={`sidebar-item ${current === item.key ? 'active' : ''}`}
                onClick={() => onNav(item.key)}>

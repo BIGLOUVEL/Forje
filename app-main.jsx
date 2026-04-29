@@ -19,14 +19,56 @@ const App = () => {
   const [tweaks, setTweaks] = useState(TWEAKS);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [activeClientId, setActiveClientId] = useState(null);
 
-  useEffect(() => {
+  const loadClients = (onDone) => {
     const sb = window.__supabase;
     const user = window.__currentUser;
     if (!sb || !user) return;
-    sb.from('clients').select('plan, credits').eq('user_id', user.id).maybeSingle()
-      .then(({ data }) => { if (data) setProfile(data); });
+    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits')
+      .eq('user_id', user.id).order('created_at')
+      .then(({ data }) => {
+        const list = data || [];
+        setClients(list);
+        if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits });
+        if (onDone) onDone(list);
+      });
+  };
+
+  useEffect(() => {
+    const user = window.__currentUser;
+    if (!user) return;
+    loadClients((list) => {
+      const saved = localStorage.getItem('forje_active_client_' + user.id);
+      const active = list.find(c => c.id === saved)?.id || list[0]?.id || null;
+      setActiveClientId(active);
+      window.__activeClientId = active;
+    });
   }, []);
+
+  const handleSelectClient = (id) => {
+    setActiveClientId(id);
+    window.__activeClientId = id;
+    const user = window.__currentUser;
+    if (user) localStorage.setItem('forje_active_client_' + user.id, id);
+    setScreen('brand');
+  };
+
+  const handleNewClient = () => {
+    if (clients.length >= 5) return;
+    setActiveClientId(null);
+    window.__activeClientId = null;
+    setScreen('brand');
+  };
+
+  const handleClientSaved = (savedId) => {
+    setActiveClientId(savedId);
+    window.__activeClientId = savedId;
+    const user = window.__currentUser;
+    if (user) localStorage.setItem('forje_active_client_' + user.id, savedId);
+    loadClients();
+  };
 
   useEffect(() => {
     localStorage.setItem('forje_app_screen', screen);
@@ -78,7 +120,11 @@ const App = () => {
                  onNav={(k) => { setScreen(k); setPreset(null); }}
                  counts={{ queue: 7, sources: 3 }}
                  profile={profile}
-                 authUser={window.__currentUser}/>
+                 authUser={window.__currentUser}
+                 clients={clients}
+                 activeClientId={activeClientId}
+                 onSelectClient={handleSelectClient}
+                 onNewClient={handleNewClient}/>
         <main className="app-main">
           <Topbar breadcrumb={crumbs}/>
           {screen === 'home' && <DashboardScreen onNav={setScreen} onCreateFromSource={handleCreateFromSource} authUser={window.__currentUser}/>}
@@ -92,7 +138,7 @@ const App = () => {
           {screen === 'queue' && <QueueScreen defaultView={tweaks.defaultQueueView}/>}
           {screen === 'calendar' && <QueueScreen defaultView="calendar"/>}
           {screen === 'published' && <QueueScreen defaultView="grid"/>}
-          {screen === 'brand' && <BrandScreen/>}
+          {screen === 'brand' && <BrandScreen clientId={activeClientId} onSaved={handleClientSaved}/>}
           {screen === 'sources' && <SourcesScreen authUser={window.__currentUser}/>}
           {screen === 'settings' && <SettingsScreen/>}
         </main>

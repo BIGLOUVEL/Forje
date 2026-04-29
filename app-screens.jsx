@@ -543,12 +543,13 @@ const GenerateChat = ({ preset, onBack }) => {
     setResult(null);
     setActiveSlide(0);
     try {
-      const userId = window.__currentUser?.id;
+      const userId   = window.__currentUser?.id;
+      const clientId = window.__activeClientId || undefined;
       const ep   = { actu:'/generate/actu', citation:'/generate/citation', deepdive:'/generate/deepdive' }[preset.id];
       const body = {
-        actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, imageMode, styleRefData: styleRefData || undefined },
-        citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId },
-        deepdive: { topic, userId },
+        actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, clientId, imageMode, styleRefData: styleRefData || undefined },
+        citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId, clientId },
+        deepdive: { topic, userId, clientId },
       }[preset.id];
       const res  = await fetch(`${GEN_API}${ep}`, {
         method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
@@ -1237,7 +1238,7 @@ const BrandSect = ({ num, title, desc, tip, children }) => (
   </div>
 );
 
-const BrandScreen = () => {
+const BrandScreen = ({ clientId, onSaved }) => {
   var [name,            setName]            = useState('');
   var [logoUrl,         setLogoUrl]         = useState('');
   var [logoUploading,   setLogoUploading]   = useState(false);
@@ -1263,11 +1264,21 @@ const BrandScreen = () => {
   var [igResult,        setIgResult]        = useState(null);
   var [igErr,           setIgErr]           = useState('');
 
-  // Load from Supabase
+  // Load from Supabase — réagit au changement de clientId (switch de compte)
   useEffect(function() {
     var sb = window.__supabase; var user = window.__currentUser;
+    // Reset du formulaire à chaque changement de compte
+    setName(''); setLogoUrl(''); setStyleRefUrl('');
+    setPrimaryColor('#6366F1'); setAccentColor('#10B981'); setFontPrimary('DM Sans');
+    setMood(''); setToneTags([]); setGraphicStyle(''); setTopics([]);
+    setInstaHandle(''); setHashtags([]); setPreferredFormat('4:5');
+    setSaveMsg(''); setSaveErr(''); setIgInput(''); setIgResult(null); setIgErr('');
+
     if (!sb || !user) { setLoading(false); return; }
-    sb.from('clients').select('*').eq('user_id', user.id).maybeSingle()
+    if (!clientId) { setLoading(false); return; } // nouveau compte — formulaire vide
+
+    setLoading(true);
+    sb.from('clients').select('*').eq('id', clientId).eq('user_id', user.id).maybeSingle()
       .then(function(res) {
         var d = res.data;
         if (d) {
@@ -1278,7 +1289,6 @@ const BrandScreen = () => {
           setFontPrimary(d.font_primary || 'DM Sans');
           setMood(d.mood || '');
           setToneTags(d.tone_tags || []);
-          // Map old style values to pack IDs
           var gs = d.graphic_style || '';
           setGraphicStyle(STYLE_TO_PACK[gs] || gs);
           setTopics(d.topics || []);
@@ -1289,7 +1299,7 @@ const BrandScreen = () => {
         }
         setLoading(false);
       });
-  }, []);
+  }, [clientId]);
 
   // Load all pack fonts once at mount
   useEffect(function() {
@@ -1397,7 +1407,7 @@ const BrandScreen = () => {
     var sb = window.__supabase; var user = window.__currentUser;
     if (!sb || !user) return;
     setSaving(true); setSaveErr(''); setSaveMsg('');
-    sb.from('clients').upsert({
+    var row = {
       user_id:          user.id,
       name:             name,
       logo_url:         logoUrl,
@@ -1411,15 +1421,19 @@ const BrandScreen = () => {
       hashtags:         hashtags,
       preferred_format: preferredFormat,
       style_ref_url:    styleRefUrl || null,
-    }, { onConflict:'user_id' })
-      .then(function(res) {
-        if (res.error) { setSaveErr(res.error.message); }
-        else {
-          setSaveMsg('Identite forgee. Chaque post genere sera maintenant fidele a la charte de ' + (name || 'ton media') + '.');
-          setTimeout(function() { setSaveMsg(''); }, 6000);
-        }
-        setSaving(false);
-      });
+    };
+    var query = clientId
+      ? sb.from('clients').update(row).eq('id', clientId).eq('user_id', user.id).select('id').maybeSingle()
+      : sb.from('clients').insert(row).select('id').maybeSingle();
+    query.then(function(res) {
+      if (res.error) { setSaveErr(res.error.message); }
+      else {
+        setSaveMsg('Identite forgee. Chaque post genere sera maintenant fidele a la charte de ' + (name || 'ton media') + '.');
+        setTimeout(function() { setSaveMsg(''); }, 6000);
+        if (onSaved && res.data) onSaved(res.data.id);
+      }
+      setSaving(false);
+    });
   };
 
   var inputStyle = {
