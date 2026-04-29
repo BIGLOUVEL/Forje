@@ -5,11 +5,14 @@ const https   = require('https');
 const http    = require('http');
 const { URL } = require('url');
 
+const Anthropic = require('@anthropic-ai/sdk');
+
 const router = express.Router();
 const genai  = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const GEMINI_MODEL = 'gemini-2.5-pro';
 let openaiClient;
 try { openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); } catch (_) {}
+const haiku = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const { supabase }  = require('../lib/supabase');
 const { fontDefs, PACK_FONTS_GF } = require('../lib/fontLoader');
@@ -664,6 +667,40 @@ router.post('/deepdive', async (req, res) => {
 
   } catch (err) {
     console.error('[Generate/DeepDive]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/generate/detect-format ────────────────────────────────────────
+router.post('/detect-format', async (req, res) => {
+  const { text } = req.body;
+  if (!text?.trim()) return res.status(400).json({ error: 'text manquant' });
+
+  try {
+    const response = await haiku.messages.create({
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 250,
+      messages: [{
+        role:    'user',
+        content:
+          'Tu es un router de format pour un outil de posts Instagram. ' +
+          'Lis ce texte et choisis : actu (info/breaking), citation (phrase forte avec auteur), deepdive (sujet à approfondir).\n' +
+          'Texte : "' + text.slice(0, 600) + '"\n\n' +
+          'Retourne UNIQUEMENT ce JSON valide :\n' +
+          '{"format":"actu|citation|deepdive",' +
+          '"newsText":"si actu : reformule en actu directe max 120 car, sinon null",' +
+          '"quoteText":"si citation : extrait EXACTEMENT la citation entre guillemets, sinon null",' +
+          '"authorName":"si citation : Prénom Nom de l\'auteur, sinon null",' +
+          '"topic":"si deepdive : le sujet en une phrase courte, sinon null"}',
+      }],
+    });
+
+    const raw = response.content.find(b => b.type === 'text')?.text || '';
+    const m   = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('Pas de JSON dans la réponse');
+    res.json(JSON.parse(m[0]));
+  } catch (err) {
+    console.error('[DetectFormat]', err.message);
     res.status(500).json({ error: err.message });
   }
 });

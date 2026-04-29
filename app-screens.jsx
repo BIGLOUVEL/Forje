@@ -132,57 +132,82 @@ const PRESETS = [
     tag: 'Meilleur reach', icon: 'layers', img: 'assets/deep-dive.webp',  visual: 'bts'   },
 ];
 
-const GenerateHub = ({ onPick }) => (
-  <div className="page-body">
-    <div className="page-header">
-      <div>
-        <h1 className="page-title">Que veux-tu raconter ?</h1>
-        <p className="page-subtitle">
-          Choisis un format. Forje s'occupe du reste — rédaction, visuel, ton de voix.
-        </p>
-      </div>
-      <div className="page-header-actions">
-        <Btn variant="ghost" icon="clock">Historique</Btn>
-      </div>
-    </div>
+const GenerateHub = ({ onPick }) => {
+  var [text,      setText]      = useState('');
+  var [detecting, setDetecting] = useState(false);
+  var [err,       setErr]       = useState('');
 
-    <div className="gen-preset-grid">
-      {PRESETS.map(p => (
-        <PresetCard key={p.id} preset={p} onPick={() => onPick(p)}/>
-      ))}
-    </div>
+  var handleDetect = async function() {
+    var t = text.trim();
+    if (!t || detecting) return;
+    setDetecting(true); setErr('');
+    try {
+      var res = await fetch(GEN_API + '/generate/detect-format', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: t }),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur');
+      var formatId = data.format || 'actu';
+      var preset = PRESETS.find(function(p) { return p.id === formatId; }) || PRESETS[0];
+      onPick({ ...preset, prefill: data });
+    } catch (e) {
+      setErr(e.message);
+      setDetecting(false);
+    }
+  };
 
-    <div className="gen-prompt-card">
-      <div className="gen-prompt-badge">
-        <AppIcon name="sparkle" size={14}/>
-        <span>Ou décris-le avec tes mots — Forje choisira le bon format</span>
-      </div>
-      <div className="gen-prompt-input">
-        <textarea
-          placeholder="« On a reçu une livraison de cuir camel de Annonay — le même que notre père utilisait dans les années 80. Faut en parler. »"
-          rows={2}
-        />
-      </div>
-      <div className="gen-prompt-foot">
-        <div className="gen-prompt-hints">
-          <span>Forje devinera le bon format</span>
+  return (
+    <div className="page-body">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Que veux-tu raconter ?</h1>
+          <p className="page-subtitle">
+            Choisis un format. Forje s'occupe du reste — rédaction, visuel, ton de voix.
+          </p>
         </div>
-        <Btn variant="primary" size="sm" icon="arrowRight">Générer</Btn>
       </div>
-    </div>
 
-    <div className="gen-recent">
-      <div className="gen-section-label">
-        <span>Reprendre un brouillon</span>
+      <div className="gen-preset-grid">
+        {PRESETS.map(p => (
+          <PresetCard key={p.id} preset={p} onPick={() => onPick(p)}/>
+        ))}
       </div>
-      <div className="gen-recent-row">
-        <RecentCard type="Citation" when="il y a 12 min" title="« Un geste qui ne change pas depuis 1987. »" swatch="quote"/>
-        <RecentCard type="Actu" when="hier · 18:04" title="Relocalisation de la maroquinerie — angle Roubaix" swatch="news"/>
-        <RecentCard type="Deep Dive" when="hier · 14:22" title="L'art du tannage végétal en 6 slides" swatch="bts"/>
+
+      <div className="gen-prompt-card">
+        <div className="gen-prompt-badge">
+          <AppIcon name="sparkle" size={14}/>
+          <span>Ou décris-le avec tes mots — Forje choisira le bon format</span>
+        </div>
+        <div className="gen-prompt-input">
+          <textarea
+            value={text}
+            onChange={function(e) { setText(e.target.value); setErr(''); }}
+            onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleDetect(); }}
+            placeholder="« On a reçu une livraison de cuir camel de Annonay — le même que notre père utilisait dans les années 80. Faut en parler. »"
+            rows={2}
+          />
+        </div>
+        <div className="gen-prompt-foot">
+          <div className="gen-prompt-hints">
+            {err
+              ? <span style={{ color:'#ef4444' }}>{err}</span>
+              : <span>{detecting ? 'Analyse en cours...' : 'Forje détecte le format · ⌘↵ pour envoyer'}</span>}
+          </div>
+          <button
+            className={'btn btn-accent btn-sm' + (!text.trim() || detecting ? ' btn-disabled' : '')}
+            onClick={handleDetect}
+            disabled={!text.trim() || detecting}
+            style={{ display:'flex', alignItems:'center', gap:6 }}>
+            {detecting
+              ? <><div style={{ width:12, height:12, border:'1.5px solid rgba(255,255,255,.4)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/> Analyse...</>
+              : <><AppIcon name="arrowRight" size={13}/> Générer</>}
+          </button>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const PresetCard = ({ preset, onPick }) => (
   <button className="preset-card" onClick={onPick}>
@@ -513,13 +538,13 @@ const GenLoader = ({ preset }) => (
 );
 
 const GenerateChat = ({ preset, onBack }) => {
-  const [newsText,    setNewsText]    = useState('');
+  const [newsText,    setNewsText]    = useState(preset.prefill?.newsText  || '');
   const [photoUrl,    setPhotoUrl]    = useState('');
   const [photoData,   setPhotoData]   = useState('');
-  const [quoteText,   setQuoteText]   = useState('');
-  const [authorName,  setAuthorName]  = useState('');
+  const [quoteText,   setQuoteText]   = useState(preset.prefill?.quoteText || '');
+  const [authorName,  setAuthorName]  = useState(preset.prefill?.authorName|| '');
   const [authorTitle, setAuthorTitle] = useState('');
-  const [topic,       setTopic]       = useState('');
+  const [topic,       setTopic]       = useState(preset.prefill?.topic     || '');
   const [imageMode,    setImageMode]    = useState('ai');
   const [styleRefData, setStyleRefData] = useState(null);
   const [generating,   setGenerating]   = useState(false);
