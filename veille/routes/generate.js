@@ -160,44 +160,23 @@ function getPack(graphicStyle) {
 
 // ─── Image generation ────────────────────────────────────────────────────────
 
-const CAT_SCENES = {
-  sport:     'dynamic stadium crowd, athletic motion blur, dramatic floodlights',
-  politique: 'grand institutional architecture, governmental hall, formal podium with empty microphones',
-  economie:  'abstract financial skyline at night, stock chart overlay, city lights',
-  culture:   'cinematic scene with dramatic stage lighting, empty theatre, artistic installation',
-  tech:      'futuristic server room, glowing circuit board, abstract data visualization',
-  societe:   'urban street photography, crowd silhouettes, modern city architecture',
-  actu:      'dramatic editorial scene, newsroom atmosphere, bold graphic shadows',
-};
-const MOOD_LIGHTS = {
-  dramatique: 'dramatic cinematic lighting, deep shadows, high contrast, chiaroscuro',
-  energique:  'vibrant dynamic lighting, energetic composition, strong sense of motion',
-  premium:    'soft elegant lighting, refined composition, luxury editorial aesthetic',
-  populaire:  'bold direct lighting, maximum contrast, immediate visual impact',
-  factuel:    'clean neutral documentary lighting, journalistic credibility',
-};
-
-// forPerson=true → Gemini path with reference photos (real person, can depict them)
-// forPerson=false → GPT path (category scene, no people, safe prompt)
-function buildImagePrompt(brief, client, forPerson = false) {
-  const mood   = client?.mood || 'dramatique';
-  const light  = MOOD_LIGHTS[mood] || MOOD_LIGHTS.dramatique;
+function buildImagePrompt(brief, client) {
+  const mood = client?.mood || 'dramatique';
+  const moodLights = {
+    dramatique: 'dramatic cinematic lighting, deep shadows, high contrast, chiaroscuro',
+    energique:  'vibrant dynamic lighting, energetic composition, strong sense of motion',
+    premium:    'soft elegant lighting, refined composition, luxury editorial aesthetic',
+    populaire:  'bold direct lighting, maximum contrast, immediate visual impact',
+    factuel:    'clean neutral documentary lighting, journalistic credibility',
+  };
+  const light  = moodLights[mood] || moodLights.dramatique;
   const colors = client?.brand_colors || [];
-  const cat    = (brief.category || 'ACTU').toLowerCase();
-
-  const scene = forPerson
-    ? (brief.visual_brief || CAT_SCENES[cat] || CAT_SCENES.actu)
-    : (CAT_SCENES[cat] || CAT_SCENES.actu);
-
-  const noPeople = forPerson ? '' : 'Absolutely NO people, NO faces.';
-
   return [
-    scene,
-    `${light}.`,
+    brief.visual_brief,
+    `Mood: ${brief.emotion || mood}. ${light}.`,
     colors.length >= 2 ? `Color palette: dominant ${colors[0]}, accent ${colors[1]}.` : '',
     'Portrait format 4:5. Cinematic photorealistic editorial quality.',
-    'Absolutely NO text, NO watermarks, NO captions.',
-    noPeople,
+    'Absolutely NO text, NO watermarks, NO captions in the image.',
     'Bottom 35% of the frame must be slightly darker (room for text overlay).',
   ].filter(Boolean).join(' ');
 }
@@ -246,10 +225,45 @@ async function generateImageGPT(prompt, styleRefBuffer = null) {
   return Buffer.from(b64, 'base64');
 }
 
+// Google models tried in order — first one that returns an image wins
+const GEMINI_IMAGE_MODELS = [
+  'gemini-2.0-flash-preview-image-generation',
+  'gemini-2.0-flash-exp-image-generation',
+  'gemini-2.0-flash',
+];
+
+async function callGeminiImageModel(model, apiKey, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'generativelanguage.googleapis.com',
+      path:     `/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      method:   'POST',
+      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout:  90000,
+    }, (res) => {
+      let raw = '';
+      res.on('data', c => raw += c);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(raw);
+          if (data.error) { reject(new Error(`[${model}] ${data.error.status}: ${data.error.message}`)); return; }
+          for (const p of (data.candidates?.[0]?.content?.parts || [])) {
+            if (p.inlineData?.data) { resolve(Buffer.from(p.inlineData.data, 'base64')); return; }
+          }
+          reject(new Error(`[${model}] no inline data`));
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error(`[${model}] timeout`)); });
+    req.write(body);
+    req.end();
+  });
+}
+
 async function generateImageGemini(prompt, referenceBuffers = [], styleRefBuffer = null) {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) throw new Error('GOOGLE_API_KEY manquant');
-  const MODEL = 'gemini-2.0-flash-preview-image-generation';
 
   const styleInstruction = styleRefBuffer
     ? 'The next image is a STYLE REFERENCE ONLY. Reproduce its visual aesthetic, composition style, lighting mood and graphic treatment — but NOT its specific objects, subjects, or colors. The text prompt takes absolute priority in case of conflict.'
@@ -269,31 +283,19 @@ async function generateImageGemini(prompt, referenceBuffers = [], styleRefBuffer
     contents: [{ role: 'user', parts }],
     generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
   });
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'generativelanguage.googleapis.com',
-      path:     `/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      timeout:  90000,
-    }, (res) => {
-      let raw = '';
-      res.on('data', c => raw += c);
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(raw);
-          for (const p of (data.candidates?.[0]?.content?.parts || [])) {
-            if (p.inlineData?.data) { resolve(Buffer.from(p.inlineData.data, 'base64')); return; }
-          }
-          reject(new Error('Gemini image: no inline data — ' + raw.slice(0, 300)));
-        } catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Gemini image timeout')); });
-    req.write(body);
-    req.end();
-  });
+
+  let lastErr;
+  for (const model of GEMINI_IMAGE_MODELS) {
+    try {
+      const buf = await callGeminiImageModel(model, apiKey, body);
+      console.log(`[Gemini] image OK via ${model}`);
+      return buf;
+    } catch (e) {
+      console.warn(`[Gemini] ${e.message} — trying next model`);
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
 
 // ─── POST /api/generate/actu ──────────────────────────────────────────────────
@@ -368,21 +370,18 @@ router.post('/actu', async (req, res) => {
     // 4. Image : AI mode ou classic
     let photoBuffer = null;
     if (imageMode === 'ai' && visual_brief) {
+      const prompt = buildImagePrompt(brief, client);
       try {
         if (has_real_person) {
-          const personPrompt = buildImagePrompt(brief, client, true);
-          photoBuffer = await generateImageGemini(personPrompt, serperBuffers, styleRefBuffer);
-          console.log('[Actu] Gemini image OK');
+          photoBuffer = await generateImageGemini(prompt, serperBuffers, styleRefBuffer);
         } else {
-          const safePrompt = buildImagePrompt(brief, client, false);
-          photoBuffer = await generateImageGPT(safePrompt, styleRefBuffer);
+          photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
           console.log('[Actu] GPT-Image-1 OK');
         }
       } catch (aiErr) {
         console.warn('[Actu] AI image failed, trying GPT-Image-1 fallback:', aiErr.message);
         try {
-          const safePrompt = buildImagePrompt(brief, client, false);
-          photoBuffer = await generateImageGPT(safePrompt, styleRefBuffer);
+          photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
           console.log('[Actu] GPT-Image-1 fallback OK');
         } catch (gptErr) {
           console.warn('[Actu] GPT-Image-1 also failed, using Serper:', gptErr.message);
