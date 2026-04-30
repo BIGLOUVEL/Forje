@@ -227,9 +227,10 @@ async function generateImageGPT(prompt, styleRefBuffer = null) {
 
 // Google models tried in order — first one that returns an image wins
 const GEMINI_IMAGE_MODELS = [
+  'gemini-3-pro-image-preview',
+  'gemini-3.1-flash-image-preview',
+  'gemini-2.5-flash-image',
   'gemini-2.0-flash-preview-image-generation',
-  'gemini-2.0-flash-exp-image-generation',
-  'gemini-2.0-flash',
 ];
 
 async function callGeminiImageModel(model, apiKey, body) {
