@@ -267,7 +267,7 @@ async function generateImageGemini(prompt, referenceBuffers = [], styleRefBuffer
   if (!apiKey) throw new Error('GOOGLE_API_KEY manquant');
 
   const styleInstruction = styleRefBuffer
-    ? 'The next image is a STYLE REFERENCE ONLY. Reproduce its visual aesthetic, composition style, lighting mood and graphic treatment — but NOT its specific objects, subjects, or colors. The text prompt takes absolute priority in case of conflict.'
+    ? 'STYLE REFERENCE IMAGE — extract ONLY: lighting mood, color grading, grain/texture, and overall tonal atmosphere. DO NOT copy any objects, backgrounds, compositions, subjects, or scene elements from this reference. Generate a completely original scene described by the text prompt. The text prompt is the sole source for what to depict.'
     : null;
 
   const parts = [
