@@ -25,7 +25,7 @@ const Hero = ({ tweaks }) => {
   const [demoOpen, setDemoOpen] = useStateH(false);
   return (
     <section className="hero">
-      <div>
+      <div className="hero-text-col">
         <div className="eyebrow">
           <span className="eyebrow-dot" />
           Moteur Instagram <span className="sep">·</span> Propulsé par l'IA
@@ -57,6 +57,12 @@ const Hero = ({ tweaks }) => {
           <span>Sans engagement</span>
           <span className="dot" />
           <span>50+ équipes éditoriales</span>
+        </div>
+      </div>
+
+      <div className="hero-video-col">
+        <div className="hero-video-wrap">
+          <video autoPlay muted loop playsInline src="assets/illustration.mp4"/>
         </div>
       </div>
 
