@@ -160,23 +160,44 @@ function getPack(graphicStyle) {
 
 // ─── Image generation ────────────────────────────────────────────────────────
 
-function buildImagePrompt(brief, client) {
-  const mood = client?.mood || 'dramatique';
-  const moodLights = {
-    dramatique: 'dramatic cinematic lighting, deep shadows, high contrast, chiaroscuro',
-    energique:  'vibrant dynamic lighting, energetic composition, strong sense of motion',
-    premium:    'soft elegant lighting, refined composition, luxury editorial aesthetic',
-    populaire:  'bold direct lighting, maximum contrast, immediate visual impact',
-    factuel:    'clean neutral documentary lighting, journalistic credibility',
-  };
-  const light  = moodLights[mood] || moodLights.dramatique;
+const CAT_SCENES = {
+  sport:     'dynamic stadium crowd, athletic motion blur, dramatic floodlights',
+  politique: 'grand institutional architecture, governmental hall, formal podium with empty microphones',
+  economie:  'abstract financial skyline at night, stock chart overlay, city lights',
+  culture:   'cinematic scene with dramatic stage lighting, empty theatre, artistic installation',
+  tech:      'futuristic server room, glowing circuit board, abstract data visualization',
+  societe:   'urban street photography, crowd silhouettes, modern city architecture',
+  actu:      'dramatic editorial scene, newsroom atmosphere, bold graphic shadows',
+};
+const MOOD_LIGHTS = {
+  dramatique: 'dramatic cinematic lighting, deep shadows, high contrast, chiaroscuro',
+  energique:  'vibrant dynamic lighting, energetic composition, strong sense of motion',
+  premium:    'soft elegant lighting, refined composition, luxury editorial aesthetic',
+  populaire:  'bold direct lighting, maximum contrast, immediate visual impact',
+  factuel:    'clean neutral documentary lighting, journalistic credibility',
+};
+
+// forPerson=true → Gemini path with reference photos (real person, can depict them)
+// forPerson=false → GPT path (category scene, no people, safe prompt)
+function buildImagePrompt(brief, client, forPerson = false) {
+  const mood   = client?.mood || 'dramatique';
+  const light  = MOOD_LIGHTS[mood] || MOOD_LIGHTS.dramatique;
   const colors = client?.brand_colors || [];
+  const cat    = (brief.category || 'ACTU').toLowerCase();
+
+  const scene = forPerson
+    ? (brief.visual_brief || CAT_SCENES[cat] || CAT_SCENES.actu)
+    : (CAT_SCENES[cat] || CAT_SCENES.actu);
+
+  const noPeople = forPerson ? '' : 'Absolutely NO people, NO faces.';
+
   return [
-    brief.visual_brief,
-    `Mood: ${brief.emotion || mood}. ${light}.`,
+    scene,
+    `${light}.`,
     colors.length >= 2 ? `Color palette: dominant ${colors[0]}, accent ${colors[1]}.` : '',
     'Portrait format 4:5. Cinematic photorealistic editorial quality.',
-    'Absolutely NO text, NO watermarks, NO captions in the image.',
+    'Absolutely NO text, NO watermarks, NO captions.',
+    noPeople,
     'Bottom 35% of the frame must be slightly darker (room for text overlay).',
   ].filter(Boolean).join(' ');
 }
@@ -228,7 +249,7 @@ async function generateImageGPT(prompt, styleRefBuffer = null) {
 async function generateImageGemini(prompt, referenceBuffers = [], styleRefBuffer = null) {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) throw new Error('GOOGLE_API_KEY manquant');
-  const MODEL = 'gemini-2.0-flash-exp';
+  const MODEL = 'gemini-2.0-flash-preview-image-generation';
 
   const styleInstruction = styleRefBuffer
     ? 'The next image is a STYLE REFERENCE ONLY. Reproduce its visual aesthetic, composition style, lighting mood and graphic treatment — but NOT its specific objects, subjects, or colors. The text prompt takes absolute priority in case of conflict.'
@@ -347,19 +368,21 @@ router.post('/actu', async (req, res) => {
     // 4. Image : AI mode ou classic
     let photoBuffer = null;
     if (imageMode === 'ai' && visual_brief) {
-      const prompt = buildImagePrompt(brief, client);
       try {
         if (has_real_person) {
-          photoBuffer = await generateImageGemini(prompt, serperBuffers, styleRefBuffer);
+          const personPrompt = buildImagePrompt(brief, client, true);
+          photoBuffer = await generateImageGemini(personPrompt, serperBuffers, styleRefBuffer);
           console.log('[Actu] Gemini image OK');
         } else {
-          photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
+          const safePrompt = buildImagePrompt(brief, client, false);
+          photoBuffer = await generateImageGPT(safePrompt, styleRefBuffer);
           console.log('[Actu] GPT-Image-1 OK');
         }
       } catch (aiErr) {
         console.warn('[Actu] AI image failed, trying GPT-Image-1 fallback:', aiErr.message);
         try {
-          photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
+          const safePrompt = buildImagePrompt(brief, client, false);
+          photoBuffer = await generateImageGPT(safePrompt, styleRefBuffer);
           console.log('[Actu] GPT-Image-1 fallback OK');
         } catch (gptErr) {
           console.warn('[Actu] GPT-Image-1 also failed, using Serper:', gptErr.message);
