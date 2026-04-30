@@ -372,18 +372,15 @@ router.post('/actu', async (req, res) => {
     let photoBuffer = null;
     if (imageMode === 'ai' && visual_brief) {
       const prompt = buildImagePrompt(brief, client);
+      // Gemini first (cheaper, no billing cap issues) — GPT as fallback
+      const refs = has_real_person ? serperBuffers : [];
       try {
-        if (has_real_person) {
-          photoBuffer = await generateImageGemini(prompt, serperBuffers, styleRefBuffer);
-        } else {
-          photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
-          console.log('[Actu] GPT-Image-1 OK');
-        }
-      } catch (aiErr) {
-        console.warn('[Actu] AI image failed, trying GPT-Image-1 fallback:', aiErr.message);
+        photoBuffer = await generateImageGemini(prompt, refs, styleRefBuffer);
+      } catch (geminiErr) {
+        console.warn('[Actu] Gemini failed, trying GPT-Image-1:', geminiErr.message);
         try {
           photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
-          console.log('[Actu] GPT-Image-1 fallback OK');
+          console.log('[Actu] GPT-Image-1 OK');
         } catch (gptErr) {
           console.warn('[Actu] GPT-Image-1 also failed, using Serper:', gptErr.message);
           photoBuffer = serperBuffers[0] || null;
