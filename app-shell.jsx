@@ -229,10 +229,7 @@ const Topbar = ({ breadcrumb = [], actions = null }) => (
     </div>
     <div className="topbar-actions">
       {actions || (
-        <>
-          <button className="btn btn-ghost btn-icon" title="Notifications"><AppIcon name="bell"/></button>
-          <button className="btn btn-accent btn-sm"><AppIcon name="sparkle" size={13}/>Générer un post</button>
-        </>
+        <button className="btn btn-ghost btn-icon" title="Notifications"><AppIcon name="bell"/></button>
       )}
     </div>
   </header>

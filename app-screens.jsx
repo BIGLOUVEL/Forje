@@ -142,8 +142,8 @@ const GenerateHub = ({ onPick }) => {
     if (!t || detecting) return;
     setDetecting(true); setErr('');
     try {
-      var res = await fetch(GEN_API + '/generate/detect-format', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      var res = await veilleFetch('/generate/detect-format', {
+        method: 'POST',
         body: JSON.stringify({ text: t }),
       });
       var data = await res.json();
@@ -305,7 +305,16 @@ const RecentCard = ({ type, when, title, swatch }) => (
 );
 
 // ─── Génération fonctionnelle (Actu / Citation / Deep Dive) ──────────────
-const GEN_API = 'http://localhost:3001/api';
+const GEN_API = '/api';
+
+async function veilleFetch(path, opts) {
+  var sb = window.__supabase;
+  var token = null;
+  if (sb) { var sess = await sb.auth.getSession(); token = sess.data?.session?.access_token; }
+  var headers = Object.assign({ 'Content-Type': 'application/json' }, opts && opts.headers);
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(GEN_API + path, Object.assign({}, opts, { headers }));
+}
 
 const GenFormInput = ({ value, onChange, placeholder, type, rows }) => {
   var r = rows || 3;
@@ -447,8 +456,8 @@ const StyleRefDropzone = ({ value, onChange, label = 'Référence de style', hin
 const GenFormFields = ({ preset, s }) => {
   if (preset.id === 'actu') return (<>
     <ToolSection title="Actu" icon="news">
-      <GenFormInput value={s.newsText} onChange={s.setNewsText} rows={4}
-        placeholder="Decris l actu : qui, quoi, pourquoi ca compte..."/>
+      <GenFormInput value={s.newsText} onChange={s.setNewsText} rows={2}
+        placeholder="Décris l'actu : qui, quoi, pourquoi ça compte..."/>
     </ToolSection>
     <ToolSection title="Visuel" icon="image">
       <div style={{ display:'flex', gap:6, marginBottom:8 }}>
@@ -576,8 +585,8 @@ const GenerateChat = ({ preset, onBack }) => {
         citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId, clientId },
         deepdive: { topic, userId, clientId },
       }[preset.id];
-      const res  = await fetch(`${GEN_API}${ep}`, {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+      const res  = await veilleFetch(ep, {
+        method: 'POST', body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur génération');
@@ -620,11 +629,6 @@ const GenerateChat = ({ preset, onBack }) => {
               <AppIcon name="image" size={12}/>Télécharger
             </button>
           )}
-          <button className="btn btn-primary btn-sm" onClick={handleGenerate} disabled={generating || !canGenerate}>
-            {generating
-              ? <><span style={{ display:'inline-block', width:10, height:10, border:'1.5px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite', marginRight:6 }}/>Génération…</>
-              : <><AppIcon name="sparkle" size={13}/>Générer</>}
-          </button>
         </div>
       </div>
 
@@ -638,22 +642,10 @@ const GenerateChat = ({ preset, onBack }) => {
               {error}
             </div>
           )}
-          <button
-            className="btn btn-primary"
-            onClick={handleGenerate}
-            disabled={generating || !canGenerate}
-            style={{ width:'100%', marginTop:16, justifyContent:'center', gap:8 }}
-          >
+          <button className="btn-forge" onClick={handleGenerate} disabled={generating || !canGenerate}>
             {generating
-              ? React.createElement('span', {style:{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}},
-                  React.createElement('span', {style:{display:'inline-block',width:12,height:12,border:'1.5px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'vb-spin .7s linear infinite'}}),
-                  'Generation...'
-                )
-              : React.createElement('span', {style:{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}},
-                  React.createElement(AppIcon, {name:'sparkle',size:14}),
-                  'Generer'
-                )
-            }
+              ? <><span style={{ display:'inline-block', width:13, height:13, border:'2px solid rgba(7,18,47,.25)', borderTopColor:'#07122F', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/> Génération…</>
+              : <><AppIcon name="sparkle" size={15}/> Générer</>}
           </button>
         </div>
 
@@ -677,28 +669,56 @@ const GenerateChat = ({ preset, onBack }) => {
                 ? <img src={previewImages[activeSlide] || previewImages[0]} alt=""/>
                 : <GenPlaceholder preset={preset}/>}
           </div>
-          {result && preset.id !== 'deepdive' && result.title && (
-            <div className="gen-preview-caption">
-              <div className="caption-head">
-                <span className="caption-label">{result.category} · {result.title}</span>
-              </div>
-              <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
-                {result.subtitle}
-              </div>
-            </div>
-          )}
-          {result && preset.id === 'deepdive' && result.slides && (
-            <div className="gen-preview-caption">
-              <div className="caption-head">
-                <span className="caption-label">Slide {activeSlide+1} / {result.slides.length}</span>
-              </div>
-              <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
-                <b>{result.slides[activeSlide]?.title}</b><br/>
-                {result.slides[activeSlide]?.body}
-              </div>
+          {result && (
+            <div className="gen-captions-scroll">
+              {preset.id !== 'deepdive' && result.title && (
+                <div className="gen-preview-caption gen-preview-caption--no-border">
+                  <div className="caption-head">
+                    <span className="caption-label">{result.category} · {result.title}</span>
+                  </div>
+                  <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
+                    {result.subtitle}
+                  </div>
+                </div>
+              )}
+              {preset.id === 'deepdive' && result.slides && (
+                <div className="gen-preview-caption gen-preview-caption--no-border">
+                  <div className="caption-head">
+                    <span className="caption-label">Slide {activeSlide+1} / {result.slides.length}</span>
+                  </div>
+                  <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
+                    <b>{result.slides[activeSlide]?.title}</b><br/>
+                    {result.slides[activeSlide]?.body}
+                  </div>
+                </div>
+              )}
+              {result.caption && <IgCaption caption={result.caption}/>}
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+const IgCaption = ({ caption }) => {
+  const [copied, setCopied] = React.useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(caption).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <div className="gen-preview-caption gen-ig-caption">
+      <div className="caption-head">
+        <span className="caption-label">Caption Instagram</span>
+        <button className="btn btn-ghost btn-sm" onClick={copy} style={{ padding:'3px 10px', fontSize:11 }}>
+          {copied ? '✓ Copié' : 'Copier'}
+        </button>
+      </div>
+      <div className="caption-ig-body">
+        {caption}
       </div>
     </div>
   );
@@ -1381,8 +1401,8 @@ const BrandScreen = ({ clientId, onSaved }) => {
   var analyzeInstagram = function() {
     if (!igInput.trim()) return;
     setIgAnalyzing(true); setIgErr(''); setIgResult(null);
-    fetch('/api/brand/analyze-instagram', {
-      method:'POST', headers:{ 'Content-Type':'application/json' },
+    veilleFetch('/brand/analyze-instagram', {
+      method: 'POST',
       body: JSON.stringify({ handle: igInput.trim() }),
     })
       .then(function(r) { return r.json(); })

@@ -343,18 +343,22 @@
 .tool-section-head svg { color: var(--app-fg-4); }
 .tool-textarea {
   width: 100%;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: var(--app-bg);
-  border: 1px solid var(--app-line);
+  border: 1px solid rgba(110,150,255,0.22);
   border-radius: var(--radius-sm);
   color: var(--app-fg);
   font-family: inherit;
-  font-size: 13px;
-  line-height: 1.45;
-  resize: vertical;
+  font-size: 13.5px;
+  line-height: 1.6;
+  resize: none;
   outline: none;
+  transition: border-color .2s, box-shadow .2s;
 }
-.tool-textarea:focus { border-color: var(--app-line-3); }
+.tool-textarea:focus {
+  border-color: rgba(110,150,255,0.55);
+  box-shadow: 0 0 0 3px rgba(110,150,255,0.09);
+}
 .tool-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .tool-pill {
   padding: 5px 11px;
@@ -469,20 +473,21 @@
 .gen-preview-stage {
   flex: 1;
   display: grid; place-items: center;
-  padding: 28px;
-  overflow: auto;
+  padding: 18px 20px;
+  overflow: hidden;
   min-height: 0;
   background:
     radial-gradient(ellipse 500px 300px at 50% 40%, rgba(110,123,255,0.04), transparent 70%);
 }
 .gen-preview-stage img {
   max-width: 100%;
-  max-height: calc(100vh - 180px);
+  max-height: 100%;
   width: auto;
   height: auto;
   border-radius: 12px;
   display: block;
   object-fit: contain;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.45);
 }
 .post-preview {
   width: 420px;
@@ -586,6 +591,59 @@
   color: var(--app-fg-4);
   flex-wrap: wrap;
 }
+
+/* Caption Instagram */
+.gen-ig-caption { }
+.caption-ig-body {
+  font-size: 13px;
+  color: var(--app-fg);
+  line-height: 1.65;
+  white-space: pre-line;
+  padding: 4px 0 2px;
+}
+
+/* Captions scroll container — keeps image as hero */
+.gen-captions-scroll {
+  flex-shrink: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid var(--app-line);
+}
+.gen-captions-scroll .gen-preview-caption { border-top: none; max-height: none; }
+.gen-captions-scroll .gen-ig-caption { border-top: 1px solid var(--app-line); }
+.gen-preview-caption--no-border { border-top: none !important; }
+
+/* Premium Forge generate button — landing-page aesthetic */
+.btn-forge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 14px 24px;
+  border-radius: 999px;
+  background: #F5F7FF;
+  color: #07122F;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  border: none;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 10px 30px rgba(120,150,255,0.28),
+    0 0 0 1px rgba(255,255,255,0.1);
+  transition: transform .2s ease, box-shadow .2s ease, opacity .15s;
+}
+.btn-forge:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.7) inset,
+    0 14px 38px rgba(120,150,255,0.38);
+}
+.btn-forge:disabled { opacity: 0.38; cursor: not-allowed; }
 
 /* ═══ QUEUE ═══════════════════════════════════════════════════════════ */
 .view-toggle {

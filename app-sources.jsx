@@ -5,7 +5,16 @@ var { useState, useEffect, useRef } = React;
 // VEILLE ONBOARDING — intégré dans le SaaS Forje
 // ═══════════════════════════════════════════════════════════════════════════
 
-const VEILLE_API = 'http://localhost:3001/api';
+const VEILLE_API = '/api';
+
+async function veilleFetch(path, opts) {
+  var sb = window.__supabase;
+  var token = null;
+  if (sb) { var sess = await sb.auth.getSession(); token = sess.data?.session?.access_token; }
+  var headers = Object.assign({ 'Content-Type': 'application/json' }, opts && opts.headers);
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(VEILLE_API + path, Object.assign({}, opts, { headers }));
+}
 
 const LOADING_STEPS = [
   { msg: 'Recherche du compte…',               delay: 0     },
@@ -328,7 +337,7 @@ const SetupValidation = ({ profil: init, onSave, authUser }) => {
   const save = async () => {
     setSaving(true); setError(null);
     try {
-      const res  = await fetch(`${VEILLE_API}/onboarding/save`, {
+      const res  = await veilleFetch(`/onboarding/save`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           profil,
@@ -528,6 +537,57 @@ const SetupValidation = ({ profil: init, onSave, authUser }) => {
 // BOARD VEILLE — écran principal (données demo, sera remplacé Step 4)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ─── BarreTendances ───────────────────────────────────────────────────────────
+const fmtVolume = (v) => {
+  if (!v) return '—';
+  if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
+  if (v >= 1000)    return `${Math.round(v / 1000)}k`;
+  return String(v);
+};
+
+const BarreTendances = ({ tendances, onTrendClick }) => {
+  if (!tendances || tendances.length === 0) return null;
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', gap:10, padding:'8px 20px',
+      borderBottom:'1px solid var(--app-line)', overflowX:'auto',
+      background:'var(--app-surface)', flexShrink:0,
+    }}>
+      <span style={{ fontSize:11, fontWeight:700, color:'var(--app-fg-3)', whiteSpace:'nowrap', letterSpacing:'0.05em' }}>
+        🔥 DANS TA NICHE
+      </span>
+      <div style={{ display:'flex', gap:7, flex:1, overflowX:'auto', paddingBottom:2 }}>
+        {tendances.map((t, i) => (
+          <button
+            key={i}
+            onClick={() => onTrendClick?.(t)}
+            style={{
+              all:'unset', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6,
+              background: t.pertinent ? 'rgba(79,91,213,.07)' : 'var(--app-surface-2)',
+              border: `1px solid ${t.pertinent ? 'rgba(79,91,213,.3)' : 'var(--app-line)'}`,
+              borderRadius:20, padding:'4px 12px', whiteSpace:'nowrap', flexShrink:0,
+              transition:'border-color .15s, background .15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='var(--app-accent)'; e.currentTarget.style.background='rgba(79,91,213,.12)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = t.pertinent ? 'rgba(79,91,213,.3)' : 'var(--app-line)'; e.currentTarget.style.background = t.pertinent ? 'rgba(79,91,213,.07)' : 'var(--app-surface-2)'; }}
+          >
+            {t.pertinent && <span style={{ fontSize:9, color:'var(--app-accent)' }}>◆</span>}
+            <span style={{ fontSize:12, fontWeight: t.pertinent ? 700 : 600, color: t.pertinent ? 'var(--app-accent)' : 'var(--app-fg-2)' }}>{t.name}</span>
+            {t.tweet_volume > 0 && (
+              <span style={{ fontSize:10, color:'var(--app-fg-4)' }}>{fmtVolume(t.tweet_volume)}</span>
+            )}
+            <span style={{
+              fontSize:9, fontWeight:700, letterSpacing:'0.05em',
+              padding:'1px 5px', borderRadius:4,
+              background: t.geo === 'FR' ? 'rgba(59,130,246,.1)' : 'rgba(99,102,241,.1)',
+              color:       t.geo === 'FR' ? '#3B82F6'             : 'var(--app-accent)',
+            }}>{t.geo}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const HEAT_TOPICS = [
   { name:"Camel saturé",       level:3, delta:"+47%", series:[0.2,0.3,0.25,0.5,0.7,0.85,0.95] },
@@ -728,6 +788,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
   const [sourcesRss, setSourcesRss] = useState([]);
   const [compteInfo, setCompteInfo] = useState(null); // { nom, instagram_url }
   const [latestRaw, setLatestRaw]   = useState([]);
+  const [latestTweets, setLatestTweets] = useState([]);
   const [addInput, setAddInput]     = useState('');
   const [addingSource, setAddingSource] = useState(false);
   const [addSourceMsg, setAddSourceMsg] = useState(null); // { type:'ok'|'err', text }
@@ -736,10 +797,11 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
   const [addTwInput, setAddTwInput]   = useState('');
   const [addingTw, setAddingTw]       = useState(false);
   const [addTwMsg, setAddTwMsg]       = useState(null);
+  const [tendances, setTendances]     = useState([]);
 
   const track = React.useCallback((newsScoredId, action, extra = {}) => {
     if (!newsScoredId || !compteId) return;
-    fetch(`${VEILLE_API}/interactions`, {
+    veilleFetch(`/interactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ compte_id: compteId, news_scored_id: newsScoredId, action, ...extra }),
@@ -756,17 +818,30 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const loadLatestRaw = async () => {
     try {
-      const res  = await fetch(`${VEILLE_API}/rss/news?limit=200`);
-      const json = await res.json();
-      if (res.ok) setLatestRaw(json.news || []);
+      const [rssRes, twRes] = await Promise.all([
+        veilleFetch(`/rss/news?limit=150`),
+        veilleFetch(`/rss/news?source_type=twitter&limit=50`),
+      ]);
+      const rssJson = await rssRes.json();
+      const twJson  = await twRes.json();
+      if (rssRes.ok) setLatestRaw((rssJson.news || []).filter(n => !n.source?.startsWith('@')));
+      if (twRes.ok)  setLatestTweets(twJson.news || []);
     } catch (err) { console.error('[LatestRaw]', err.message); }
+  };
+
+  const loadTrends = async () => {
+    try {
+      const res  = await veilleFetch(`/twitter/trends?compte_id=${compteId}`);
+      const json = await res.json();
+      if (res.ok) setTendances(json.tendances || []);
+    } catch (err) { console.error('[Trends]', err.message); }
   };
 
   const loadSources = async () => {
     try {
       const [rssRes, curatedRes] = await Promise.all([
-        fetch(`${VEILLE_API}/rss/sources?compte_id=${compteId}`),
-        fetch(`${VEILLE_API}/twitter/curated-sources?compte_id=${compteId}`),
+        veilleFetch(`/rss/sources?compte_id=${compteId}`),
+        veilleFetch(`/twitter/curated-sources?compte_id=${compteId}`),
       ]);
       const rssJson = await rssRes.json();
       if (rssRes.ok) {
@@ -787,7 +862,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     setAddingTw(true);
     setAddTwMsg(null);
     try {
-      const res  = await fetch(`${VEILLE_API}/twitter/add-account`, {
+      const res  = await veilleFetch(`/twitter/add-account`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compte_id: compteId, handle: raw }),
       });
@@ -806,7 +881,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const handleRemoveTwitter = async (handle) => {
     try {
-      await fetch(`${VEILLE_API}/twitter/remove-account`, {
+      await veilleFetch(`/twitter/remove-account`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compte_id: compteId, handle }),
       });
@@ -820,7 +895,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     setAddingSource(true);
     setAddSourceMsg(null);
     try {
-      const res  = await fetch(`${VEILLE_API}/rss/add-source`, {
+      const res  = await veilleFetch(`/rss/add-source`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compte_id: compteId, source_name: name }),
       });
@@ -837,7 +912,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const handleRemoveSource = async (url) => {
     try {
-      await fetch(`${VEILLE_API}/rss/remove-source`, {
+      await veilleFetch(`/rss/remove-source`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compte_id: compteId, url }),
       });
@@ -847,7 +922,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const loadBoard = async () => {
     try {
-      const res  = await fetch(`${VEILLE_API}/scoring/board?compte_id=${compteId}&limit=50`);
+      const res  = await veilleFetch(`/scoring/board?compte_id=${compteId}&limit=50`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       setBoardData(json);
@@ -860,7 +935,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
   const runScoring = async () => {
     setScoring(true);
     try {
-      await fetch(`${VEILLE_API}/scoring/run`, {
+      await veilleFetch(`/scoring/run`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compte_id: compteId }),
       });
@@ -873,13 +948,14 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     const init = async () => {
       loadSources();
       loadLatestRaw();
+      loadTrends();
       const data = await loadBoard();
       // Si le board est vide au premier chargement, on déclenche refresh+score en background
       const total = (data?.board?.length || 0) + (data?.breaking?.length || 0);
       if (total === 0) {
         setRefreshing(true);
         try {
-          await fetch(`${VEILLE_API}/rss/refresh?compte_id=${compteId}`);
+          await veilleFetch(`/rss/refresh?compte_id=${compteId}`);
         } catch (err) { console.error('[AutoRefresh]', err.message); }
         finally { setRefreshing(false); }
         // Le scoring tourne en background côté serveur — on poll toutes les 4s pendant 3 min
@@ -917,10 +993,21 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     return `il y a ${h}h${m > 0 ? String(m).padStart(2, '0') : ''}`;
   };
 
+  const handleTrendClick = async (trend) => {
+    // Ouvre la recherche X + log dans tendances_log
+    window.open(`https://x.com/search?q=${encodeURIComponent(trend.name)}&src=trend_click`, '_blank', 'noopener');
+    try {
+      await veilleFetch('/twitter/trends/log', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ compte_id: compteId, trend_name: trend.name, tweet_volume: trend.tweet_volume, geo: trend.geo }),
+      });
+    } catch (_) {}
+  };
+
   const runRefresh = async () => {
     setRefreshing(true);
     try {
-      await fetch(`${VEILLE_API}/rss/refresh?compte_id=${compteId}`);
+      await veilleFetch(`/rss/refresh?compte_id=${compteId}`);
     } catch (err) { console.error('[Refresh]', err.message); }
     finally { setRefreshing(false); }
     // Scoring en background — poll toutes les 4s pendant 3 min
@@ -1018,7 +1105,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
           </button>
           <button className={`view-tab ${view==='latest'?'active':''}`} onClick={() => { setView('latest'); loadLatestRaw(); }}>
             <AppIcon name="news" size={12}/> Latest
-            <span className="view-tab-count">{latestRaw.length}</span>
+            <span className="view-tab-count">{latestRaw.length + latestTweets.length}</span>
           </button>
           <button className={`view-tab ${view==='sources'?'active':''}`} onClick={() => setView('sources')}>
             <AppIcon name="globe" size={12}/> Sources
@@ -1038,42 +1125,70 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
         </div>
       </div>
 
+      {/* ── Barre tendances (board uniquement) ── */}
+      {view === 'board' && <BarreTendances tendances={tendances} onTrendClick={handleTrendClick}/>}
+
       {/* ── Vue Latest ── */}
       {view === 'latest' && (
         <div className="latest-wrapper">
           <div className="latest-header">
-            <span>{latestRaw.length} articles · toutes sources · triés par date de publication</span>
+            <span>{latestRaw.length + latestTweets.length} articles · toutes sources · triés par date de publication</span>
           </div>
-          <div className="latest-list">
-            {latestRaw.length === 0 ? (
-              <div style={{ padding:'40px 24px', textAlign:'center', color:'var(--app-fg-3)', fontSize:13 }}>
-                Aucune news — clique ↻ pour rafraîchir.
+
+          {/* Tweets pinned at top */}
+          {latestTweets.length > 0 && (
+            <div style={{ borderBottom:'1px solid var(--app-line)' }}>
+              <div style={{ padding:'8px 20px 6px', fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--app-fg-3)', display:'flex', alignItems:'center', gap:6 }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ color:'var(--app-fg-3)' }}>
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                </svg>
+                Twitter / X <span style={{ fontWeight:400, color:'var(--app-fg-4)', textTransform:'none', letterSpacing:0, fontSize:11 }}>· {latestTweets.length}</span>
               </div>
-            ) : latestRaw.map(item => {
-              const isTweet = item.source?.startsWith('@');
-              return (
+              {latestTweets.map(item => (
                 <a
                   key={item.id}
                   href={item.url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="latest-row"
+                  style={{ background:'rgba(0,0,0,.015)' }}
                 >
                   <div className="latest-row-left">
                     <span className="latest-time">{fmtAge(item.published_at || item.created_at)}</span>
-                    <span className="latest-source" style={isTweet ? { display:'inline-flex', alignItems:'center', gap:4 } : {}}>
-                      {isTweet && (
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink:0, opacity:0.7 }}>
-                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                        </svg>
-                      )}
+                    <span className="latest-source" style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink:0, opacity:0.7 }}>
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                      </svg>
                       {item.source}
                     </span>
                   </div>
                   <div className="latest-row-title">{item.titre}</div>
                 </a>
-              );
-            })}
+              ))}
+            </div>
+          )}
+
+          {/* RSS articles */}
+          <div className="latest-list">
+            {latestRaw.length === 0 && latestTweets.length === 0 ? (
+              <div style={{ padding:'40px 24px', textAlign:'center', color:'var(--app-fg-3)', fontSize:13 }}>
+                Aucune news — clique ↻ pour rafraîchir.
+              </div>
+            ) : latestRaw.map(item => (
+              <a
+                key={item.id}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="latest-row"
+              >
+                <div className="latest-row-left">
+                  <span className="latest-time">{fmtAge(item.published_at || item.created_at)}</span>
+                  <span className="latest-source">{item.source}</span>
+                </div>
+                <div className="latest-row-title">{item.titre}</div>
+              </a>
+            ))}
           </div>
         </div>
       )}
@@ -1300,7 +1415,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
                         title={src.actif ? 'Désactiver' : 'Activer'}
                         style={{ flexShrink:0 }}
                         onClick={async () => {
-                          await fetch(`${VEILLE_API}/twitter/curated-sources/${src.id}`, {
+                          await veilleFetch(`/twitter/curated-sources/${src.id}`, {
                             method:'PATCH', headers:{'Content-Type':'application/json'},
                             body: JSON.stringify({ actif: !src.actif }),
                           });
@@ -1411,7 +1526,7 @@ const SourcesScreen = ({ authUser }) => {
     setStep('loading');
     setApiError(null);
     try {
-      const res  = await fetch(`${VEILLE_API}/onboarding/analyze`, {
+      const res  = await veilleFetch(`/onboarding/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: inputUrl }),

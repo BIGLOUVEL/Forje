@@ -45,6 +45,17 @@ const App = () => {
       setActiveClientId(active);
       window.__activeClientId = active;
     });
+
+    // Prefill venant du board (clic "Générer post" sur une news)
+    const raw = localStorage.getItem('forje_gen_prefill');
+    if (raw) {
+      localStorage.removeItem('forje_gen_prefill');
+      try {
+        const { newsText } = JSON.parse(raw);
+        setPreset({ id:'actu', label:'Actualité', icon:'news', visual:'actu', img:'assets/actu.webp', prefill: { newsText } });
+        setScreen('generate');
+      } catch (_) {}
+    }
   }, []);
 
   const handleSelectClient = (id) => {

@@ -60,7 +60,8 @@ const Root = () => {
   useEffect(() => {
     if (!authChecked) return;
     if (!user) {
-      applyCss('landing');
+      if (view === 'auth') disableAllCss();
+      else applyCss('landing');
       document.body.classList.remove('app-mode');
       return;
     }
