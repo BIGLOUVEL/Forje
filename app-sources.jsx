@@ -243,19 +243,73 @@ const SetupInput = ({ onAnalyze, error }) => {
 };
 
 // ─── Step 2 : Chargement ──────────────────────────────────────────────────────
-const SetupLoading = ({ url }) => {
+const LOADING_ERROR_LABELS = {
+  private:  { icon: '🔒', title: 'Compte privé', desc: 'Ce compte Instagram est privé. Entre un compte public ou un handle différent.' },
+  notfound: { icon: '🔍', title: 'Compte introuvable', desc: 'Aucun compte trouvé à cette adresse. Vérifie l\'URL ou le handle.' },
+  timeout:  { icon: '⏱', title: 'Délai dépassé', desc: 'L\'analyse a pris trop de temps. Réessaie dans quelques secondes.' },
+  ratelimit:{ icon: '⚡', title: 'Limite atteinte', desc: 'Trop de requêtes simultanées. Attends quelques secondes et réessaie.' },
+  default:  { icon: '⚠', title: 'Analyse échouée', desc: null },
+};
+
+function classifyError(msg) {
+  const m = (msg || '').toLowerCase();
+  if (m.includes('privé') || m.includes('private')) return 'private';
+  if (m.includes('introuvable') || m.includes('not found') || m.includes('404')) return 'notfound';
+  if (m.includes('timeout') || m.includes('délai')) return 'timeout';
+  if (m.includes('rate') || m.includes('limit') || m.includes('429')) return 'ratelimit';
+  return 'default';
+}
+
+const SetupLoading = ({ url, error, onRetry }) => {
   const [msgs, setMsgs] = useState([LOADING_STEPS[0].msg]);
   const [dots, setDots] = useState('');
 
   useEffect(() => {
+    if (error) return;
     const timers = LOADING_STEPS.slice(1).map(({ msg, delay }) =>
       setTimeout(() => setMsgs(prev => [...prev, msg]), delay)
     );
     const dotTimer = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 400);
     return () => { timers.forEach(clearTimeout); clearInterval(dotTimer); };
-  }, []);
+  }, [error]);
 
   const pct = Math.min(90, ((msgs.length - 1) / (LOADING_STEPS.length - 1)) * 90);
+
+  if (error) {
+    const kind = classifyError(error);
+    const label = LOADING_ERROR_LABELS[kind];
+    return (
+      <div className="page-body">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Analyse échouée</h1>
+            <p className="page-subtitle" style={{ fontFamily:'JetBrains Mono, monospace', fontSize:12 }}>{url}</p>
+          </div>
+        </div>
+        <div style={{ maxWidth:480, margin:'0 auto', padding:'16px 0' }}>
+          <div className="card card-pad" style={{ padding:'36px 32px', display:'flex', flexDirection:'column', alignItems:'center', gap:20, textAlign:'center' }}>
+            <div style={{ fontSize:36 }}>{label.icon}</div>
+            <div>
+              <div style={{ fontSize:16, fontWeight:700, color:'var(--app-fg)', marginBottom:8 }}>{label.title}</div>
+              <div style={{ fontSize:13, color:'var(--app-fg-3)', lineHeight:1.5 }}>
+                {label.desc || error}
+              </div>
+              {kind === 'default' && (
+                <div style={{ marginTop:8, fontSize:12, color:'var(--app-fg-4)', fontFamily:'JetBrains Mono, monospace' }}>{error}</div>
+              )}
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={onRetry}
+              style={{ padding:'10px 28px', fontSize:13 }}
+            >
+              <AppIcon name="refresh" size={13}/> Réessayer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-body">
@@ -1504,11 +1558,12 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 // SourcesScreen — point d'entrée
 // ═══════════════════════════════════════════════════════════════════════════
 const SourcesScreen = ({ authUser }) => {
-  const [compteId, setCompteId] = useState(() => localStorage.getItem('veille_compte_id'));
-  const [step, setStep]         = useState('input');
-  const [url, setUrl]           = useState('');
-  const [profil, setProfil]     = useState(null);
-  const [apiError, setApiError] = useState(null);
+  const [compteId, setCompteId]   = useState(() => localStorage.getItem('veille_compte_id'));
+  const [step, setStep]           = useState('input');
+  const [url, setUrl]             = useState('');
+  const [profil, setProfil]       = useState(null);
+  const [apiError, setApiError]   = useState(null);
+  const [loadingError, setLoadingError] = useState(null);
 
   // Récupère le compte lié à l'user si localStorage vide
   useEffect(() => {
@@ -1525,6 +1580,7 @@ const SourcesScreen = ({ authUser }) => {
     setUrl(inputUrl);
     setStep('loading');
     setApiError(null);
+    setLoadingError(null);
     try {
       const res  = await veilleFetch(`/onboarding/analyze`, {
         method: 'POST',
@@ -1536,8 +1592,7 @@ const SourcesScreen = ({ authUser }) => {
       setProfil(json.profil);
       setStep('validation');
     } catch (err) {
-      setApiError(err.message);
-      setStep('input');
+      setLoadingError(err.message);
     }
   };
 
@@ -1550,7 +1605,7 @@ const SourcesScreen = ({ authUser }) => {
   };
 
   if (compteId) return <VeilleBoard compteId={compteId} freshSetup={step === 'saved'} onReset={handleReset}/>;
-  if (step === 'loading')    return <SetupLoading url={url}/>;
+  if (step === 'loading')    return <SetupLoading url={url} error={loadingError} onRetry={() => { setStep('input'); setLoadingError(null); }}/>;
   if (step === 'validation') return <SetupValidation profil={profil} authUser={authUser} onSave={id => { setCompteId(id); setStep('saved'); }}/>;
   return <SetupInput onAnalyze={handleAnalyze} error={apiError}/>;
 };

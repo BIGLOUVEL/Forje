@@ -132,10 +132,19 @@ const PRESETS = [
     tag: 'Meilleur reach', icon: 'layers', img: 'assets/deep-dive.webp',  visual: 'bts'   },
 ];
 
+const HUB_PLACEHOLDERS = [
+  '« L\'IA vient de dépasser les médecins sur les diagnostics cancer du sein. On en parle ? »',
+  '« Notre nouvelle collection automne arrive jeudi — faut créer l\'élan maintenant. »',
+  '« Citation de notre CEO ce matin en conf : "L\'excellence, c\'est la répétition faite belle." »',
+  '« Article du Monde sur la relocalisation textile en France — angle parfait pour nous. »',
+  '« On vient de recevoir le prix Innovation Durable 2026 — comment on annonce ça ? »',
+];
+
 const GenerateHub = ({ onPick }) => {
   var [text,      setText]      = useState('');
   var [detecting, setDetecting] = useState(false);
   var [err,       setErr]       = useState('');
+  var placeholder = HUB_PLACEHOLDERS[Math.floor(Date.now() / 30000) % HUB_PLACEHOLDERS.length];
 
   var handleDetect = async function() {
     var t = text.trim();
@@ -163,29 +172,24 @@ const GenerateHub = ({ onPick }) => {
         <div>
           <h1 className="page-title">Que veux-tu raconter ?</h1>
           <p className="page-subtitle">
-            Choisis un format. Forje s'occupe du reste — rédaction, visuel, ton de voix.
+            Décris ton idée — Forje détecte le bon format et génère le post.
           </p>
         </div>
-      </div>
-
-      <div className="gen-preset-grid">
-        {PRESETS.map(p => (
-          <PresetCard key={p.id} preset={p} onPick={() => onPick(p)}/>
-        ))}
       </div>
 
       <div className="gen-prompt-card">
         <div className="gen-prompt-badge">
           <AppIcon name="sparkle" size={14}/>
-          <span>Ou décris-le avec tes mots — Forje choisira le bon format</span>
+          <span>Décris-le avec tes mots — Forje choisit le bon format</span>
         </div>
         <div className="gen-prompt-input">
           <textarea
             value={text}
             onChange={function(e) { setText(e.target.value); setErr(''); }}
             onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleDetect(); }}
-            placeholder="« On a reçu une livraison de cuir camel de Annonay — le même que notre père utilisait dans les années 80. Faut en parler. »"
-            rows={2}
+            placeholder={placeholder}
+            rows={3}
+            autoFocus
           />
         </div>
         <div className="gen-prompt-foot">
@@ -204,6 +208,16 @@ const GenerateHub = ({ onPick }) => {
               : <><AppIcon name="arrowRight" size={13}/> Générer</>}
           </button>
         </div>
+      </div>
+
+      <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--app-fg-4)', margin:'24px 0 12px' }}>
+        Ou choisissez un format directement
+      </div>
+
+      <div className="gen-preset-grid">
+        {PRESETS.map(p => (
+          <PresetCard key={p.id} preset={p} onPick={() => onPick(p)}/>
+        ))}
       </div>
     </div>
   );
@@ -460,21 +474,13 @@ const GenFormFields = ({ preset, s }) => {
         placeholder="Décris l'actu : qui, quoi, pourquoi ça compte..."/>
     </ToolSection>
     <ToolSection title="Visuel" icon="image">
-      <div style={{ display:'flex', gap:6, marginBottom:8 }}>
-        {['ai','classic'].map(function(mode) {
-          var active = s.imageMode === mode;
-          return (
-            <button key={mode} onClick={function(){ s.setImageMode(mode); }}
-              style={{ flex:1, padding:'7px 0', borderRadius:6, fontSize:12, fontFamily:'DM Sans,sans-serif',
-                cursor:'pointer', transition:'all .15s',
-                background: active ? 'var(--app-accent)' : 'var(--app-surface-2)',
-                color: active ? '#fff' : 'var(--app-fg-3)',
-                border: active ? '1px solid var(--app-accent)' : '1px solid var(--app-line)',
-                fontWeight: active ? 600 : 400 }}>
-              {mode === 'ai' ? '✦ IA — Cinématique' : 'Photo Google'}
-            </button>
-          );
-        })}
+      <div className="vis-mode-toggle">
+        <button className={`vis-mode-btn${s.imageMode === 'ai' ? ' active' : ''}`} onClick={() => s.setImageMode('ai')}>
+          ✦ IA — Cinématique
+        </button>
+        <button className={`vis-mode-btn${s.imageMode === 'classic' ? ' active' : ''}`} onClick={() => s.setImageMode('classic')}>
+          Photo Google
+        </button>
       </div>
       {s.imageMode === 'classic' && (
         <div>
@@ -522,29 +528,56 @@ const GenFormFields = ({ preset, s }) => {
 
   return null;
 };
-const GenPlaceholder = ({ preset }) => (
-  <div style={{ aspectRatio: preset.id === 'actu' ? '4/5' : '1/1', background:'var(--app-surface-2)',
-    borderRadius:12, display:'flex', flexDirection:'column', alignItems:'center',
-    justifyContent:'center', gap:12, color:'var(--app-fg-4)' }}>
-    <AppIcon name={preset.icon} size={32}/>
-    <span style={{ fontSize:13 }}>Remplis le formulaire et génère</span>
+const GenPlaceholder = () => (
+  <div className="gen-empty-wrap">
+    <div className="gen-empty-post-frame">
+      <div className="gen-empty-post-inner">
+        <span className="gen-empty-sparkle">✦</span>
+      </div>
+    </div>
+    <div className="gen-empty-text">Remplis le formulaire · Génère</div>
   </div>
 );
 
-const GenLoader = ({ preset }) => (
-  <div style={{ aspectRatio: preset?.id === 'actu' ? '4/5' : '1/1', background:'var(--app-surface-2)',
-    borderRadius:12, display:'flex', flexDirection:'column', alignItems:'center',
-    justifyContent:'center', gap:16, color:'var(--app-fg-3)' }}>
-    <div style={{ width:28, height:28, border:'2.5px solid var(--app-line)',
-      borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .8s linear infinite' }}/>
-    <span style={{ fontSize:13 }}>Génération en cours…</span>
-    {preset?.id === 'actu' && (
-      <span style={{ fontSize:11, color:'var(--app-fg-4)', textAlign:'center', maxWidth:160, lineHeight:1.5 }}>
-        L'IA compose le visuel — 20-40 sec
-      </span>
-    )}
-  </div>
-);
+const LOADER_STEPS = {
+  actu:     [[0,'Analyse de l\'actu…'],[5000,'Génération du visuel cinématique…'],[14000,'Rédaction du post…'],[22000,'Caption Instagram…'],[30000,'Finalisation…']],
+  citation: [[0,'Composition visuelle…'],[6000,'Mise en forme typographique…'],[12000,'Finalisation…']],
+  deepdive: [[0,'Plan éditorial…'],[8000,'Génération des 6 slides…'],[18000,'Finalisation…']],
+};
+const LOADER_TOTAL = { actu: 36000, citation: 18000, deepdive: 28000 };
+
+const GenLoader = ({ preset }) => {
+  const id = preset?.id || 'actu';
+  const steps = LOADER_STEPS[id] || LOADER_STEPS.actu;
+  const total = LOADER_TOTAL[id] || 36000;
+  const [stepIdx, setStepIdx] = useState(0);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const timers = steps.slice(1).map(([delay,], i) => setTimeout(() => setStepIdx(i + 1), delay));
+    const start = Date.now();
+    const tick = setInterval(() => setProgress(Math.min((Date.now() - start) / total * 100, 94)), 120);
+    return () => { timers.forEach(clearTimeout); clearInterval(tick); };
+  }, []);
+
+  return (
+    <div className="gen-loader-wrap">
+      <div className="gen-loader-card">
+        <div className="gen-loader-card-inner">
+          <div className="gen-loader-shimmer"/>
+          <span className="gen-loader-sparkle">✦</span>
+        </div>
+      </div>
+      <div className="gen-loader-bar-wrap">
+        <div className="gen-loader-bar-fill" style={{ width: progress + '%' }}/>
+      </div>
+      <div className="gen-loader-info">
+        <div className="gen-loader-step" key={stepIdx}>{steps[stepIdx][1]}</div>
+        <div className="gen-loader-dots"><span/><span/><span/></div>
+      </div>
+    </div>
+  );
+};
 
 const GenerateChat = ({ preset, onBack }) => {
   const [newsText,    setNewsText]    = useState(preset.prefill?.newsText  || '');
@@ -632,7 +665,7 @@ const GenerateChat = ({ preset, onBack }) => {
         </div>
       </div>
 
-      <div className="gen-studio-grid gen-studio-grid--studio">
+      <div className={`gen-studio-grid${result || generating ? ' gen-studio-grid--studio' : ''}`}>
         {/* LEFT : formulaire */}
         <div className="gen-tools">
           <GenFormFields preset={preset} s={s}/>
@@ -649,7 +682,8 @@ const GenerateChat = ({ preset, onBack }) => {
           </button>
         </div>
 
-        {/* RIGHT : preview */}
+        {/* RIGHT : preview — s'ouvre au déclenchement de la génération */}
+        {(result || generating) && (
         <div className="gen-preview">
           {preset.id === 'deepdive' && previewImages.length > 1 && (
             <div className="gen-preview-head">
@@ -667,7 +701,7 @@ const GenerateChat = ({ preset, onBack }) => {
               ? <GenLoader preset={preset}/>
               : previewImages.length
                 ? <img src={previewImages[activeSlide] || previewImages[0]} alt=""/>
-                : <GenPlaceholder preset={preset}/>}
+                : null}
           </div>
           {result && (
             <div className="gen-captions-scroll">
@@ -696,6 +730,7 @@ const GenerateChat = ({ preset, onBack }) => {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
