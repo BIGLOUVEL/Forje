@@ -114,11 +114,11 @@ async function renderActuCanvas(data) {
 // ═══════════════════════════════════════════════════════════════════════════
 // GENERATE — hub (Higgsfield-like) + creation (2 variations via tweak)
 // ═══════════════════════════════════════════════════════════════════════════
-const GenerateScreen = ({ layoutVariant, preset, onPickPreset, onBack }) => {
+const GenerateScreen = ({ layoutVariant, preset, onPickPreset, onBack, onGoToBoard }) => {
   if (preset) {
     return layoutVariant === 'chat'
-      ? <GenerateChat preset={preset} onBack={onBack}/>
-      : <GenerateStudio preset={preset} onBack={onBack}/>;
+      ? <GenerateChat preset={preset} onBack={onBack} onGoToBoard={onGoToBoard}/>
+      : <GenerateStudio preset={preset} onBack={onBack} onGoToBoard={onGoToBoard}/>;
   }
   return <GenerateHub onPick={onPickPreset}/>;
 };
@@ -196,8 +196,15 @@ const GenerateHub = ({ onPick }) => {
           <div className="gen-prompt-hints">
             {err
               ? <span style={{ color:'#ef4444' }}>{err}</span>
-              : <span>{detecting ? 'Analyse en cours...' : 'Forje détecte le format · ⌘↵ pour envoyer'}</span>}
+              : text.length > 0 && text.length < 10
+                ? <span style={{ color:'#f59e0b' }}>Continue un peu…</span>
+                : <span>{detecting ? 'Analyse en cours...' : 'Forje détecte le format · ⌘↵ pour envoyer'}</span>}
           </div>
+          {text.length > 0 && (
+            <span style={{ fontSize:11, color: text.length > 500 ? '#ef4444' : 'var(--app-fg-4)', marginRight:8, fontVariantNumeric:'tabular-nums' }}>
+              {text.length}
+            </span>
+          )}
           <button
             className={'btn btn-accent btn-sm' + (!text.trim() || detecting ? ' btn-disabled' : '')}
             onClick={handleDetect}
@@ -320,6 +327,7 @@ const RecentCard = ({ type, when, title, swatch }) => (
 
 // ─── Génération fonctionnelle (Actu / Citation / Deep Dive) ──────────────
 const GEN_API = '/api';
+var _genActive = null; // preset ID of in-flight generation (survives navigation)
 
 async function veilleFetch(path, opts) {
   var sb = window.__supabase;
@@ -565,7 +573,17 @@ const GenLoader = ({ preset }) => {
       <div className="gen-loader-card">
         <div className="gen-loader-card-inner">
           <div className="gen-loader-shimmer"/>
-          <span className="gen-loader-sparkle">✦</span>
+          {/* Instagram post skeleton */}
+          <div className="gen-loader-skel">
+            <div className="gen-skel-img"/>
+            <div className="gen-skel-foot">
+              <div className="gen-skel-avatar"/>
+              <div className="gen-skel-lines">
+                <div className="gen-skel-line gen-skel-line--70"/>
+                <div className="gen-skel-line gen-skel-line--45"/>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div className="gen-loader-bar-wrap">
@@ -579,20 +597,40 @@ const GenLoader = ({ preset }) => {
   );
 };
 
-const GenerateChat = ({ preset, onBack }) => {
-  const [newsText,    setNewsText]    = useState(preset.prefill?.newsText  || '');
+const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
+  const GEN_KEY     = `forje_gen_result_${preset.id}`;
+  const INPUTS_KEY  = `forje_gen_inputs_${preset.id}`;
+
+  const savedResult = (() => { try { return JSON.parse(sessionStorage.getItem(GEN_KEY) || 'null'); } catch(_){ return null; } })();
+  const savedInputs = (() => { try { return JSON.parse(sessionStorage.getItem(INPUTS_KEY) || 'null'); } catch(_){ return null; } })();
+
+  const [newsText,    setNewsText]    = useState(preset.prefill?.newsText  || savedInputs?.newsText  || '');
   const [photoUrl,    setPhotoUrl]    = useState('');
   const [photoData,   setPhotoData]   = useState('');
-  const [quoteText,   setQuoteText]   = useState(preset.prefill?.quoteText || '');
-  const [authorName,  setAuthorName]  = useState(preset.prefill?.authorName|| '');
+  const [quoteText,   setQuoteText]   = useState(preset.prefill?.quoteText || savedInputs?.quoteText || '');
+  const [authorName,  setAuthorName]  = useState(preset.prefill?.authorName|| savedInputs?.authorName|| '');
   const [authorTitle, setAuthorTitle] = useState('');
-  const [topic,       setTopic]       = useState(preset.prefill?.topic     || '');
+  const [topic,       setTopic]       = useState(preset.prefill?.topic     || savedInputs?.topic     || '');
   const [imageMode,    setImageMode]    = useState('ai');
   const [styleRefData, setStyleRefData] = useState(null);
-  const [generating,   setGenerating]   = useState(false);
-  const [result,       setResult]       = useState(null);
+  const [generating,   setGenerating]   = useState(_genActive === preset.id);
+  const [result,       setResult]       = useState(savedResult);
   const [error,        setError]        = useState(null);
   const [activeSlide,  setActiveSlide]  = useState(0);
+  const isMountedRef = useRef(true);
+  useEffect(() => { return () => { isMountedRef.current = false; }; }, []);
+
+  // Register global callbacks so an in-flight generation can reach THIS mounted instance
+  useEffect(() => {
+    var alive = true;
+    window.__onGenResult = function(data, presetId) {
+      if (alive && presetId === preset.id) { setGenerating(false); setResult(data); }
+    };
+    window.__onGenError = function(msg, presetId) {
+      if (alive && presetId === preset.id) { setGenerating(false); setError(msg); }
+    };
+    return function() { alive = false; };
+  }, []);
 
   const s = { newsText, setNewsText, photoUrl, setPhotoUrl, photoData, setPhotoData, quoteText, setQuoteText,
               authorName, setAuthorName, authorTitle, setAuthorTitle, topic, setTopic,
@@ -605,10 +643,13 @@ const GenerateChat = ({ preset, onBack }) => {
   }[preset.id] || false;
 
   const handleGenerate = async () => {
-    setGenerating(true);
-    setError(null);
-    setResult(null);
-    setActiveSlide(0);
+    _genActive = preset.id;
+    if (isMountedRef.current) { setGenerating(true); setError(null); setResult(null); setActiveSlide(0); }
+    sessionStorage.removeItem(GEN_KEY);
+    try {
+      sessionStorage.setItem(INPUTS_KEY, JSON.stringify({ newsText, quoteText, topic, authorName }));
+    } catch(_) {}
+    window.__setGenToast?.({ status: 'generating', label: preset.label, presetId: preset.id, preset });
     try {
       const userId   = window.__currentUser?.id;
       const clientId = window.__activeClientId || undefined;
@@ -618,20 +659,28 @@ const GenerateChat = ({ preset, onBack }) => {
         citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId, clientId },
         deepdive: { topic, userId, clientId },
       }[preset.id];
-      const res  = await veilleFetch(ep, {
-        method: 'POST', body: JSON.stringify(body),
-      });
+      const res  = await veilleFetch(ep, { method: 'POST', body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur génération');
-      // Actu: server returns bgImage + metadata, client renders text with real fonts
-      if (data.bgImage) {
-        data.image = await renderActuCanvas(data);
+      if (data.bgImage) { data.image = await renderActuCanvas(data); }
+      try { sessionStorage.setItem(GEN_KEY, JSON.stringify(data)); } catch(_) {}
+      window.__setGenToast?.({ status: 'ready', label: preset.label, presetId: preset.id, preset });
+      if (isMountedRef.current) {
+        setResult(data);
+      } else {
+        // component navigated away — deliver result to whatever instance is mounted now
+        window.__onGenResult?.(data, preset.id);
       }
-      setResult(data);
     } catch (err) {
-      setError(err.message);
+      window.__setGenToast?.(null);
+      if (isMountedRef.current) {
+        setError(err.message);
+      } else {
+        window.__onGenError?.(err.message, preset.id);
+      }
     } finally {
-      setGenerating(false);
+      _genActive = null;
+      if (isMountedRef.current) setGenerating(false);
     }
   };
 
@@ -646,12 +695,23 @@ const GenerateChat = ({ preset, onBack }) => {
 
   const previewImages = preset.id === 'deepdive' ? (result?.images || []) : (result?.image ? [result.image] : []);
 
+  // Si résultat déjà là et toast encore visible, on le dismiss
+  useEffect(() => { if (result) window.__setGenToast?.(null); }, [result]);
+
   return (
     <div className="gen-studio-body">
       <div className="gen-studio-head">
-        <button className="btn btn-ghost btn-sm" onClick={onBack}>
-          <AppIcon name="chevLeft" size={12}/>Formats
-        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => { sessionStorage.removeItem(GEN_KEY); onBack(); }}>
+            <AppIcon name="chevLeft" size={12}/>Formats
+          </button>
+          {preset.fromBoard && (
+            <button className="btn btn-ghost btn-sm" style={{ color:'var(--app-accent)' }}
+              onClick={() => { onGoToBoard?.(); }}>
+              <AppIcon name="news" size={12}/>Board
+            </button>
+          )}
+        </div>
         <div className="gen-studio-title-row">
           <AppIcon name={preset.icon} size={14} style={{color:'var(--app-fg-3)'}}/>
           <h1 className="gen-studio-title">{preset.label}</h1>
@@ -860,23 +920,38 @@ const QueueScreen = ({ defaultView = 'calendar' }) => {
   );
 };
 
-const WEEK = ['LUN 14','MAR 15','MER 16','JEU 17','VEN 18','SAM 19','DIM 20'];
-const CAL_EVENTS = [
-  { day:0, hour:8,  dur:1, type:'quote',   title:'« L\'excellence… »', status:'ready' },
-  { day:1, hour:8,  dur:1, type:'product', title:'Sac Margot camel',   status:'ready' },
-  { day:1, hour:19, dur:1, type:'bts',     title:'Piquage · Noémie',    status:'ready' },
-  { day:2, hour:10, dur:1, type:'news',    title:'Émission Artisans',   status:'draft' },
-  { day:2, hour:18, dur:1, type:'product', title:'Margot · lancement',  status:'ready' },
-  { day:3, hour:12, dur:1, type:'pedago',  title:'Le mot · skiver',     status:'draft' },
-  { day:4, hour:17, dur:1, type:'quote',   title:'« Trois générations »', status:'ready' },
-];
-const QueueCalendar = () => (
+const CAL_EVENTS = [];
+const DAY_LABELS = ['LUN','MAR','MER','JEU','VEN','SAM','DIM'];
+const getWeekDays = (offset = 0) => {
+  const now = new Date();
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - ((now.getDay() + 6) % 7) + offset * 7);
+  return DAY_LABELS.map((l, i) => {
+    const d = new Date(mon); d.setDate(mon.getDate() + i);
+    return { label: l, num: d.getDate(), date: d };
+  });
+};
+const fmtWeekRange = (days) => {
+  const start = days[0].date;
+  const end = days[6].date;
+  const opts = { month:'long' };
+  const sameMonth = start.getMonth() === end.getMonth();
+  return sameMonth
+    ? `${start.getDate()} – ${end.getDate()} ${start.toLocaleDateString('fr-FR', opts)} ${start.getFullYear()}`
+    : `${start.getDate()} ${start.toLocaleDateString('fr-FR', opts)} – ${end.getDate()} ${end.toLocaleDateString('fr-FR', opts)} ${end.getFullYear()}`;
+};
+const QueueCalendar = () => {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const WEEK = getWeekDays(weekOffset);
+  const todayNum = new Date().getDate();
+  const todayOffset = 0;
+  return (
   <div className="card cal-card">
     <div className="cal-head">
       <div className="cal-nav">
-        <button className="btn btn-ghost btn-icon btn-sm"><AppIcon name="chevLeft" size={12}/></button>
-        <span className="cal-range">14 – 20 octobre 2025</span>
-        <button className="btn btn-ghost btn-icon btn-sm"><AppIcon name="chevRight" size={12}/></button>
+        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setWeekOffset(o => o - 1)}><AppIcon name="chevLeft" size={12}/></button>
+        <span className="cal-range">{fmtWeekRange(WEEK)}</span>
+        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setWeekOffset(o => o + 1)}><AppIcon name="chevRight" size={12}/></button>
       </div>
       <div className="cal-legend">
         <span className="cal-legend-item"><i className="cal-swatch cal-swatch--quote"/>Citation</span>
@@ -893,28 +968,32 @@ const QueueCalendar = () => (
           <div key={h} className="cal-hour">{h}:00</div>
         ))}
       </div>
-      {WEEK.map((d, di) => (
-        <div key={di} className="cal-day-col">
-          <div className="cal-day-head">
-            <span className="cal-day-label">{d.split(' ')[0]}</span>
-            <span className={`cal-day-num ${di===0?'today':''}`}>{d.split(' ')[1]}</span>
+      {WEEK.map((d, di) => {
+        const isToday = weekOffset === 0 && di === ((new Date().getDay() + 6) % 7);
+        return (
+          <div key={di} className="cal-day-col">
+            <div className="cal-day-head">
+              <span className="cal-day-label">{d.label}</span>
+              <span className={`cal-day-num ${isToday ? 'today' : ''}`}>{d.num}</span>
+            </div>
+            {[6,8,10,12,14,16,18,20].map(h => <div key={h} className="cal-slot"/>)}
+            {CAL_EVENTS.filter(e => e.day === di).map((e, i) => {
+              const top = ((e.hour - 6) / 2) * 64 + 40;
+              return (
+                <div key={i} className={`cal-event cal-event--${e.type} ${e.status==='draft'?'draft':''}`}
+                     style={{top, height: e.dur * 64 - 6}}>
+                  <div className="cal-event-time">{e.hour}:00</div>
+                  <div className="cal-event-title">{e.title}</div>
+                </div>
+              );
+            })}
           </div>
-          {[6,8,10,12,14,16,18,20].map(h => <div key={h} className="cal-slot"/>)}
-          {CAL_EVENTS.filter(e => e.day === di).map((e, i) => {
-            const top = ((e.hour - 6) / 2) * 64 + 40; // 40 is head
-            return (
-              <div key={i} className={`cal-event cal-event--${e.type} ${e.status==='draft'?'draft':''}`}
-                   style={{top, height: e.dur * 64 - 6}}>
-                <div className="cal-event-time">{e.hour}:00</div>
-                <div className="cal-event-title">{e.title}</div>
-              </div>
-            );
-          })}
-        </div>
-      ))}
+        );
+      })}
     </div>
   </div>
-);
+  );
+};
 
 const FEED_ITEMS = [
   { when:'Mardi 15 oct · 08:00', type:'Citation', swatch:'quote', status:'ready',
@@ -933,41 +1012,70 @@ const FEED_ITEMS = [
     title:'Le mot du métier : skiver',
     caption:'Amincir le cuir à l\'endroit d\'un pli. Pour qu\'il tombe, pas qu\'il se casse.' },
 ];
-const QueueFeed = () => (
-  <div className="queue-feed">
-    {FEED_ITEMS.map((it, i) => (
-      <div key={i} className="feed-row card">
-        <div className={`feed-thumb feed-thumb--${it.swatch}`}>
-          <div className="feed-thumb-inner">
-            {it.swatch === 'quote' && <div className="feed-thumb-quote">"</div>}
-            {it.swatch === 'bts' && <div className="feed-thumb-label">COULISSES<br/>03</div>}
-            {it.swatch === 'news' && <div className="feed-thumb-chip">• ACTU</div>}
-            {it.swatch === 'product' && <div className="feed-thumb-label">MARGOT<br/>CAMEL</div>}
-            {it.swatch === 'pedago' && <div className="feed-thumb-label">LE MOT<br/>Skiver</div>}
+const QueueFeed = () => {
+  const [validated, setValidated] = useState(new Set());
+  const [preview, setPreview] = useState(null);
+  return (
+    <div className="queue-feed">
+      {preview && (
+        <div className="feed-preview-overlay" onClick={() => setPreview(null)}>
+          <div className="feed-preview-modal" onClick={e => e.stopPropagation()}>
+            <div className={`feed-preview-thumb feed-thumb--${preview.swatch}`}>
+              <div className="feed-thumb-inner" style={{transform:'scale(2.5)', transformOrigin:'center'}}>
+                {preview.swatch === 'quote' && <div className="feed-thumb-quote">"</div>}
+                {preview.swatch === 'bts' && <div className="feed-thumb-label">COULISSES<br/>03</div>}
+                {preview.swatch === 'news' && <div className="feed-thumb-chip">• ACTU</div>}
+                {preview.swatch === 'product' && <div className="feed-thumb-label">MARGOT<br/>CAMEL</div>}
+                {preview.swatch === 'pedago' && <div className="feed-thumb-label">LE MOT<br/>Skiver</div>}
+              </div>
+            </div>
+            <div style={{padding:'20px 24px'}}>
+              <div className="feed-title" style={{fontSize:16, marginBottom:8}}>{preview.title}</div>
+              <div className="feed-caption" style={{fontSize:13}}>{preview.caption}</div>
+            </div>
+            <button onClick={() => setPreview(null)} style={{position:'absolute',top:12,right:14,background:'none',border:'none',fontSize:20,cursor:'pointer',color:'var(--app-fg-3)'}}>×</button>
           </div>
         </div>
-        <div className="feed-meta">
-          <div className="feed-meta-top">
-            <span className="feed-when">{it.when}</span>
-            <span className="feed-dot">·</span>
-            <span className="feed-type">{it.type}</span>
-            <span className={`tag tag-dot ${it.status==='ready'?'tag-success':'tag-warn'}`} style={{marginLeft:'auto'}}>
-              {it.status==='ready'?'Prêt':'Brouillon'}
-            </span>
+      )}
+      {FEED_ITEMS.map((it, i) => {
+        const isValidated = validated.has(i);
+        return (
+          <div key={i} className={`feed-row card${isValidated ? ' feed-row--validated' : ''}`}>
+            <div className={`feed-thumb feed-thumb--${it.swatch}`}>
+              <div className="feed-thumb-inner">
+                {it.swatch === 'quote' && <div className="feed-thumb-quote">"</div>}
+                {it.swatch === 'bts' && <div className="feed-thumb-label">COULISSES<br/>03</div>}
+                {it.swatch === 'news' && <div className="feed-thumb-chip">• ACTU</div>}
+                {it.swatch === 'product' && <div className="feed-thumb-label">MARGOT<br/>CAMEL</div>}
+                {it.swatch === 'pedago' && <div className="feed-thumb-label">LE MOT<br/>Skiver</div>}
+              </div>
+            </div>
+            <div className="feed-meta">
+              <div className="feed-meta-top">
+                <span className="feed-when">{it.when}</span>
+                <span className="feed-dot">·</span>
+                <span className="feed-type">{it.type}</span>
+                <span className={`tag tag-dot ${isValidated ? 'tag-success' : it.status==='ready' ? 'tag-success' : 'tag-warn'}`} style={{marginLeft:'auto'}}>
+                  {isValidated ? '✓ Validé' : it.status==='ready' ? 'Prêt' : 'Brouillon'}
+                </span>
+              </div>
+              <div className="feed-title">{it.title}</div>
+              <div className="feed-caption">{it.caption}</div>
+              <div className="feed-actions">
+                <Btn variant="ghost" size="sm" icon="eye" onClick={() => setPreview(it)}>Aperçu</Btn>
+                <Btn variant="ghost" size="sm" icon="edit">Éditer</Btn>
+                {!isValidated
+                  ? <Btn variant="accent" size="sm" icon="check" onClick={() => setValidated(v => new Set([...v, i]))}>Valider</Btn>
+                  : <Btn variant="ghost" size="sm" icon="check" style={{color:'var(--app-success,#16a34a)'}} onClick={() => setValidated(v => { const n=new Set(v); n.delete(i); return n; })}>Validé ✓</Btn>}
+                <Btn variant="ghost" size="sm" icon="more" style={{marginLeft:'auto'}}/>
+              </div>
+            </div>
           </div>
-          <div className="feed-title">{it.title}</div>
-          <div className="feed-caption">{it.caption}</div>
-          <div className="feed-actions">
-            <Btn variant="ghost" size="sm" icon="eye">Aperçu</Btn>
-            <Btn variant="ghost" size="sm" icon="edit">Éditer</Btn>
-            <Btn variant="accent" size="sm" icon="check">Valider</Btn>
-            <Btn variant="ghost" size="sm" icon="more" style={{marginLeft:'auto'}}></Btn>
-          </div>
-        </div>
-      </div>
-    ))}
-  </div>
-);
+        );
+      })}
+    </div>
+  );
+};
 
 const GRID_ITEMS = [
   { kind:'quote',   label:'« L\'excellence… »',      status:'done' },
@@ -1339,6 +1447,7 @@ const BrandScreen = ({ clientId, onSaved }) => {
   var [saving,          setSaving]          = useState(false);
   var [saveMsg,         setSaveMsg]         = useState('');
   var [saveErr,         setSaveErr]         = useState('');
+  var [showVeilleNudge, setShowVeilleNudge] = useState(false);
   var [igInput,         setIgInput]         = useState('');
   var [igAnalyzing,     setIgAnalyzing]     = useState(false);
   var [igResult,        setIgResult]        = useState(null);
@@ -1513,11 +1622,13 @@ const BrandScreen = ({ clientId, onSaved }) => {
     var query = clientId
       ? sb.from('clients').update(row).eq('id', clientId).eq('user_id', user.id).select('id').maybeSingle()
       : sb.from('clients').insert(row).select('id').maybeSingle();
+    var isNew = !clientId;
     query.then(function(res) {
       if (res.error) { setSaveErr(res.error.message); }
       else {
         setSaveMsg('Identite forgee. Chaque post genere sera maintenant fidele a la charte de ' + (name || 'ton media') + '.');
         setTimeout(function() { setSaveMsg(''); }, 6000);
+        if (isNew) setShowVeilleNudge(true);
         if (onSaved && res.data) onSaved(res.data.id);
       }
       setSaving(false);
@@ -1542,6 +1653,30 @@ const BrandScreen = ({ clientId, onSaved }) => {
 
   return (
     <div className="page-body" style={{ paddingBottom:60 }}>
+      {showVeilleNudge && (
+        <div className="veille-nudge-overlay">
+          <div className="veille-nudge-modal">
+            <div className="veille-nudge-icon">⚡</div>
+            <h2 className="veille-nudge-title">Identité forgée !</h2>
+            <p className="veille-nudge-desc">
+              Étape 1 sur 2 terminée. Active maintenant ta veille — Forje va surveiller les actus de ton univers en temps réel.
+            </p>
+            <div className="veille-nudge-steps">
+              <span className="veille-nudge-step veille-nudge-step--done">① Identité de marque ✓</span>
+              <span className="veille-nudge-step veille-nudge-step--active">② Sources & veille</span>
+            </div>
+            <div className="veille-nudge-actions">
+              <button className="btn btn-primary" style={{flex:1}}
+                onClick={() => { setShowVeilleNudge(false); window.__goToScreen?.('sources'); }}>
+                Configurer ma veille →
+              </button>
+              <button className="btn btn-ghost" onClick={() => setShowVeilleNudge(false)}>
+                Plus tard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="page-header" style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between' }}>
         <div>
           <h1 className="page-title">Forge ton identite</h1>
@@ -1689,6 +1824,7 @@ const BrandScreen = ({ clientId, onSaved }) => {
             desc="Utilise dans les logs, emails et dashboard. Le nom public de ton compte."
             tip="Ex : Footmercato, Raplume, Le Monde...">
             <input value={name} onChange={function(e){ setName(e.target.value); }}
+              onBlur={function(){ if (name.trim() && clientId) handleSave(); }}
               placeholder="Raplume, Footmercato, Le Monde..."
               style={inputStyle}/>
           </BrandSect>
