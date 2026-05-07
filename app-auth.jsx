@@ -9,8 +9,21 @@ const AuthScreen = ({ onAuth }) => {
   var [error, setError]       = useState(null);
   var [success, setSuccess]   = useState(null);
   var [showPw, setShowPw]     = useState(false);
+  var [resetSent, setResetSent] = useState(false);
 
-  var switchMode = function(m) { setMode(m); setError(null); setSuccess(null); };
+  var switchMode = function(m) { setMode(m); setError(null); setSuccess(null); setResetSent(false); };
+
+  var handleForgotPassword = async function() {
+    if (!email.trim()) { setError('Entre ton adresse email d\'abord.'); return; }
+    setLoading(true); setError(null);
+    var sb = window.__supabase;
+    var result = await sb.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + '/?reset=1',
+    });
+    setLoading(false);
+    if (result.error) { setError(result.error.message); }
+    else { setResetSent(true); }
+  };
 
   var handleSubmit = async function(e) {
     e.preventDefault();
@@ -173,7 +186,9 @@ const AuthScreen = ({ onAuth }) => {
                       <input type="checkbox" defaultChecked />
                       <span>Rester connecté</span>
                     </label>
-                    <button type="button" className="auth-forgot">Mot de passe oublié ?</button>
+                    <button type="button" className="auth-forgot" onClick={handleForgotPassword} disabled={loading}>
+                      {resetSent ? '✓ Email envoyé !' : 'Mot de passe oublié ?'}
+                    </button>
                   </div>
                 )}
 

@@ -677,7 +677,7 @@ const GenerateChat = ({ preset, onBack }) => {
           )}
           <button className="btn-forge" onClick={handleGenerate} disabled={generating || !canGenerate}>
             {generating
-              ? <><span style={{ display:'inline-block', width:13, height:13, border:'2px solid rgba(7,18,47,.25)', borderTopColor:'#07122F', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/> Génération…</>
+              ? <><span style={{ display:'inline-block', width:13, height:13, border:'2px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/> Génération…</>
               : <><AppIcon name="sparkle" size={15}/> Générer</>}
           </button>
         </div>
@@ -1403,13 +1403,17 @@ const BrandScreen = ({ clientId, onSaved }) => {
     var sb = window.__supabase; var user = window.__currentUser;
     if (!sb || !user) return;
     setLogoUploading(true); setSaveErr('');
-    var path = user.id + '/logo.png';
+    var folder = clientId ? user.id + '/' + clientId : user.id + '/draft';
+    var path = folder + '/logo.png';
     sb.storage.from('brand-assets').upload(path, file, { upsert:true, contentType:'image/png' })
       .then(function(res) {
-        if (res.error) { setSaveErr('Upload echoue : ' + res.error.message); }
-        else {
-          var pub = sb.storage.from('brand-assets').getPublicUrl(path);
-          setLogoUrl(pub.data.publicUrl + '?t=' + Date.now());
+        if (res.error) { setSaveErr('Upload echoué : ' + res.error.message); setLogoUploading(false); return; }
+        var pub = sb.storage.from('brand-assets').getPublicUrl(path);
+        var url = pub.data.publicUrl + '?t=' + Date.now();
+        setLogoUrl(url);
+        if (clientId) {
+          sb.from('clients').update({ logo_url: url }).eq('id', clientId).eq('user_id', user.id)
+            .then(function(r) { if (r.error) setSaveErr('Logo sauvegardé localement, erreur DB : ' + r.error.message); });
         }
         setLogoUploading(false);
       });
@@ -1421,13 +1425,17 @@ const BrandScreen = ({ clientId, onSaved }) => {
     if (!sb || !user) return;
     setStyleRefUploading(true); setSaveErr('');
     var ext = file.type === 'image/png' ? 'png' : 'jpg';
-    var path = user.id + '/style-ref.' + ext;
+    var folder = clientId ? user.id + '/' + clientId : user.id + '/draft';
+    var path = folder + '/style-ref.' + ext;
     sb.storage.from('brand-assets').upload(path, file, { upsert:true, contentType:file.type })
       .then(function(res) {
-        if (res.error) { setSaveErr('Upload echoue : ' + res.error.message); }
-        else {
-          var pub = sb.storage.from('brand-assets').getPublicUrl(path);
-          setStyleRefUrl(pub.data.publicUrl + '?t=' + Date.now());
+        if (res.error) { setSaveErr('Upload echoué : ' + res.error.message); setStyleRefUploading(false); return; }
+        var pub = sb.storage.from('brand-assets').getPublicUrl(path);
+        var url = pub.data.publicUrl + '?t=' + Date.now();
+        setStyleRefUrl(url);
+        if (clientId) {
+          sb.from('clients').update({ style_ref_url: url }).eq('id', clientId).eq('user_id', user.id)
+            .then(function(r) { if (r.error) setSaveErr('Style ref sauvegardé localement, erreur DB : ' + r.error.message); });
         }
         setStyleRefUploading(false);
       });

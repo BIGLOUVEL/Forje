@@ -56,6 +56,14 @@ const App = () => {
         setScreen('generate');
       } catch (_) {}
     }
+
+    window.__goToGenerate = (article) => {
+      const title = article.title || article.titre || '';
+      const caption = article.caption || '';
+      const newsText = caption ? `${title}\n\n${caption}` : title;
+      setPreset({ id:'actu', label:'Actualité', icon:'news', visual:'actu', img:'assets/actu.webp', prefill: { newsText } });
+      setScreen('generate');
+    };
   }, []);
 
   const handleSelectClient = (id) => {

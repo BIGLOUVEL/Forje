@@ -655,7 +655,7 @@ const HEAT_TOPICS = [
   { name:"Streetwear luxe",    level:0, delta:"-14%", series:[0.7,0.66,0.6,0.55,0.5,0.45,0.42] },
 ];
 
-const BreakingBar = ({ data }) => {
+const BreakingBar = ({ data, onGenerate }) => {
   const pct = (data.elapsedMinutes / data.saturationMinutes) * 100;
   const remaining = data.saturationMinutes - data.elapsedMinutes;
   const hours = Math.floor(remaining / 60);
@@ -686,8 +686,8 @@ const BreakingBar = ({ data }) => {
           </div>
         </div>
         <div className="breaking-actions">
-          <Btn variant="ghost" size="sm" icon="eye">Voir</Btn>
-          <Btn variant="primary" size="sm" icon="bolt">Générer maintenant</Btn>
+          {data.url && <Btn variant="ghost" size="sm" icon="eye" onClick={() => window.open(data.url, '_blank')}>Voir</Btn>}
+          <Btn variant="primary" size="sm" icon="bolt" onClick={() => onGenerate?.(data)}>Générer maintenant</Btn>
         </div>
       </div>
     </div>
@@ -752,7 +752,7 @@ const ActionPanel = ({ news, onCopy, onGenerate }) => {
       <div className="action-weak-desc">{news.why}.</div>
       <button className="btn btn-ghost btn-sm" style={{marginTop:14}}
         onClick={() => onGenerate?.(news.id, null)}
-      ><AppIcon name="bolt" size={12}/>Forcer une génération</button>
+      ><AppIcon name="bolt" size={12}/>Forger quand même</button>
     </div>
   );
 
@@ -787,12 +787,9 @@ const ActionPanel = ({ news, onCopy, onGenerate }) => {
         </div>
       )}
       <div className="action-cta">
-        <button className="btn btn-accent btn-sm" style={{flex:1}}
-          onClick={() => onGenerate?.(news.id, news.format)}
-        ><AppIcon name="edit" size={12}/>Peaufiner</button>
         <button className="btn btn-primary btn-sm" style={{flex:1}}
           onClick={() => onGenerate?.(news.id, news.format)}
-        ><AppIcon name="send" size={12}/>Publier dans 45 min</button>
+        ><AppIcon name="bolt" size={12}/>Forger ce post</button>
       </div>
     </div>
   );
@@ -1133,7 +1130,12 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   return (
     <div className="sources-page">
-      {breaking[0] && view === 'board' && <BreakingBar data={breaking[0]}/>}
+      {breaking[0] && view === 'board' && (
+        <BreakingBar
+          data={breaking[0]}
+          onGenerate={(d) => window.__goToGenerate?.({ title: d.title, url: d.url, source: d.source })}
+        />
+      )}
 
       {/* ── Onglets Board / Latest ── */}
       <div className="view-tabs">
@@ -1229,19 +1231,17 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
                 Aucune news — clique ↻ pour rafraîchir.
               </div>
             ) : latestRaw.map(item => (
-              <a
-                key={item.id}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="latest-row"
-              >
+              <div key={item.id} className="latest-row">
                 <div className="latest-row-left">
                   <span className="latest-time">{fmtAge(item.published_at || item.created_at)}</span>
                   <span className="latest-source">{item.source}</span>
                 </div>
-                <div className="latest-row-title">{item.titre}</div>
-              </a>
+                <a href={item.url} target="_blank" rel="noopener noreferrer" className="latest-row-title latest-row-link">{item.titre}</a>
+                <button
+                  className="latest-forge-btn"
+                  onClick={() => window.__goToGenerate?.({ titre: item.titre, url: item.url, source: item.source })}
+                >Forger →</button>
+              </div>
             ))}
           </div>
         </div>
@@ -1543,7 +1543,12 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
             <ActionPanel
               news={active}
               onCopy={(id) => track(id, 'copy')}
-              onGenerate={(id, format) => track(id, 'generate', { format_utilise: format })}
+              onGenerate={(id, format) => {
+                track(id, 'generate', { format_utilise: format });
+                if (window.__goToGenerate && active) {
+                  window.__goToGenerate({ title: active.title, caption: active.caption, url: active.url, source: active.source });
+                }
+              }}
             />
           </aside>
         </div>
