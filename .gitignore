@@ -1,2 +1,20 @@
+### Secrets
+.env
 veille/.env
-veille/node_modules
+.claude/settings.json
+
+### Dependencies
+node_modules/
+veille/node_modules/
+
+### Logs
+*.log
+server.log
+server_err.log
+server_out.log
+veille/server.log
+veille/server_err.log
+
+### Local temp/state
+supabase/.temp/
+.claude/worktrees/
