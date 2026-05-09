@@ -48,6 +48,24 @@ function buildBrandContext(client) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function extractJSON(str) {
+  str = str.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '');
+  const start = str.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < str.length; i++) {
+    if (str[i] === '{') depth++;
+    else if (str[i] === '}') { depth--; if (depth === 0) return str.slice(start, i + 1); }
+  }
+  return null;
+}
+
+function parseAIJson(raw) {
+  const chunk = extractJSON(raw);
+  if (!chunk) throw new Error('Pas de JSON dans la réponse');
+  return JSON.parse(chunk);
+}
+
 function escapeXml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -228,107 +246,25 @@ async function generateImageGPT(prompt, styleRefBuffer = null) {
     }
   }
 
-  // Try gpt-image-1 first (requires org verification), fall back to dall-e-3
-  try {
-    const response = await openaiClient.images.generate({
-      model:   'gpt-image-1',
-      prompt:  finalPrompt,
-      size:    '1024x1536',
-      quality: 'high',
-    });
-    const b64 = response.data?.[0]?.b64_json;
-    if (!b64) throw new Error('No image data from GPT-Image-1');
-    return Buffer.from(b64, 'base64');
-  } catch (e) {
-    console.warn('[GPT-Image-1] failed, trying dall-e-3:', e.message);
-  }
-
-  // dall-e-3 fallback — universally available
   const response = await openaiClient.images.generate({
-    model:              'dall-e-3',
-    prompt:             finalPrompt.slice(0, 4000),
-    size:               '1024x1792',
-    quality:            'standard',
-    response_format:    'b64_json',
+    model:   'gpt-image-1',
+    prompt:  finalPrompt,
+    size:    '1024x1536',
+    quality: 'high',
   });
   const b64 = response.data?.[0]?.b64_json;
-  if (!b64) throw new Error('No image data from dall-e-3');
+  if (!b64) throw new Error('No image data from gpt-image-1');
   return Buffer.from(b64, 'base64');
 }
 
-// Google models tried in order — first one that returns an image wins
-const GEMINI_IMAGE_MODELS = [
-  'gemini-3.1-flash-image-preview',       // latest recommended, 500 free/day
-  'gemini-3-pro-image-preview',           // pro tier
-  'gemini-2.5-flash-image',               // also valid
-  'gemini-2.0-flash-preview-image-generation', // older fallback
-];
-
-async function callGeminiImageModel(model, apiKey, body) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'generativelanguage.googleapis.com',
-      path:     `/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      timeout:  90000,
-    }, (res) => {
-      let raw = '';
-      res.on('data', c => raw += c);
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(raw);
-          if (data.error) { reject(new Error(`[${model}] ${data.error.status}: ${data.error.message}`)); return; }
-          for (const p of (data.candidates?.[0]?.content?.parts || [])) {
-            if (p.inlineData?.data) { resolve(Buffer.from(p.inlineData.data, 'base64')); return; }
-          }
-          reject(new Error(`[${model}] no inline data`));
-        } catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error(`[${model}] timeout`)); });
-    req.write(body);
-    req.end();
-  });
+// Hard deadline helper — wraps any promise with a maximum wait
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
+  ]);
 }
 
-async function generateImageGemini(prompt, referenceBuffers = [], styleRefBuffer = null) {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error('GOOGLE_API_KEY manquant');
-
-  const styleInstruction = styleRefBuffer
-    ? 'STYLE REFERENCE IMAGE — extract ONLY: lighting mood, color grading, grain/texture, and overall tonal atmosphere. DO NOT copy any objects, backgrounds, compositions, subjects, or scene elements from this reference. Generate a completely original scene described by the text prompt. The text prompt is the sole source for what to depict.'
-    : null;
-
-  const parts = [
-    { text: prompt },
-    ...(styleRefBuffer ? [
-      { text: styleInstruction },
-      { inline_data: { data: styleRefBuffer.toString('base64'), mime_type: 'image/jpeg' } },
-    ] : []),
-    ...referenceBuffers.slice(0, 2).map(buf => ({
-      inline_data: { data: buf.toString('base64'), mime_type: 'image/jpeg' },
-    })),
-  ];
-  const body = JSON.stringify({
-    contents: [{ role: 'user', parts }],
-    generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-  });
-
-  let lastErr;
-  for (const model of GEMINI_IMAGE_MODELS) {
-    try {
-      const buf = await callGeminiImageModel(model, apiKey, body);
-      console.log(`[Gemini] image OK via ${model}`);
-      return buf;
-    } catch (e) {
-      console.warn(`[Gemini] ${e.message} — trying next model`);
-      lastErr = e;
-    }
-  }
-  throw lastErr;
-}
 
 // ─── Caption Instagram ────────────────────────────────────────────────────────
 async function generateCaption(type, content, client) {
@@ -366,10 +302,14 @@ async function generateCaption(type, content, client) {
 
 // ─── POST /api/generate/actu ──────────────────────────────────────────────────
 router.post('/actu', async (req, res) => {
-  if (!sharp) return res.status(500).json({ error: 'Sharp non installe (npm install sharp)' });
+  const hardDeadline = setTimeout(() => {
+    if (!res.headersSent) res.status(504).json({ error: 'Génération trop longue — réessaie (les serveurs IA sont lents en ce moment)' });
+  }, 180000);
+
+  if (!sharp) { clearTimeout(hardDeadline); return res.status(500).json({ error: 'Sharp non installe (npm install sharp)' }); }
 
   const { newsText, photoUrl, photoData, userId, clientId, imageMode = 'classic', styleRefData } = req.body;
-  if (!newsText) return res.status(400).json({ error: 'newsText manquant' });
+  if (!newsText) { clearTimeout(hardDeadline); return res.status(400).json({ error: 'newsText manquant' }); }
 
   try {
     const client       = await getClientBrand(userId, clientId);
@@ -385,7 +325,6 @@ router.post('/actu', async (req, res) => {
       'Actu : "' + newsText + '"\n\n' +
       'Genere un JSON :\n' +
       '{\n' +
-      (needsVisual ? '  "has_real_person": true or false (l\'actu met-elle en scene une personne reelle nommee ?),\n' : '') +
       '  "search_query": "requete Google Images en anglais pour trouver la meilleure photo",\n' +
       (needsVisual ? '  "visual_brief": "description cinematique de l\'image a generer, 2-3 phrases style shot description",\n' : '') +
       (needsVisual ? '  "emotion": "dramatique | energique | premium | populaire | factuel",\n' : '') +
@@ -397,21 +336,16 @@ router.post('/actu', async (req, res) => {
     );
 
     let brief;
-    try {
-      brief = JSON.parse(raw.trim());
-    } catch (_) {
-      const m = raw.match(/\{[\s\S]*\}/);
-      brief = m ? JSON.parse(m[0]) : {};
-    }
+    try { brief = parseAIJson(raw); } catch (_) { brief = {}; }
     const {
       search_query, title = 'BREAKING', subtitle = newsText.slice(0, 60),
-      category = 'ACTU', has_real_person = false, visual_brief,
+      category = 'ACTU', visual_brief,
     } = brief;
 
     // Caption lancée en parallèle — Haiku est rapide, pas de latence ajoutée
     const captionPromise = generateCaption('actu', { newsText, title, subtitle }, client).catch(() => '');
 
-    // 2. Serper reference photos (used by Gemini OR as classic/fallback background)
+    // 2. Serper reference photos (used as classic/fallback background)
     let serperBuffers = [];
     if (photoData) {
       const b64 = photoData.split(',')[1];
@@ -426,7 +360,6 @@ router.post('/actu', async (req, res) => {
       const results = await Promise.all(urls.map(u => downloadBuffer(u).catch(() => null)));
       serperBuffers = results.filter(b => b && b.length > 5000 && isImageBuffer(b));
     }
-
     // 3. Style ref : one-shot (request) > persistent (brand)
     let styleRefBuffer = null;
     if (styleRefData) {
@@ -440,19 +373,12 @@ router.post('/actu', async (req, res) => {
     let photoBuffer = null;
     if (imageMode === 'ai' && visual_brief) {
       const prompt = buildImagePrompt(brief, client);
-      // Gemini first (cheaper, no billing cap issues) — GPT as fallback
-      const refs = has_real_person ? serperBuffers : [];
       try {
-        photoBuffer = await generateImageGemini(prompt, refs, styleRefBuffer);
-      } catch (geminiErr) {
-        console.warn('[Actu] Gemini failed, trying GPT-Image-1:', geminiErr.message);
-        try {
-          photoBuffer = await generateImageGPT(prompt, styleRefBuffer);
-          console.log('[Actu] GPT-Image-1 OK');
-        } catch (gptErr) {
-          console.warn('[Actu] GPT-Image-1 also failed, using Serper:', gptErr.message);
-          photoBuffer = serperBuffers[0] || null;
-        }
+        photoBuffer = await withTimeout(generateImageGPT(prompt, styleRefBuffer), 90000, 'GPT-Image-1');
+        console.log('[Actu] GPT image OK');
+      } catch (gptErr) {
+        console.warn('[Actu] GPT failed:', gptErr.message, '— falling back to Serper');
+        photoBuffer = serperBuffers[0] || null;
       }
     } else {
       photoBuffer = serperBuffers[0] || null;
@@ -515,6 +441,7 @@ router.post('/actu', async (req, res) => {
       .toBuffer();
 
     const caption = await captionPromise;
+    clearTimeout(hardDeadline);
 
     // Return background + text data — client Canvas renders the text with real fonts
     res.json({
@@ -527,7 +454,8 @@ router.post('/actu', async (req, res) => {
 
   } catch (err) {
     console.error('[Generate/Actu]', err.message);
-    res.status(500).json({ error: err.message });
+    clearTimeout(hardDeadline);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
 
@@ -672,13 +600,7 @@ router.post('/deepdive', async (req, res) => {
     );
 
     let slides;
-    try {
-      const parsed = JSON.parse(raw.trim());
-      slides = parsed.slides;
-    } catch (_) {
-      const m = raw.match(/\{[\s\S]*\}/);
-      slides = m ? JSON.parse(m[0]).slides : [];
-    }
+    try { slides = parseAIJson(raw).slides; } catch (_) { slides = []; }
 
     if (!slides || !slides.length) throw new Error('Pas de plan genere');
 
@@ -804,9 +726,7 @@ router.post('/detect-format', async (req, res) => {
     });
 
     const raw = response.content.find(b => b.type === 'text')?.text || '';
-    const m   = raw.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('Pas de JSON dans la réponse');
-    res.json(JSON.parse(m[0]));
+    res.json(parseAIJson(raw));
   } catch (err) {
     console.error('[DetectFormat]', err.message);
     res.status(500).json({ error: err.message });

@@ -47,11 +47,15 @@ app.use('/api/learning', learningRouter);
 const RSS_INTERVAL_MS = 5 * 60 * 1000;
 
 async function rssLoop() {
-  console.log('[RSS] Fetch…');
-  const { data: inserted, count } = await fetchAllFeeds()
-    .then(r => ({ data: r, count: r.reduce((s, x) => s + (x.inserted ?? 0), 0) }))
-    .catch(err => { console.error('[RSS] erreur:', err.message); return { data: [], count: 0 }; });
-  console.log(`[RSS] +${count} articles`);
+  try {
+    console.log('[RSS] Fetch…');
+    const { count } = await fetchAllFeeds()
+      .then(r => ({ count: r.reduce((s, x) => s + (x.inserted ?? 0), 0) }))
+      .catch(err => { console.error('[RSS] erreur:', err.message); return { count: 0 }; });
+    console.log(`[RSS] +${count} articles`);
+  } catch (err) {
+    console.error('[RSS] crash inattendu:', err.message);
+  }
 }
 
 // ─── Polling Twitter séparé — TWITTER_INTERVAL_MIN env var (défaut 60 min) ──
@@ -60,21 +64,25 @@ async function rssLoop() {
 const TWITTER_INTERVAL_MS = parseInt(process.env.TWITTER_INTERVAL_MIN || '60') * 60 * 1000;
 
 async function twitterLoop() {
-  if (!process.env.TWITTERAPI_IO_KEY) return;
-  console.log('[Twitter] Fetch sources…');
-  const { data: comptes } = await supabase.from('comptes').select('id, nom');
-  const compteIds = (comptes || []).map(c => c.id);
+  try {
+    if (!process.env.TWITTERAPI_IO_KEY) return;
+    console.log('[Twitter] Fetch sources…');
+    const { data: comptes } = await supabase.from('comptes').select('id, nom');
+    const compteIds = (comptes || []).map(c => c.id);
 
-  const [twManual, ...twSources] = await Promise.all([
-    fetchAllTwitterAccounts(),
-    ...compteIds.map(id => fetchTwitterSources(id)),
-  ]);
+    const [twManual, ...twSources] = await Promise.all([
+      fetchAllTwitterAccounts(),
+      ...compteIds.map(id => fetchTwitterSources(id)),
+    ]);
 
-  const all      = [twManual, ...twSources].flat();
-  const inserted = all.reduce((s, r) => s + (r.inserted ?? 0), 0);
-  const errors   = all.filter(r => r.error).map(r => r.error);
-  if (errors.length) console.warn(`[Twitter] ${errors.length} erreur(s):`, errors[0]);
-  console.log(`[Twitter] +${inserted} tweets`);
+    const all      = [twManual, ...twSources].flat();
+    const inserted = all.reduce((s, r) => s + (r.inserted ?? 0), 0);
+    const errors   = all.filter(r => r.error).map(r => r.error);
+    if (errors.length) console.warn(`[Twitter] ${errors.length} erreur(s):`, errors[0]);
+    console.log(`[Twitter] +${inserted} tweets`);
+  } catch (err) {
+    console.error('[Twitter] crash inattendu:', err.message);
+  }
 }
 
 // Évaluation quotidienne des sources Twitter
@@ -109,6 +117,9 @@ app.get('/admin', (_req, res) => res.sendFile(path.join(ROOT, 'admin.html')));
 
 // ─── SPA fallback ────────────────────────────────────────────────────────────
 app.get('*', (_req, res) => res.sendFile(path.join(ROOT, 'index.html')));
+
+process.on('uncaughtException',  err => console.error('[CRASH]', err.message, err.stack));
+process.on('unhandledRejection', err => console.error('[REJECT]', err?.message || err));
 
 app.listen(PORT, '0.0.0.0', () => {
   const lan = Object.values(os.networkInterfaces())

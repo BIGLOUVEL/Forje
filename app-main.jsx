@@ -1,5 +1,5 @@
 /* global React, ReactDOM, AppIcon, Sidebar, Topbar, Btn, DashboardScreen, GenerateScreen, QueueScreen, BrandScreen, SourcesScreen */
-var { useState, useEffect } = React;
+var { useState, useEffect, useRef } = React;
 
 const TWEAKS = /*EDITMODE-BEGIN*/{
   "genLayout": "chat",
@@ -21,12 +21,21 @@ const App = () => {
   const [profile, setProfile] = useState(null);
   const [clients, setClients] = useState([]);
   const [activeClientId, setActiveClientId] = useState(null);
+  const [brandScore, setBrandScore] = useState(0);
+  const [genToast, setGenToast] = useState(null); // { status:'generating'|'ready', label, presetId }
+  const presetRef = useRef(null); // keeps last active preset alive across screen changes
+
+  const computeBrandScore = (c) => {
+    if (!c) return 0;
+    return [c.name, c.logo_url, c.graphic_style, c.tone_tags?.length > 0, c.mood, c.topics?.length > 0, c.instagram_handle]
+      .filter(Boolean).length;
+  };
 
   const loadClients = (onDone) => {
     const sb = window.__supabase;
     const user = window.__currentUser;
     if (!sb || !user) return;
-    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits')
+    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, graphic_style, tone_tags, mood, topics')
       .eq('user_id', user.id).order('created_at')
       .then(({ data }) => {
         const list = data || [];
@@ -41,9 +50,11 @@ const App = () => {
     if (!user) return;
     loadClients((list) => {
       const saved = localStorage.getItem('forje_active_client_' + user.id);
-      const active = list.find(c => c.id === saved)?.id || list[0]?.id || null;
+      const activeClient = list.find(c => c.id === saved) || list[0] || null;
+      const active = activeClient?.id || null;
       setActiveClientId(active);
       window.__activeClientId = active;
+      setBrandScore(computeBrandScore(activeClient));
     });
 
     // Prefill venant du board (clic "Générer post" sur une news)
@@ -61,9 +72,11 @@ const App = () => {
       const title = article.title || article.titre || '';
       const caption = article.caption || '';
       const newsText = caption ? `${title}\n\n${caption}` : title;
-      setPreset({ id:'actu', label:'Actualité', icon:'news', visual:'actu', img:'assets/actu.webp', prefill: { newsText } });
+      setPreset({ id:'actu', label:'Actualité', icon:'news', visual:'actu', img:'assets/actu.webp', prefill: { newsText }, fromBoard: true });
       setScreen('generate');
     };
+    window.__setGenToast = (toast) => setGenToast(toast);
+    window.__goToScreen  = (s) => { setScreen(s); setPreset(null); };
   }, []);
 
   const handleSelectClient = (id) => {
@@ -71,7 +84,7 @@ const App = () => {
     window.__activeClientId = id;
     const user = window.__currentUser;
     if (user) localStorage.setItem('forje_active_client_' + user.id, id);
-    setScreen('brand');
+    setBrandScore(computeBrandScore(clients.find(c => c.id === id)));
   };
 
   const handleNewClient = () => {
@@ -88,6 +101,8 @@ const App = () => {
     if (user) localStorage.setItem('forje_active_client_' + user.id, savedId);
     loadClients();
   };
+
+  useEffect(() => { if (preset) presetRef.current = preset; }, [preset]);
 
   useEffect(() => {
     localStorage.setItem('forje_app_screen', screen);
@@ -142,6 +157,7 @@ const App = () => {
                  authUser={window.__currentUser}
                  clients={clients}
                  activeClientId={activeClientId}
+                 brandScore={brandScore}
                  onSelectClient={handleSelectClient}
                  onNewClient={handleNewClient}/>
         <main className="app-main">
@@ -152,7 +168,8 @@ const App = () => {
               layoutVariant={tweaks.genLayout}
               preset={preset}
               onPickPreset={setPreset}
-              onBack={() => setPreset(null)}/>
+              onBack={() => setPreset(null)}
+              onGoToBoard={() => { setPreset(null); setScreen('sources'); }}/>
           )}
           {screen === 'queue' && <QueueScreen defaultView={tweaks.defaultQueueView}/>}
           {screen === 'calendar' && <QueueScreen defaultView="calendar"/>}
@@ -162,6 +179,37 @@ const App = () => {
           {screen === 'settings' && <SettingsScreen/>}
         </main>
       </div>
+
+      {genToast && (
+        <div
+          key={genToast.status}
+          className={`gen-toast gen-toast--${genToast.status}`}
+          onClick={() => {
+            const p = genToast.preset || presetRef.current;
+            if (p) setPreset(p);
+            setScreen('generate');
+            if (genToast.status === 'ready') setGenToast(null);
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <div className="gen-toast-icon">
+            {genToast.status === 'generating'
+              ? <span className="gen-toast-spinner"/>
+              : <span style={{fontSize:14}}>⚡</span>}
+          </div>
+          <div className="gen-toast-body">
+            <span className="gen-toast-label">
+              {genToast.status === 'generating'
+                ? `Génération en cours — ${genToast.label}`
+                : `Post prêt — ${genToast.label}`}
+            </span>
+            <span className="gen-toast-action">
+              {genToast.status === 'generating' ? 'Revenir voir →' : 'Voir le résultat →'}
+            </span>
+          </div>
+          <button className="gen-toast-close" onClick={(e) => { e.stopPropagation(); setGenToast(null); }}>×</button>
+        </div>
+      )}
 
       {tweaksOpen && (
         <div className="tweaks-panel">

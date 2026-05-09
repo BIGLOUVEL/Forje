@@ -327,7 +327,8 @@ const RecentCard = ({ type, when, title, swatch }) => (
 
 // ─── Génération fonctionnelle (Actu / Citation / Deep Dive) ──────────────
 const GEN_API = '/api';
-var _genActive = null; // preset ID of in-flight generation (survives navigation)
+var _genActive    = null; // preset ID of in-flight generation (survives navigation)
+var _genStartTime = null; // epoch ms when generation began (for loader resume)
 
 async function veilleFetch(path, opts) {
   var sb = window.__supabase;
@@ -499,9 +500,8 @@ const GenFormFields = ({ preset, s }) => {
       )}
       {s.imageMode === 'ai' && (
         <div>
-          <div className="tool-sub" style={{ lineHeight:1.6 }}>
-            Gemini génère un visuel cinématique sur-mesure.<br/>
-            <span style={{ opacity:.65 }}>Personne réelle → Gemini · Ambiance/Objet → GPT-Image-1</span>
+          <div className="tool-sub">
+            GPT Image génère un visuel cinématique sur-mesure.
           </div>
           <StyleRefDropzone
             value={s.styleRefData}
@@ -554,16 +554,27 @@ const LOADER_STEPS = {
 };
 const LOADER_TOTAL = { actu: 36000, citation: 18000, deepdive: 28000 };
 
-const GenLoader = ({ preset }) => {
+const GenLoader = ({ preset, startTime }) => {
   const id = preset?.id || 'actu';
   const steps = LOADER_STEPS[id] || LOADER_STEPS.actu;
   const total = LOADER_TOTAL[id] || 36000;
-  const [stepIdx, setStepIdx] = useState(0);
-  const [progress, setProgress] = useState(0);
+  const start = startTime || Date.now();
+  const elapsed = Date.now() - start;
+
+  // Resume from correct step/progress when remounted mid-generation
+  const initialStep = steps.reduce((acc, [delay], i) => (elapsed >= delay ? i : acc), 0);
+  const [stepIdx, setStepIdx] = useState(initialStep);
+  const [progress, setProgress] = useState(Math.min(elapsed / total * 100, 94));
 
   useEffect(() => {
-    const timers = steps.slice(1).map(([delay,], i) => setTimeout(() => setStepIdx(i + 1), delay));
-    const start = Date.now();
+    // Only schedule steps that haven't fired yet
+    const timers = steps.slice(1)
+      .map(([delay,], i) => {
+        const remaining = delay - elapsed;
+        if (remaining <= 0) return null;
+        return setTimeout(() => setStepIdx(i + 1), remaining);
+      })
+      .filter(Boolean);
     const tick = setInterval(() => setProgress(Math.min((Date.now() - start) / total * 100, 94)), 120);
     return () => { timers.forEach(clearTimeout); clearInterval(tick); };
   }, []);
@@ -643,7 +654,8 @@ const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
   }[preset.id] || false;
 
   const handleGenerate = async () => {
-    _genActive = preset.id;
+    _genActive    = preset.id;
+    _genStartTime = Date.now();
     if (isMountedRef.current) { setGenerating(true); setError(null); setResult(null); setActiveSlide(0); }
     sessionStorage.removeItem(GEN_KEY);
     try {
@@ -679,7 +691,8 @@ const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
         window.__onGenError?.(err.message, preset.id);
       }
     } finally {
-      _genActive = null;
+      _genActive    = null;
+      _genStartTime = null;
       if (isMountedRef.current) setGenerating(false);
     }
   };
@@ -758,7 +771,7 @@ const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
           )}
           <div className="gen-preview-stage">
             {generating
-              ? <GenLoader preset={preset}/>
+              ? <GenLoader preset={preset} startTime={_genStartTime}/>
               : previewImages.length
                 ? <img src={previewImages[activeSlide] || previewImages[0]} alt=""/>
                 : null}

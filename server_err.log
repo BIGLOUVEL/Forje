@@ -1,20 +1,55 @@
-node:events:497
-      throw er; // Unhandled 'error' event
-      ^
-
-Error: listen EADDRINUSE: address already in use 0.0.0.0:3001
-    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
-    at listenInCluster (node:net:1997:12)
-    at node:net:2206:7
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
-Emitted 'error' event on Server instance at:
-    at emitErrorNT (node:net:1976:8)
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
-  code: 'EADDRINUSE',
-  errno: -4091,
-  syscall: 'listen',
-  address: '0.0.0.0',
-  port: 3001
-}
-
-Node.js v22.19.0
+[RSS] Brut: Invalid character in entity name
+Line: 0
+Column: 1966
+Char: &
+[TwitterSources] @LeParisien: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @france_info: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @TheVerge: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@LesBlogueurs: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@allocine: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @BFMTV: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@premiere: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @franceinfo: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@Telerama: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @konbininews: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @premierefr: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @DEADLINE: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @IGN: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @Allocine: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @THR: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @numerama: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@lesinrocks: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @Deadline: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@konbini: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @Variety: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @PopCrave: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@brut: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@franceinfo: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @LeMondefr: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @HugoDecrypte: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @lemondefr: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @FranceInfo: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@leparisien: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @@Numerama: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @france24: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @AFPfactcheck: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @Mediapart: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @Liberation: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @rfi: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @telerama: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @lesinrocks: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @lemonde: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @Libération: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @brutofficiel: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @konbini: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @FranceCulture: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @franceinter: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @BBCCulture: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[TwitterSources] @billboard: twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[Twitter] 44 erreur(s): twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[Trends] twitterapi.io: {"error":"Unauthorized","message":"Credits is not enough.Please recharge"}
+[Actu] GPT failed: GPT-Image-1 timed out after 60000ms — trying Gemini
+[Gemini] [gemini-2.5-flash-image] no inline data — trying next model
+[Gemini] [gemini-3.1-flash-image-preview] no inline data — trying next model
+[Actu] Gemini failed: [gemini-3.1-flash-image-preview] no inline data — falling back to Serper
+[Generate/Actu] Cannot set headers after they are sent to the client

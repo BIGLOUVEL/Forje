@@ -160,6 +160,8 @@ const FieldRow = ({ field, value, onChange }) => (
 );
 
 // ─── Step 1 : Saisie URL ──────────────────────────────────────────────────────
+const IG_EXAMPLES = ['@footmercato', '@brutofficiel', '@voguefrance', '@lesechos', '@konbini'];
+
 const SetupInput = ({ onAnalyze, error }) => {
   const [url, setUrl] = useState('');
   const [localErr, setLocalErr] = useState('');
@@ -216,7 +218,20 @@ const SetupInput = ({ onAnalyze, error }) => {
                 <div style={{ fontSize:12, color:'#C53030' }}>{localErr || error}</div>
               )}
             </div>
-            <button type="submit" className="btn btn-primary" style={{ width:'100%', padding:'12px', fontSize:14, marginTop:4 }}>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginTop:4 }}>
+              {IG_EXAMPLES.map(ex => (
+                <button key={ex} type="button"
+                  onClick={() => { setUrl(ex); setLocalErr(''); }}
+                  style={{ background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
+                    borderRadius:20, padding:'4px 11px', fontSize:12, color:'var(--app-fg-3)',
+                    cursor:'pointer', transition:'all .12s', fontFamily:'JetBrains Mono, monospace' }}
+                  onMouseEnter={e => { e.target.style.borderColor='var(--app-accent)'; e.target.style.color='var(--app-accent)'; }}
+                  onMouseLeave={e => { e.target.style.borderColor='var(--app-line)'; e.target.style.color='var(--app-fg-3)'; }}>
+                  {ex}
+                </button>
+              ))}
+            </div>
+            <button type="submit" className="btn btn-primary" style={{ width:'100%', padding:'12px', fontSize:14, marginTop:8 }}>
               <AppIcon name="sparkle" size={13}/>
               Analyser le compte
             </button>
