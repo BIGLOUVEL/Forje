@@ -60,12 +60,6 @@ const Hero = ({ tweaks }) => {
         </div>
       </div>
 
-      <div className="hero-video-col">
-        <div className="hero-video-wrap">
-          <video autoPlay muted loop playsInline src="assets/illustration.mp4"/>
-        </div>
-      </div>
-
       {demoOpen && (
         <div onClick={() => setDemoOpen(false)} style={{
           position: 'fixed', inset: 0, background: 'rgba(3,8,24,0.82)', backdropFilter: 'blur(8px)',

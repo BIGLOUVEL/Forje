@@ -647,3 +647,90 @@ button { font-family: inherit; }
   border: 2px solid var(--app-bg);
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(17, 24, 50, 0.28); }
+
+/* ─── Command Palette ──────────────────────────────────────────────────── */
+.cmd-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.35);
+  backdrop-filter: blur(4px); z-index: 900;
+  animation: fadeIn .12s ease;
+}
+.cmd-palette {
+  position: fixed; top: 20%; left: 50%; transform: translateX(-50%);
+  width: min(520px, 90vw); background: var(--app-surface);
+  border: 1px solid var(--app-line-2); border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.08);
+  z-index: 901; overflow: hidden;
+  animation: cmdSlideIn .14s ease;
+}
+@keyframes cmdSlideIn {
+  from { opacity:0; transform: translateX(-50%) translateY(-8px) scale(.98); }
+  to   { opacity:1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+.cmd-input-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--app-line);
+}
+.cmd-search-icon { color: var(--app-fg-4); flex-shrink: 0; }
+.cmd-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  font-size: 15px; color: var(--app-fg); font-family: inherit;
+}
+.cmd-input::placeholder { color: var(--app-fg-4); }
+.cmd-list { padding: 6px; }
+.cmd-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 10px 12px; border-radius: 8px;
+  background: transparent; border: none; cursor: pointer;
+  font-size: 13.5px; color: var(--app-fg-2); font-family: inherit;
+  transition: background .1s;
+  text-align: left;
+}
+.cmd-item:hover { background: var(--app-surface-2); color: var(--app-fg); }
+
+/* ─── Brand Score Chip (sidebar) ───────────────────────────────────────── */
+.sidebar-brand-score {
+  margin-left: auto; font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 20px;
+  background: rgba(245,158,11,.12); color: #D97706;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Floating Gen Toast ────────────────────────────────────────────────── */
+.gen-toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 800;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: 12px;
+  background: var(--app-surface); border: 1px solid var(--app-line-2);
+  box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 2px 8px rgba(0,0,0,.06);
+  min-width: 280px; max-width: 380px;
+  animation: toastSlide .22s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes toastSlide {
+  from { opacity:0; transform: translateY(16px) scale(.96); }
+  to   { opacity:1; transform: translateY(0) scale(1); }
+}
+.gen-toast--ready {
+  border-color: rgba(99,102,241,.4);
+  animation: toastSlide .35s cubic-bezier(.34,1.56,.64,1), toastReadyGlow 1.4s ease-out .25s;
+}
+@keyframes toastReadyGlow {
+  0%   { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 0 rgba(99,102,241,.55); }
+  60%  { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 10px rgba(99,102,241,.06); }
+  100% { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 0 rgba(99,102,241,0); }
+}
+.gen-toast-icon { flex-shrink: 0; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--app-surface-2); }
+.gen-toast-spinner {
+  display: block; width: 14px; height: 14px;
+  border: 2px solid var(--app-line-2); border-top-color: var(--app-accent);
+  border-radius: 50%; animation: vb-spin .7s linear infinite;
+}
+.gen-toast-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gen-toast-label { font-size: 13px; font-weight: 600; color: var(--app-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gen-toast-action { font-size: 11.5px; color: var(--app-accent); font-weight: 600; }
+.gen-toast-close {
+  flex-shrink: 0; background: none; border: none; cursor: pointer;
+  font-size: 16px; color: var(--app-fg-4); padding: 0 2px; line-height: 1;
+}
+.gen-toast-close:hover { color: var(--app-fg-2); }
+
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }

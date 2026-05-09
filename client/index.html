@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Veille ⚡</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<style>
+  :root {
+    --bg:          #08080C;
+    --surface:     #10101A;
+    --surface-2:   #17172A;
+    --surface-3:   #1F1F35;
+    --border:      rgba(255,255,255,0.07);
+    --border-hi:   rgba(255,255,255,0.13);
+    --accent:      #6366F1;
+    --accent-dim:  rgba(99,102,241,0.18);
+    --accent-glow: rgba(99,102,241,0.35);
+    --text:        #EAEAF4;
+    --text-2:      #9090A8;
+    --text-3:      #52526A;
+    --success:     #22C55E;
+    --warning:     #F59E0B;
+    --danger:      #EF4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+    opacity: 0.4;
+  }
+  #root { position: relative; z-index: 1; }
+
+  /* ── Inputs ── */
+  .v-input {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    outline: none;
+    width: 100%;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .v-input::placeholder { color: var(--text-3); }
+  .v-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  .v-input-url {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: var(--surface-2);
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 13px 28px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: -0.01em;
+    transition: background .15s, transform .1s, box-shadow .15s;
+    box-shadow: 0 2px 12px var(--accent-glow);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #4F52D8;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px var(--accent-glow);
+  }
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-hi);
+    border-radius: 10px;
+    padding: 11px 20px;
+    color: var(--text-2);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .btn-ghost:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-hi); }
+  .btn-ghost:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── Tags ── */
+  .tag-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-hi);
+    border-radius: 6px;
+    padding: 3px 9px 3px 10px;
+    font-size: 12px;
+    color: var(--text-2);
+    cursor: default;
+  }
+  .tag-chip-remove {
+    all: unset;
+    display: grid; place-items: center;
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    transition: color .1s, background .1s;
+  }
+  .tag-chip-remove:hover { color: var(--danger); background: rgba(239,68,68,.12); }
+
+  /* ── Score badge ── */
+  .score-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 13px; font-weight: 600;
+    border: 1px solid;
+  }
+  .score-badge.high  { background: rgba(34,197,94,.1); border-color: rgba(34,197,94,.3); color: var(--success); }
+  .score-badge.mid   { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.3); color: var(--warning); }
+  .score-badge.low   { background: rgba(239,68,68,.1);  border-color: rgba(239,68,68,.3);  color: var(--danger);  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 14px;
+  }
+
+  /* ── Field ── */
+  .field-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 6px;
+  }
+
+  /* ── Loading dot ── */
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: .3; }
+  }
+  .pulse-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse-dot 1.2s ease-in-out infinite;
+  }
+
+  /* ── Message slide-in ── */
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg-in { animation: msg-in .35s ease forwards; }
+
+  /* ── Gradient background glow ── */
+  .bg-glow {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 900px 600px at 20% -5%, rgba(99,102,241,0.08), transparent 65%),
+      radial-gradient(ellipse 700px 500px at 90% 110%, rgba(14,165,198,0.05), transparent 60%);
+  }
+  /* ── Card ── */
+  .v-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.03) inset,
+      0 8px 40px rgba(0,0,0,0.5),
+      0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  @keyframes shimmer {
+    0%, 100% { opacity: 0.4; }
+    50%       { opacity: 0.8; }
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 3px; }
+
+  /* ══ BOARD ══════════════════════════════════════════════════════════════════ */
+  .board-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+  }
+  .board-columns {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  .board-col {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+  }
+  .board-col-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    background: var(--surface);
+  }
+  .board-col-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* ── RSS card ── */
+  .rss-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 13px;
+    text-decoration: none;
+    display: block;
+    transition: border-color .15s, background .15s;
+  }
+  .rss-card:hover { border-color: var(--border-hi); background: var(--surface-2); }
+  .rss-card.highlighted {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  /* ── Scored card ── */
+  .scored-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    transition: border-color .15s;
+  }
+  .scored-card.highlighted {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  /* ── Flag badges ── */
+  .flag-badge {
+    display: inline-flex; align-items: center;
+    border-radius: 5px; padding: 2px 7px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em;
+  }
+  .flag-urgent    { background: rgba(239,68,68,.12); color: #EF4444; border: 1px solid rgba(239,68,68,.25); }
+  .flag-a_traiter { background: rgba(245,158,11,.10); color: #F59E0B; border: 1px solid rgba(245,158,11,.25); }
+  .flag-faible    { background: rgba(99,102,241,.10); color: #818CF8; border: 1px solid rgba(99,102,241,.20); }
+
+  /* ── Format badges ── */
+  .format-badge {
+    display: inline-flex; align-items: center;
+    border-radius: 5px; padding: 2px 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-reel      { background: rgba(239,68,68,.12); color: #EF4444; }
+  .badge-carrousel { background: rgba(245,158,11,.10); color: #F59E0B; }
+  .badge-story     { background: rgba(34,197,94,.10); color: #22C55E; }
+  .badge-post      { background: rgba(99,102,241,.10); color: #818CF8; }
+
+  /* ── Caption block ── */
+  .caption-block {
+    background: rgba(99,102,241,0.07);
+    border: 1px solid rgba(99,102,241,0.18);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .copy-btn {
+    background: var(--surface-3);
+    border: 1px solid var(--border-hi);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--text-2);
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: background .1s, color .1s;
+  }
+  .copy-btn:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+  .copy-btn.copied { color: var(--success); border-color: rgba(34,197,94,.3); }
+
+  /* ══ CHAT SIDEBAR ══════════════════════════════════════════════════════════ */
+  .chat-sidebar {
+    width: 380px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+  }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .chat-input-area {
+    padding: 10px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+  .bubble-user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 16px 16px 4px 16px;
+    padding: 9px 13px;
+    font-size: 13px;
+    max-width: 88%;
+    line-height: 1.45;
+  }
+  .bubble-agent { align-self: flex-start; max-width: 100%; }
+  .agent-news-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border-hi);
+    border-radius: 10px;
+    padding: 11px 13px;
+    margin-top: 7px;
+  }
+  .quick-prompt {
+    background: var(--surface-2);
+    border: 1px solid var(--border-hi);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text-2);
+    cursor: pointer;
+    text-align: left;
+    font-family: 'DM Sans', sans-serif;
+    transition: background .12s, color .12s;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+  }
+  .quick-prompt:hover { background: var(--surface-3); color: var(--text); }
+  .chat-fab {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    width: 50px; height: 50px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+    display: grid; place-items: center;
+    font-size: 20px;
+    box-shadow: 0 4px 20px var(--accent-glow);
+    z-index: 50;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .chat-fab:hover { transform: scale(1.07); box-shadow: 0 6px 28px var(--accent-glow); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ═══ Helpers ═════════════════════════════════════════════════════════════════
+const LOADING_STEPS = [
+  { msg: 'Recherche du compte…',            delay: 0    },
+  { msg: 'Analyse de la ligne éditoriale…', delay: 4500 },
+  { msg: 'Identification des concurrents…', delay: 10000 },
+  { msg: 'Génération du profil…',           delay: 17000 },
+];
+
+const FIELD_GROUPS = [
+  {
+    id: 'identite', title: 'Identité', icon: '◎',
+    fields: [
+      { key: 'nom',     label: 'Nom du compte', type: 'text'   },
+      { key: 'langue',  label: 'Langue',         type: 'text'   },
+      { key: 'abonnes', label: 'Abonnés',         type: 'number' },
+    ],
+  },
+  {
+    id: 'editorial', title: 'Éditorial', icon: '◈',
+    fields: [
+      { key: 'niche_principale',          label: 'Niche principale',          type: 'text' },
+      { key: 'sous_niches',               label: 'Sous-niches',               type: 'tags' },
+      { key: 'ton',                       label: 'Ton éditorial',             type: 'text' },
+      { key: 'angle_editorial',           label: 'Angle éditorial',           type: 'text' },
+      { key: 'niveau_expertise_audience', label: "Niveau d'expertise audience", type: 'text' },
+      { key: 'references_culturelles',    label: 'Références culturelles',    type: 'tags' },
+      { key: 'sujets_a_eviter',           label: 'Sujets à éviter',           type: 'tags' },
+    ],
+  },
+  {
+    id: 'formats', title: 'Formats & Rythme', icon: '◧',
+    fields: [
+      { key: 'formats_favoris',            label: 'Formats favoris',         type: 'tags' },
+      { key: 'ratio_contenu',              label: 'Ratio de contenu',        type: 'text' },
+      { key: 'horaires_pic_engagement',    label: "Créneaux d'engagement",   type: 'tags' },
+      { key: 'fenetre_reaction_breaking',  label: 'Fenêtre breaking',        type: 'text' },
+      { key: 'fenetre_reaction_trending',  label: 'Fenêtre trending',        type: 'text' },
+    ],
+  },
+  {
+    id: 'audience', title: 'Audience', icon: '◉',
+    fields: [
+      { key: 'audience_age',  label: "Tranche d'âge",  type: 'text' },
+      { key: 'audience_type', label: "Type d'audience", type: 'text' },
+    ],
+  },
+  {
+    id: 'sources', title: 'Sources & Concurrents', icon: '◑',
+    fields: [
+      { key: 'sources_prioritaires', label: 'Sources prioritaires', type: 'tags' },
+      { key: 'sources_secondaires',  label: 'Sources secondaires',  type: 'tags' },
+      { key: 'concurrents',          label: 'Comptes concurrents',   type: 'tags' },
+      { key: 'keywords_niche',       label: 'Keywords niche',        type: 'tags' },
+      { key: 'hashtags_typiques',    label: 'Hashtags typiques',     type: 'tags' },
+    ],
+  },
+];
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'à l\'instant';
+  if (m < 60) return `il y a ${m}min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `il y a ${h}h`;
+  return `il y a ${Math.floor(h / 24)}j`;
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+
+// ═══ TagInput ═════════════════════════════════════════════════════════════════
+const TagInput = ({ value = [], onChange }) => {
+  const [input, setInput] = useState('');
+  const inputRef = useRef(null);
+
+  const add = (raw) => {
+    const val = raw.trim().replace(/^[@#]/, '');
+    if (val && !value.includes(val)) onChange([...value, val]);
+    setInput('');
+  };
+
+  const onKeyDown = (e) => {
+    if ((e.key === 'Enter' || e.key === ',') && input.trim()) { e.preventDefault(); add(input); }
+    if (e.key === 'Backspace' && !input && value.length) onChange(value.slice(0, -1));
+  };
+
+  return (
+    <div
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '7px 10px', cursor: 'text', minHeight: 42 }}
+      onClick={() => inputRef.current?.focus()}
+    >
+      {value.map((tag, i) => (
+        <span key={i} className="tag-chip">
+          {tag}
+          <button className="tag-chip-remove" onClick={(e) => { e.stopPropagation(); onChange(value.filter((_, j) => j !== i)); }}>×</button>
+        </span>
+      ))}
+      <input
+        ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+        onKeyDown={onKeyDown} onBlur={() => input.trim() && add(input)}
+        placeholder={value.length === 0 ? 'Ajouter… (Entrée)' : ''}
+        style={{ background: 'transparent', border: 'none', outline: 'none', color: 'var(--text)', fontSize: 13, fontFamily: 'DM Sans, sans-serif', flex: 1, minWidth: 80 }}
+      />
+    </div>
+  );
+};
+
+// ═══ FieldRow ═════════════════════════════════════════════════════════════════
+const FieldRow = ({ field, value, onChange }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="field-label">{field.label}</div>
+    {field.type === 'tags' ? (
+      <TagInput value={Array.isArray(value) ? value : []} onChange={onChange}/>
+    ) : (
+      <input
+        type={field.type} className="v-input" value={value ?? ''}
+        onChange={e => onChange(field.type === 'number' ? (e.target.value ? parseInt(e.target.value) : null) : e.target.value)}
+        placeholder="—"
+      />
+    )}
+  </div>
+);
+
+// ═══ InputStep ════════════════════════════════════════════════════════════════
+const InputStep = ({ onAnalyze }) => {
+  const [url, setUrl] = useState('');
+  const [err, setErr] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const v = url.trim();
+    if (!v) { setErr('Colle une URL Instagram.'); return; }
+    if (!v.includes('instagram.com') && !v.startsWith('@')) { setErr('URL Instagram invalide.'); return; }
+    onAnalyze(v);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 24 }}>
+      <div className="bg-glow"/>
+      <div className="v-card" style={{ width: '100%', maxWidth: 520, padding: '52px 44px', position: 'relative' }}>
+        <div style={{ marginBottom: 40, textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>⚡</div>
+          <div style={{ fontFamily: 'DM Sans, sans-serif', fontSize: 26, fontWeight: 700, letterSpacing: '-0.04em', color: 'var(--text)' }}>Veille</div>
+          <div style={{ marginTop: 8, fontSize: 14, color: 'var(--text-3)', letterSpacing: '-0.01em' }}>Veille Instagram temps réel · Scoring IA · Apprentissage</div>
+        </div>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <div className="field-label" style={{ marginBottom: 8 }}>Compte Instagram à analyser</div>
+            <input type="text" className="v-input v-input-url" value={url} onChange={e => { setUrl(e.target.value); setErr(''); }} placeholder="https://instagram.com/compte  ou  @compte" autoFocus/>
+            {err && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)' }}>{err}</div>}
+          </div>
+          <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: 8 }}>Analyser le compte</button>
+        </form>
+        <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center', gap: 32 }}>
+          {['Analyse IA','Scoring','Apprentissage'].map(f => (
+            <div key={f} style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--text-3)' }}>
+              <div style={{ marginBottom: 3, fontSize: 16 }}>{f === 'Analyse IA' ? '🔍' : f === 'Scoring' ? '⚡' : '🧠'}</div>
+              {f}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══ LoadingStep ══════════════════════════════════════════════════════════════
+const LoadingStep = ({ url }) => {
+  const [msgs, setMsgs] = useState([LOADING_STEPS[0].msg]);
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const timers = LOADING_STEPS.slice(1).map(({ msg, delay }) => setTimeout(() => setMsgs(prev => [...prev, msg]), delay));
+    const dotTimer = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 400);
+    return () => { timers.forEach(clearTimeout); clearInterval(dotTimer); };
+  }, []);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 24 }}>
+      <div className="bg-glow"/>
+      <div className="v-card" style={{ width: '100%', maxWidth: 460, padding: '48px 40px' }}>
+        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+          <div style={{ fontSize: 30, marginBottom: 8 }}>⚡</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.02em' }}>Analyse en cours</div>
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace', wordBreak: 'break-all' }}>{url}</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {msgs.map((msg, i) => (
+            <div key={i} className="msg-in" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {i === msgs.length - 1 ? <div className="pulse-dot"/> : <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--success)' }}/>}
+              <span style={{ fontSize: 14, color: i === msgs.length - 1 ? 'var(--text)' : 'var(--text-3)' }}>{msg}{i === msgs.length - 1 ? dots : ''}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 36, background: 'var(--surface-2)', borderRadius: 10, height: 3, overflow: 'hidden' }}>
+          <div style={{ height: '100%', background: `linear-gradient(90deg, var(--accent), #818CF8)`, width: `${Math.min(95, (msgs.length / LOADING_STEPS.length) * 100)}%`, transition: 'width 1.5s ease', borderRadius: 10 }}/>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══ ValidationStep ═══════════════════════════════════════════════════════════
+const ValidationStep = ({ profil: initialProfil, onSave }) => {
+  const [profil, setProfil] = useState(initialProfil);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const score = profil.score_confiance ?? 0;
+  const scorePct = Math.round(score * 100);
+  const scoreClass = score >= 0.7 ? 'high' : score >= 0.5 ? 'mid' : 'low';
+  const update = (key, val) => setProfil(p => ({ ...p, [key]: val }));
+
+  const handleSave = async () => {
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch('/api/onboarding/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profil }) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      localStorage.setItem('veille_compte_id', json.compte_id);
+      localStorage.setItem('veille_profil', JSON.stringify(profil));
+      onSave(json.compte_id);
+    } catch (err) { setError(err.message); setSaving(false); }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', padding: '40px 24px' }}>
+      <div className="bg-glow"/>
+      <div style={{ maxWidth: 860, margin: '0 auto', position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span style={{ fontSize: 22 }}>⚡</span>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.03em' }}>Profil détecté</div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>Vérifie et ajuste avant d'accéder au board</div>
+            </div>
+          </div>
+          <span className={`score-badge ${scoreClass}`}><span style={{ fontSize: 16 }}>{score >= 0.7 ? '●' : '◐'}</span>Profil détecté à {scorePct}%</span>
+        </div>
+        {score < 0.5 && (
+          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 12, padding: '12px 18px', marginBottom: 24, fontSize: 13, color: '#FCA5A5', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>⚠</span><span>Données insuffisantes — le compte est peut-être privé ou peu référencé. Complète les champs manuellement.</span>
+          </div>
+        )}
+        <div className="v-card" style={{ padding: '18px 24px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--accent-dim)', display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 }}>📸</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>Compte analysé</div>
+            <div style={{ fontSize: 14, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>{profil.instagram_url}</div>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gap: 16 }}>
+          {FIELD_GROUPS.map(group => (
+            <div key={group.id} className="v-card" style={{ padding: '24px 28px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
+                <span style={{ fontSize: 15, opacity: 0.6 }}>{group.icon}</span>
+                <div className="section-label" style={{ margin: 0 }}>{group.title}</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '18px 24px' }}>
+                {group.fields.map(field => (
+                  <div key={field.key} style={field.type === 'tags' ? { gridColumn: '1 / -1' } : {}}>
+                    <FieldRow field={field} value={profil[field.key]} onChange={val => update(field.key, val)}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        {error && <div style={{ marginTop: 20, padding: '12px 18px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, fontSize: 13, color: '#FCA5A5' }}>{error}</div>}
+        <div style={{ marginTop: 28, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+          <button className="btn-primary" onClick={handleSave} disabled={saving} style={{ padding: '14px 36px', fontSize: 15 }}>
+            {saving ? 'Enregistrement…' : 'Accéder au board →'}
+          </button>
+        </div>
+        <div style={{ height: 60 }}/>
+      </div>
+    </div>
+  );
+};
+
+// ═══ RssCard ══════════════════════════════════════════════════════════════════
+const RssCard = ({ news, highlighted }) => (
+  <a href={news.url} target="_blank" rel="noopener noreferrer" className={`rss-card ${highlighted ? 'highlighted' : ''}`}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.03em' }}>{news.source}</span>
+      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>·</span>
+      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{timeAgo(news.published_at || news.created_at)}</span>
+    </div>
+    <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+      {news.titre}
+    </p>
+    {news.description && (
+      <p style={{ margin: '4px 0 0', fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+        {news.description}
+      </p>
+    )}
+  </a>
+);
+
+// ═══ ScoredCard ═══════════════════════════════════════════════════════════════
+const ScoredCard = ({ item, highlighted }) => {
+  const [copied, setCopied] = useState(null);
+
+  const handleCopy = (text, key) => {
+    copyText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const flagClass = item.flag === 'urgent' ? 'flag-urgent' : item.flag === 'a_traiter' ? 'flag-a_traiter' : 'flag-faible';
+  const flagLabel = item.flag === 'urgent' ? '🔴 Urgent' : item.flag === 'a_traiter' ? '🟡 À traiter' : '🔵 Faible';
+  const fmtClass = `badge-${(item.format_suggere || 'post').toLowerCase()}`;
+
+  return (
+    <div className={`scored-card ${highlighted ? 'highlighted' : ''}`}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7, gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+          <span className={`flag-badge ${flagClass}`}>{flagLabel}</span>
+          {item.format_suggere && <span className={`format-badge ${fmtClass}`}>{item.format_suggere}</span>}
+        </div>
+        <span style={{ fontSize: 15, fontWeight: 700, flexShrink: 0, color: item.flag === 'urgent' ? 'var(--danger)' : item.flag === 'a_traiter' ? 'var(--warning)' : 'var(--text-3)' }}>
+          {typeof item.score_total === 'number' ? item.score_total.toFixed(1) : item.score_total}
+        </span>
+      </div>
+      <p style={{ margin: '0 0 5px', fontSize: 13, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{item.news_raw?.titre || '—'}</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: item.caption ? 9 : 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{item.news_raw?.source || '—'}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>·</span>
+        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{timeAgo(item.news_raw?.published_at || item.created_at)}</span>
+        {item.fenetre_temps_restant_minutes > 0 && (
+          <span style={{ fontSize: 11, color: item.fenetre_code_couleur === '🟢' ? 'var(--success)' : item.fenetre_code_couleur === '🟡' ? 'var(--warning)' : 'var(--danger)' }}>
+            · ⏱ {item.fenetre_temps_restant_minutes}min
+          </span>
+        )}
+      </div>
+      {item.pourquoi_ce_score && (
+        <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.4, fontStyle: 'italic' }}>{item.pourquoi_ce_score}</p>
+      )}
+      {item.caption && (
+        <div>
+          <div className="caption-block" style={{ marginBottom: 6 }}>{item.caption}</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button className={`copy-btn ${copied === 'caption' ? 'copied' : ''}`} onClick={() => handleCopy(item.caption, 'caption')}>
+              {copied === 'caption' ? '✓ Copié' : 'Copier caption'}
+            </button>
+            {item.hashtags?.length > 0 && (
+              <button className={`copy-btn ${copied === 'tags' ? 'copied' : ''}`} onClick={() => handleCopy(item.hashtags.join(' '), 'tags')}>
+                {copied === 'tags' ? '✓ Copié' : 'Hashtags'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═══ MessageAgent ═════════════════════════════════════════════════════════════
+const MessageAgent = ({ msg, onFollowUp }) => {
+  const { message: texte, items = [], suggestion_suivante } = msg.parsed;
+  const [copied, setCopied] = useState(null);
+
+  const handleCopy = (text, key) => {
+    copyText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  return (
+    <div className="bubble-agent msg-in">
+      {texte && <p style={{ margin: '0 0 6px', fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>{texte}</p>}
+      {items.map((item, i) => {
+        const fmtClass = `badge-${(item.format || 'post').toLowerCase()}`;
+        return (
+          <div key={i} className="agent-news-card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
+              {item.source && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{item.source}</span>}
+              {item.age && <><span style={{ fontSize: 11, color: 'var(--text-3)' }}>·</span><span style={{ fontSize: 11, color: 'var(--text-3)' }}>{item.age}</span></>}
+              {item.format && <span className={`format-badge ${fmtClass}`}>{item.format}</span>}
+              {item.hype_score != null && <span style={{ fontSize: 11, color: 'var(--warning)' }}>🔥 {item.hype_score}/10</span>}
+            </div>
+            {item.titre && <p style={{ margin: '0 0 7px', fontSize: 12.5, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{item.titre}</p>}
+            {item.caption && (
+              <>
+                <div className="caption-block" style={{ marginBottom: 6, fontSize: 11.5 }}>{item.caption}</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button className={`copy-btn ${copied === `c${i}` ? 'copied' : ''}`} onClick={() => handleCopy(item.caption, `c${i}`)}>
+                    {copied === `c${i}` ? '✓ Copié' : 'Copier'}
+                  </button>
+                  {item.fenetre && <span style={{ fontSize: 11, color: 'var(--warning)' }}>⏱ {item.fenetre}</span>}
+                </div>
+              </>
+            )}
+            {item.hashtags?.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7 }}>
+                {item.hashtags.map((h, j) => (
+                  <span key={j} style={{ fontSize: 10.5, color: 'var(--text-3)', background: 'var(--surface-3)', padding: '2px 6px', borderRadius: 4 }}>
+                    {h.startsWith('#') ? h : `#${h}`}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {suggestion_suivante && (
+        <button className="quick-prompt" style={{ marginTop: 8 }} onClick={() => onFollowUp(suggestion_suivante)}>
+          → {suggestion_suivante}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ═══ LoadingCol ═══════════════════════════════════════════════════════════════
+const LoadingCol = () => {
+  const shades = ['var(--surface-2)', 'var(--surface-3)', 'var(--surface-2)'];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>
+      {[90, 60, 75, 55, 80].map((w, i) => (
+        <div key={i} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', opacity: 1 - i * 0.12 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <div style={{ height: 8, width: 48, borderRadius: 4, background: 'var(--surface-3)', animation: `shimmer 1.4s ease-in-out ${i * 0.1}s infinite` }}/>
+            <div style={{ height: 8, width: 32, borderRadius: 4, background: 'var(--surface-3)' }}/>
+          </div>
+          <div style={{ height: 10, width: `${w}%`, borderRadius: 4, background: 'var(--surface-3)', marginBottom: 5, animation: `shimmer 1.4s ease-in-out ${i * 0.15}s infinite` }}/>
+          <div style={{ height: 10, width: `${w - 20}%`, borderRadius: 4, background: 'var(--surface-3)', animation: `shimmer 1.4s ease-in-out ${i * 0.2}s infinite` }}/>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ═══ Board ════════════════════════════════════════════════════════════════════
+const AGENT_LOADING_MSGS = ['Recherche en cours...', 'Analyse des sources...', 'Génération des captions...', 'Presque prêt...'];
+const QUICK_PROMPTS = [
+  "Qu'est-ce qui buzz en ce moment ?",
+  "Idées de posts pour ce soir",
+  "Breaking news dans ma niche",
+  "Angle humour sur l'actu du jour",
+  "3 captions prêtes à poster",
+];
+
+const Board = ({ compteId }) => {
+  const [profil] = useState(() => { try { return JSON.parse(localStorage.getItem('veille_profil')); } catch { return {}; } });
+  const [rssNews, setRssNews]       = useState([]);
+  const [scoredNews, setScoredNews] = useState([]);
+  const [breaking, setBreaking]     = useState([]);
+  const [boardLoading, setBoardLoading] = useState(true);
+  const [boardError, setBoardError]     = useState(null);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [refreshStep, setRefreshStep]   = useState('');
+  const [chatOpen, setChatOpen]         = useState(true);
+  const [highlightedIds, setHighlightedIds]   = useState(new Set());
+  const [highlightedUrls, setHighlightedUrls] = useState(new Set());
+
+  // Chat
+  const [conversation, setConversation]       = useState([]);
+  const [chatInput, setChatInput]             = useState('');
+  const [chatLoading, setChatLoading]         = useState(false);
+  const [loadingStepIdx, setLoadingStepIdx]   = useState(0);
+  const [showQuickPrompts, setShowQuickPrompts] = useState(true);
+  const [unread, setUnread] = useState(0);
+  const messagesEndRef = useRef(null);
+  const chatInputRef   = useRef(null);
+
+  useEffect(() => { loadBoard(); }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [conversation, chatLoading]);
+
+  useEffect(() => {
+    if (chatOpen) setUnread(0);
+  }, [chatOpen]);
+
+  const fetchWithTimeout = (url, ms = 12000) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+  };
+
+  const loadBoard = async () => {
+    setBoardLoading(true);
+    setBoardError(null);
+    try {
+      const [r1, r2] = await Promise.all([
+        fetchWithTimeout(`/api/rss/news?compte_id=${compteId}&limit=60`),
+        fetchWithTimeout(`/api/scoring/board?compte_id=${compteId}&limit=60`),
+      ]);
+      const d1 = await r1.json();
+      const d2 = await r2.json();
+      setRssNews(d1.news || []);
+      setScoredNews(d2.board || []);
+      setBreaking(d2.breaking || []);
+    } catch (err) {
+      setBoardError(err.name === 'AbortError' ? 'Le serveur ne répond pas (timeout)' : 'Impossible de joindre le serveur — est-il démarré ?');
+    } finally { setBoardLoading(false); }
+  };
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const steps = ['Récupération des flux RSS…', 'Analyse des nouvelles sources…', 'Mise à jour du board…'];
+    let i = 0;
+    setRefreshStep(steps[0]);
+    const stepTimer = setInterval(() => { i = Math.min(i + 1, steps.length - 1); setRefreshStep(steps[i]); }, 4000);
+    try {
+      await fetchWithTimeout(`/api/rss/refresh?compte_id=${compteId}`, 60000);
+      setRefreshStep('Chargement…');
+      await loadBoard();
+    } catch (err) {
+      setBoardError(err.name === 'AbortError' ? 'Refresh timeout (>60s)' : err.message);
+    } finally {
+      clearInterval(stepTimer);
+      setRefreshing(false);
+      setRefreshStep('');
+    }
+  };
+
+  const handleSend = async (msg) => {
+    const message = (msg !== undefined ? msg : chatInput).trim();
+    if (!message || chatLoading) return;
+    setChatInput('');
+    setShowQuickPrompts(false);
+
+    setConversation(prev => [...prev, { role: 'user', content: message }]);
+    setChatLoading(true);
+    setLoadingStepIdx(0);
+
+    const stepTimer = setInterval(() => setLoadingStepIdx(s => Math.min(s + 1, AGENT_LOADING_MSGS.length - 1)), 2000);
+
+    try {
+      const apiHistory = conversation.map(m => ({
+        role: m.role,
+        content: m.role === 'assistant' ? JSON.stringify(m.parsed) : m.content,
+      }));
+
+      const res = await fetch('/api/agent/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, compte_id: compteId, conversation_history: apiHistory }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur agent');
+
+      const parsed = data.response;
+      setConversation(prev => [...prev, { role: 'assistant', parsed }]);
+
+      if (!chatOpen) setUnread(u => u + 1);
+
+      // Highlight matching cards in the feed
+      if (parsed.items?.length) {
+        const urls   = new Set(parsed.items.map(i => i.url).filter(Boolean));
+        const titles = new Set(parsed.items.map(i => (i.titre || '').toLowerCase()));
+        const ids = new Set();
+        scoredNews.forEach(n => {
+          if (urls.has(n.news_raw?.url) || titles.has((n.news_raw?.titre || '').toLowerCase())) ids.add(n.id);
+        });
+        const matchUrls = new Set();
+        rssNews.forEach(n => {
+          if (urls.has(n.url) || titles.has((n.titre || '').toLowerCase())) matchUrls.add(n.url);
+        });
+        if (ids.size)       { setHighlightedIds(ids);       setTimeout(() => setHighlightedIds(new Set()), 3000); }
+        if (matchUrls.size) { setHighlightedUrls(matchUrls); setTimeout(() => setHighlightedUrls(new Set()), 3000); }
+      }
+    } catch (err) {
+      setConversation(prev => [...prev, { role: 'assistant', parsed: { message: `Erreur : ${err.message}`, items: [], suggestion_suivante: null } }]);
+    } finally {
+      clearInterval(stepTimer);
+      setChatLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+
+  return (
+    <div className="board-layout">
+      <div className="bg-glow"/>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0, zIndex: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 18 }}>⚡</span>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.03em' }}>{profil?.nom || 'Veille'}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{profil?.niche_principale || '—'}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <button className="btn-ghost" style={{ padding: '6px 13px', fontSize: 12 }} onClick={handleRefresh} disabled={refreshing}>
+            {refreshing ? '↻ ' + (refreshStep || 'Actualisation…') : '↻ Refresh'}
+          </button>
+          <button className="btn-ghost" style={{ padding: '6px 12px', fontSize: 12, position: 'relative' }} onClick={() => { setChatOpen(o => !o); setUnread(0); }}>
+            {chatOpen ? '⟩ Agent' : '⚡ Agent'}
+            {!chatOpen && unread > 0 && (
+              <span style={{ position: 'absolute', top: -5, right: -5, background: 'var(--accent)', color: '#fff', borderRadius: 10, padding: '1px 5px', fontSize: 9, fontWeight: 700 }}>{unread}</span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Breaking bar ── */}
+      {breaking.length > 0 && (
+        <div style={{ padding: '7px 18px', background: 'rgba(239,68,68,0.08)', borderBottom: '1px solid rgba(239,68,68,0.2)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--danger)', flexShrink: 0, letterSpacing: '0.07em' }}>🔴 BREAKING</span>
+          {breaking.map((b, i) => (
+            <span key={i} style={{ fontSize: 12, color: 'var(--text-2)', flexShrink: 0, whiteSpace: 'nowrap' }}>{b.news_raw?.titre}</span>
+          ))}
+        </div>
+      )}
+
+      {/* ── Columns ── */}
+      <div className="board-columns">
+
+        {/* Col 1 — RSS */}
+        <div className="board-col" style={{ flex: 1, minWidth: 0 }}>
+          <div className="board-col-header">
+            <span className="section-label" style={{ margin: 0 }}>Feed RSS</span>
+            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{rssNews.length} articles</span>
+          </div>
+          <div className="board-col-scroll">
+            {boardError
+              ? <div style={{ padding: 20, textAlign: 'center' }}>
+                  <div style={{ fontSize: 12, color: 'var(--danger)', marginBottom: 12, lineHeight: 1.5 }}>⚠ {boardError}</div>
+                  <button className="btn-ghost" style={{ fontSize: 12, padding: '6px 14px' }} onClick={loadBoard}>Réessayer</button>
+                </div>
+              : boardLoading
+                ? <LoadingCol/>
+                : rssNews.length === 0
+                  ? <div style={{ textAlign: 'center', padding: 32, fontSize: 13, color: 'var(--text-3)' }}>Aucun article · Lance un Refresh</div>
+                  : rssNews.map(n => <RssCard key={n.id} news={n} highlighted={highlightedUrls.has(n.url)}/>)
+            }
+          </div>
+        </div>
+
+        {/* Col 2 — Scored */}
+        <div className="board-col" style={{ flex: 1, minWidth: 0 }}>
+          <div className="board-col-header">
+            <span className="section-label" style={{ margin: 0 }}>Scoré Claude</span>
+            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{scoredNews.length} articles</span>
+          </div>
+          <div className="board-col-scroll">
+            {boardError
+              ? <div style={{ padding: 20, textAlign: 'center' }}>
+                  <div style={{ fontSize: 12, color: 'var(--danger)', marginBottom: 12, lineHeight: 1.5 }}>⚠ {boardError}</div>
+                  <button className="btn-ghost" style={{ fontSize: 12, padding: '6px 14px' }} onClick={loadBoard}>Réessayer</button>
+                </div>
+              : boardLoading
+                ? <LoadingCol/>
+                : scoredNews.length === 0
+                  ? <div style={{ textAlign: 'center', padding: 32, fontSize: 13, color: 'var(--text-3)' }}>Aucune news scorée · Lance un Refresh</div>
+                  : scoredNews.map(item => <ScoredCard key={item.id} item={item} highlighted={highlightedIds.has(item.id)}/>)
+            }
+          </div>
+        </div>
+
+        {/* Col 3 — Agent chat */}
+        {chatOpen && (
+          <div className="chat-sidebar">
+            {/* Chat header */}
+            <div style={{ padding: '11px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, background: 'var(--surface)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <span style={{ fontSize: 15 }}>⚡</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>Agent</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-3)' }}>Web · Captions prêtes à copier</div>
+                </div>
+              </div>
+              {conversation.length > 0 && (
+                <button className="btn-ghost" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => { setConversation([]); setShowQuickPrompts(true); }}>
+                  Réinit.
+                </button>
+              )}
+            </div>
+
+            {/* Messages */}
+            <div className="chat-messages">
+              {conversation.length === 0 && !chatLoading && (
+                <div style={{ textAlign: 'center', padding: '28px 14px' }}>
+                  <div style={{ fontSize: 26, marginBottom: 8 }}>⚡</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 5 }}>Agent prêt</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.55 }}>Pose une question ou choisis un prompt rapide ci-dessous.</div>
+                </div>
+              )}
+              {conversation.map((msg, i) =>
+                msg.role === 'user'
+                  ? <div key={i} className="bubble-user msg-in">{msg.content}</div>
+                  : <MessageAgent key={i} msg={msg} onFollowUp={handleSend}/>
+              )}
+              {chatLoading && (
+                <div className="bubble-agent msg-in" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                  <div className="pulse-dot"/>
+                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{AGENT_LOADING_MSGS[loadingStepIdx]}</span>
+                </div>
+              )}
+              <div ref={messagesEndRef}/>
+            </div>
+
+            {/* Input */}
+            <div className="chat-input-area">
+              {showQuickPrompts && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {QUICK_PROMPTS.map((p, i) => (
+                    <button key={i} className="quick-prompt" onClick={() => handleSend(p)}>{p}</button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 7, alignItems: 'flex-end' }}>
+                <textarea
+                  ref={chatInputRef}
+                  className="v-input"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Pose une question… (Entrée pour envoyer)"
+                  rows={2}
+                  style={{ resize: 'none', lineHeight: 1.45, padding: '8px 11px', fontSize: 13 }}
+                  disabled={chatLoading}
+                />
+                <button
+                  className="btn-primary"
+                  style={{ padding: '8px 13px', flexShrink: 0, fontSize: 15, lineHeight: 1 }}
+                  onClick={() => handleSend()}
+                  disabled={chatLoading || !chatInput.trim()}
+                >↑</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* FAB quand chat fermé */}
+      {!chatOpen && (
+        <button className="chat-fab" onClick={() => { setChatOpen(true); setUnread(0); }} style={{ position: 'fixed' }}>
+          ⚡
+          {unread > 0 && (
+            <span style={{ position: 'absolute', top: -4, right: -4, background: 'var(--danger)', color: '#fff', borderRadius: 10, padding: '1px 5px', fontSize: 9, fontWeight: 700 }}>
+              {unread}
+            </span>
+          )}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ═══ OnboardingApp ════════════════════════════════════════════════════════════
+const OnboardingApp = ({ onComplete }) => {
+  const [step, setStep]       = useState('input');
+  const [url, setUrl]         = useState('');
+  const [profil, setProfil]   = useState(null);
+  const [apiError, setApiError] = useState(null);
+
+  const handleAnalyze = async (inputUrl) => {
+    setUrl(inputUrl); setStep('loading'); setApiError(null);
+    try {
+      const res  = await fetch('/api/onboarding/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: inputUrl }) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Erreur inconnue');
+      setProfil(json.profil); setStep('validation');
+    } catch (err) { setApiError(err.message); setStep('input'); }
+  };
+
+  if (step === 'loading') return <LoadingStep url={url}/>;
+  if (step === 'validation' && profil) return <ValidationStep profil={profil} onSave={onComplete}/>;
+
+  return (
+    <>
+      <InputStep onAnalyze={handleAnalyze}/>
+      {apiError && (
+        <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '12px 20px', fontSize: 13, color: '#FCA5A5', whiteSpace: 'nowrap', zIndex: 100 }}>
+          ⚠ {apiError}
+        </div>
+      )}
+    </>
+  );
+};
+
+// ═══ App root ═════════════════════════════════════════════════════════════════
+const App = () => {
+  const [compteId, setCompteId] = useState(() => localStorage.getItem('veille_compte_id'));
+  if (compteId) return <Board compteId={compteId}/>;
+  return <OnboardingApp onComplete={id => setCompteId(id)}/>;
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

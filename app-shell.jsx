@@ -56,10 +56,62 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
   );
 };
 
+// ═══ COMMAND PALETTE ═══════════════════════════════════════════════════════
+const CMD_ITEMS = [
+  { label: 'Générer un post',       icon: 'sparkle',  nav: 'generate' },
+  { label: 'Calendrier',            icon: 'calendar', nav: 'calendar'  },
+  { label: 'Sources & veille',      icon: 'news',     nav: 'sources'   },
+  { label: 'Identité de marque',    icon: 'palette',  nav: 'brand'     },
+  { label: 'Paramètres',            icon: 'settings', nav: 'settings'  },
+];
+const CommandPalette = ({ onNav, onClose }) => {
+  const [q, setQ] = useState('');
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const items = q.trim()
+    ? CMD_ITEMS.filter(i => i.label.toLowerCase().includes(q.toLowerCase()))
+    : CMD_ITEMS;
+  return (
+    <>
+      <div className="cmd-backdrop" onClick={onClose}/>
+      <div className="cmd-palette">
+        <div className="cmd-input-row">
+          <AppIcon name="search" size={15} className="cmd-search-icon"/>
+          <input ref={inputRef} className="cmd-input" placeholder="Naviguer vers…"
+            value={q} onChange={e => setQ(e.target.value)}/>
+          <span className="kbd" style={{fontSize:10,opacity:.5}}>ESC</span>
+        </div>
+        <div className="cmd-list">
+          {items.map(it => (
+            <button key={it.nav} className="cmd-item" onClick={() => { onNav(it.nav); onClose(); }}>
+              <AppIcon name={it.icon} size={14}/>
+              <span>{it.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+};
+
 // ═══ SIDEBAR ═══════════════════════════════════════════════════════════════
-const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null, clients = [], activeClientId = null, onSelectClient, onNewClient }) => {
+const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null, clients = [], activeClientId = null, brandScore = 0, onSelectClient, onNewClient }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
   const menuRef = useRef(null);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setCmdOpen(o => !o); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -91,7 +143,7 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
     { key: 'settings', icon: 'settings', label: 'Paramètres' },
   ];
 
-  return (
+  return (<>
     <aside className="sidebar">
       <div className="sidebar-brand">
         Forje <span className="brand-suffix">Studio</span>
@@ -106,7 +158,7 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
         <AppIcon name="chevDown" size={14} className="workspace-chev"/>
       </div>
 
-      <div className="sidebar-search">
+      <div className="sidebar-search" onClick={() => setCmdOpen(true)} style={{cursor:'pointer'}}>
         <AppIcon name="search" size={13}/>
         <span>Rechercher</span>
         <span className="kbd">⌘K</span>
@@ -135,6 +187,11 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
              onClick={() => onNav('brand')}>
           <AppIcon name="palette" className="icon"/>
           <span>Identité de marque</span>
+          {brandScore < 7 && (
+            <span className="sidebar-brand-score" title={`Profil ${brandScore}/7 complété`}>
+              {brandScore}/7
+            </span>
+          )}
         </div>
 
         {/* Switcher de comptes */}
@@ -190,7 +247,7 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
           <div className="sidebar-usage-bar">
             <div className="sidebar-usage-fill" style={{width: creditsPct + '%'}}/>
           </div>
-          <span className="sidebar-usage-cta">Augmenter la cadence →</span>
+          <span className="sidebar-usage-cta" style={{cursor:'pointer'}} onClick={() => onNav('settings')}>Augmenter la cadence →</span>
         </div>
 
         <div className="sidebar-user" ref={menuRef}>
@@ -213,7 +270,8 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
         </div>
       </div>
     </aside>
-  );
+    {cmdOpen && <CommandPalette onNav={onNav} onClose={() => setCmdOpen(false)}/>}
+  </>);
 };
 
 // ═══ TOPBAR ════════════════════════════════════════════════════════════════
@@ -229,10 +287,7 @@ const Topbar = ({ breadcrumb = [], actions = null }) => (
     </div>
     <div className="topbar-actions">
       {actions || (
-        <>
-          <button className="btn btn-ghost btn-icon" title="Notifications"><AppIcon name="bell"/></button>
-          <button className="btn btn-accent btn-sm"><AppIcon name="sparkle" size={13}/>Générer un post</button>
-        </>
+        <button className="btn btn-ghost btn-icon" title="Notifications"><AppIcon name="bell"/></button>
       )}
     </div>
   </header>

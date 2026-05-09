@@ -114,11 +114,11 @@ async function renderActuCanvas(data) {
 // ═══════════════════════════════════════════════════════════════════════════
 // GENERATE — hub (Higgsfield-like) + creation (2 variations via tweak)
 // ═══════════════════════════════════════════════════════════════════════════
-const GenerateScreen = ({ layoutVariant, preset, onPickPreset, onBack }) => {
+const GenerateScreen = ({ layoutVariant, preset, onPickPreset, onBack, onGoToBoard }) => {
   if (preset) {
     return layoutVariant === 'chat'
-      ? <GenerateChat preset={preset} onBack={onBack}/>
-      : <GenerateStudio preset={preset} onBack={onBack}/>;
+      ? <GenerateChat preset={preset} onBack={onBack} onGoToBoard={onGoToBoard}/>
+      : <GenerateStudio preset={preset} onBack={onBack} onGoToBoard={onGoToBoard}/>;
   }
   return <GenerateHub onPick={onPickPreset}/>;
 };
@@ -132,18 +132,27 @@ const PRESETS = [
     tag: 'Meilleur reach', icon: 'layers', img: 'assets/deep-dive.webp',  visual: 'bts'   },
 ];
 
+const HUB_PLACEHOLDERS = [
+  '« L\'IA vient de dépasser les médecins sur les diagnostics cancer du sein. On en parle ? »',
+  '« Notre nouvelle collection automne arrive jeudi — faut créer l\'élan maintenant. »',
+  '« Citation de notre CEO ce matin en conf : "L\'excellence, c\'est la répétition faite belle." »',
+  '« Article du Monde sur la relocalisation textile en France — angle parfait pour nous. »',
+  '« On vient de recevoir le prix Innovation Durable 2026 — comment on annonce ça ? »',
+];
+
 const GenerateHub = ({ onPick }) => {
   var [text,      setText]      = useState('');
   var [detecting, setDetecting] = useState(false);
   var [err,       setErr]       = useState('');
+  var placeholder = HUB_PLACEHOLDERS[Math.floor(Date.now() / 30000) % HUB_PLACEHOLDERS.length];
 
   var handleDetect = async function() {
     var t = text.trim();
     if (!t || detecting) return;
     setDetecting(true); setErr('');
     try {
-      var res = await fetch(GEN_API + '/generate/detect-format', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      var res = await veilleFetch('/generate/detect-format', {
+        method: 'POST',
         body: JSON.stringify({ text: t }),
       });
       var data = await res.json();
@@ -163,37 +172,39 @@ const GenerateHub = ({ onPick }) => {
         <div>
           <h1 className="page-title">Que veux-tu raconter ?</h1>
           <p className="page-subtitle">
-            Choisis un format. Forje s'occupe du reste — rédaction, visuel, ton de voix.
+            Décris ton idée — Forje détecte le bon format et génère le post.
           </p>
         </div>
-      </div>
-
-      <div className="gen-preset-grid">
-        {PRESETS.map(p => (
-          <PresetCard key={p.id} preset={p} onPick={() => onPick(p)}/>
-        ))}
       </div>
 
       <div className="gen-prompt-card">
         <div className="gen-prompt-badge">
           <AppIcon name="sparkle" size={14}/>
-          <span>Ou décris-le avec tes mots — Forje choisira le bon format</span>
+          <span>Décris-le avec tes mots — Forje choisit le bon format</span>
         </div>
         <div className="gen-prompt-input">
           <textarea
             value={text}
             onChange={function(e) { setText(e.target.value); setErr(''); }}
             onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleDetect(); }}
-            placeholder="« On a reçu une livraison de cuir camel de Annonay — le même que notre père utilisait dans les années 80. Faut en parler. »"
-            rows={2}
+            placeholder={placeholder}
+            rows={3}
+            autoFocus
           />
         </div>
         <div className="gen-prompt-foot">
           <div className="gen-prompt-hints">
             {err
               ? <span style={{ color:'#ef4444' }}>{err}</span>
-              : <span>{detecting ? 'Analyse en cours...' : 'Forje détecte le format · ⌘↵ pour envoyer'}</span>}
+              : text.length > 0 && text.length < 10
+                ? <span style={{ color:'#f59e0b' }}>Continue un peu…</span>
+                : <span>{detecting ? 'Analyse en cours...' : 'Forje détecte le format · ⌘↵ pour envoyer'}</span>}
           </div>
+          {text.length > 0 && (
+            <span style={{ fontSize:11, color: text.length > 500 ? '#ef4444' : 'var(--app-fg-4)', marginRight:8, fontVariantNumeric:'tabular-nums' }}>
+              {text.length}
+            </span>
+          )}
           <button
             className={'btn btn-accent btn-sm' + (!text.trim() || detecting ? ' btn-disabled' : '')}
             onClick={handleDetect}
@@ -204,6 +215,16 @@ const GenerateHub = ({ onPick }) => {
               : <><AppIcon name="arrowRight" size={13}/> Générer</>}
           </button>
         </div>
+      </div>
+
+      <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--app-fg-4)', margin:'24px 0 12px' }}>
+        Ou choisissez un format directement
+      </div>
+
+      <div className="gen-preset-grid">
+        {PRESETS.map(p => (
+          <PresetCard key={p.id} preset={p} onPick={() => onPick(p)}/>
+        ))}
       </div>
     </div>
   );
@@ -305,7 +326,18 @@ const RecentCard = ({ type, when, title, swatch }) => (
 );
 
 // ─── Génération fonctionnelle (Actu / Citation / Deep Dive) ──────────────
-const GEN_API = 'http://localhost:3001/api';
+const GEN_API = '/api';
+var _genActive    = null; // preset ID of in-flight generation (survives navigation)
+var _genStartTime = null; // epoch ms when generation began (for loader resume)
+
+async function veilleFetch(path, opts) {
+  var sb = window.__supabase;
+  var token = null;
+  if (sb) { var sess = await sb.auth.getSession(); token = sess.data?.session?.access_token; }
+  var headers = Object.assign({ 'Content-Type': 'application/json' }, opts && opts.headers);
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(GEN_API + path, Object.assign({}, opts, { headers }));
+}
 
 const GenFormInput = ({ value, onChange, placeholder, type, rows }) => {
   var r = rows || 3;
@@ -447,25 +479,17 @@ const StyleRefDropzone = ({ value, onChange, label = 'Référence de style', hin
 const GenFormFields = ({ preset, s }) => {
   if (preset.id === 'actu') return (<>
     <ToolSection title="Actu" icon="news">
-      <GenFormInput value={s.newsText} onChange={s.setNewsText} rows={4}
-        placeholder="Decris l actu : qui, quoi, pourquoi ca compte..."/>
+      <GenFormInput value={s.newsText} onChange={s.setNewsText} rows={2}
+        placeholder="Décris l'actu : qui, quoi, pourquoi ça compte..."/>
     </ToolSection>
     <ToolSection title="Visuel" icon="image">
-      <div style={{ display:'flex', gap:6, marginBottom:8 }}>
-        {['ai','classic'].map(function(mode) {
-          var active = s.imageMode === mode;
-          return (
-            <button key={mode} onClick={function(){ s.setImageMode(mode); }}
-              style={{ flex:1, padding:'7px 0', borderRadius:6, fontSize:12, fontFamily:'DM Sans,sans-serif',
-                cursor:'pointer', transition:'all .15s',
-                background: active ? 'var(--app-accent)' : 'var(--app-surface-2)',
-                color: active ? '#fff' : 'var(--app-fg-3)',
-                border: active ? '1px solid var(--app-accent)' : '1px solid var(--app-line)',
-                fontWeight: active ? 600 : 400 }}>
-              {mode === 'ai' ? '✦ IA — Cinématique' : 'Photo Google'}
-            </button>
-          );
-        })}
+      <div className="vis-mode-toggle">
+        <button className={`vis-mode-btn${s.imageMode === 'ai' ? ' active' : ''}`} onClick={() => s.setImageMode('ai')}>
+          ✦ IA — Cinématique
+        </button>
+        <button className={`vis-mode-btn${s.imageMode === 'classic' ? ' active' : ''}`} onClick={() => s.setImageMode('classic')}>
+          Photo Google
+        </button>
       </div>
       {s.imageMode === 'classic' && (
         <div>
@@ -476,9 +500,8 @@ const GenFormFields = ({ preset, s }) => {
       )}
       {s.imageMode === 'ai' && (
         <div>
-          <div className="tool-sub" style={{ lineHeight:1.6 }}>
-            Gemini génère un visuel cinématique sur-mesure.<br/>
-            <span style={{ opacity:.65 }}>Personne réelle → Gemini · Ambiance/Objet → GPT-Image-1</span>
+          <div className="tool-sub">
+            GPT Image génère un visuel cinématique sur-mesure.
           </div>
           <StyleRefDropzone
             value={s.styleRefData}
@@ -513,44 +536,112 @@ const GenFormFields = ({ preset, s }) => {
 
   return null;
 };
-const GenPlaceholder = ({ preset }) => (
-  <div style={{ aspectRatio: preset.id === 'actu' ? '4/5' : '1/1', background:'var(--app-surface-2)',
-    borderRadius:12, display:'flex', flexDirection:'column', alignItems:'center',
-    justifyContent:'center', gap:12, color:'var(--app-fg-4)' }}>
-    <AppIcon name={preset.icon} size={32}/>
-    <span style={{ fontSize:13 }}>Remplis le formulaire et génère</span>
+const GenPlaceholder = () => (
+  <div className="gen-empty-wrap">
+    <div className="gen-empty-post-frame">
+      <div className="gen-empty-post-inner">
+        <span className="gen-empty-sparkle">✦</span>
+      </div>
+    </div>
+    <div className="gen-empty-text">Remplis le formulaire · Génère</div>
   </div>
 );
 
-const GenLoader = ({ preset }) => (
-  <div style={{ aspectRatio: preset?.id === 'actu' ? '4/5' : '1/1', background:'var(--app-surface-2)',
-    borderRadius:12, display:'flex', flexDirection:'column', alignItems:'center',
-    justifyContent:'center', gap:16, color:'var(--app-fg-3)' }}>
-    <div style={{ width:28, height:28, border:'2.5px solid var(--app-line)',
-      borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .8s linear infinite' }}/>
-    <span style={{ fontSize:13 }}>Génération en cours…</span>
-    {preset?.id === 'actu' && (
-      <span style={{ fontSize:11, color:'var(--app-fg-4)', textAlign:'center', maxWidth:160, lineHeight:1.5 }}>
-        L'IA compose le visuel — 20-40 sec
-      </span>
-    )}
-  </div>
-);
+const LOADER_STEPS = {
+  actu:     [[0,'Analyse de l\'actu…'],[5000,'Génération du visuel cinématique…'],[14000,'Rédaction du post…'],[22000,'Caption Instagram…'],[30000,'Finalisation…']],
+  citation: [[0,'Composition visuelle…'],[6000,'Mise en forme typographique…'],[12000,'Finalisation…']],
+  deepdive: [[0,'Plan éditorial…'],[8000,'Génération des 6 slides…'],[18000,'Finalisation…']],
+};
+const LOADER_TOTAL = { actu: 36000, citation: 18000, deepdive: 28000 };
 
-const GenerateChat = ({ preset, onBack }) => {
-  const [newsText,    setNewsText]    = useState(preset.prefill?.newsText  || '');
+const GenLoader = ({ preset, startTime }) => {
+  const id = preset?.id || 'actu';
+  const steps = LOADER_STEPS[id] || LOADER_STEPS.actu;
+  const total = LOADER_TOTAL[id] || 36000;
+  const start = startTime || Date.now();
+  const elapsed = Date.now() - start;
+
+  // Resume from correct step/progress when remounted mid-generation
+  const initialStep = steps.reduce((acc, [delay], i) => (elapsed >= delay ? i : acc), 0);
+  const [stepIdx, setStepIdx] = useState(initialStep);
+  const [progress, setProgress] = useState(Math.min(elapsed / total * 100, 94));
+
+  useEffect(() => {
+    // Only schedule steps that haven't fired yet
+    const timers = steps.slice(1)
+      .map(([delay,], i) => {
+        const remaining = delay - elapsed;
+        if (remaining <= 0) return null;
+        return setTimeout(() => setStepIdx(i + 1), remaining);
+      })
+      .filter(Boolean);
+    const tick = setInterval(() => setProgress(Math.min((Date.now() - start) / total * 100, 94)), 120);
+    return () => { timers.forEach(clearTimeout); clearInterval(tick); };
+  }, []);
+
+  return (
+    <div className="gen-loader-wrap">
+      <div className="gen-loader-card">
+        <div className="gen-loader-card-inner">
+          <div className="gen-loader-shimmer"/>
+          {/* Instagram post skeleton */}
+          <div className="gen-loader-skel">
+            <div className="gen-skel-img"/>
+            <div className="gen-skel-foot">
+              <div className="gen-skel-avatar"/>
+              <div className="gen-skel-lines">
+                <div className="gen-skel-line gen-skel-line--70"/>
+                <div className="gen-skel-line gen-skel-line--45"/>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="gen-loader-bar-wrap">
+        <div className="gen-loader-bar-fill" style={{ width: progress + '%' }}/>
+      </div>
+      <div className="gen-loader-info">
+        <div className="gen-loader-step" key={stepIdx}>{steps[stepIdx][1]}</div>
+        <div className="gen-loader-dots"><span/><span/><span/></div>
+      </div>
+    </div>
+  );
+};
+
+const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
+  const GEN_KEY     = `forje_gen_result_${preset.id}`;
+  const INPUTS_KEY  = `forje_gen_inputs_${preset.id}`;
+
+  const savedResult = (() => { try { return JSON.parse(sessionStorage.getItem(GEN_KEY) || 'null'); } catch(_){ return null; } })();
+  const savedInputs = (() => { try { return JSON.parse(sessionStorage.getItem(INPUTS_KEY) || 'null'); } catch(_){ return null; } })();
+
+  const [newsText,    setNewsText]    = useState(preset.prefill?.newsText  || savedInputs?.newsText  || '');
   const [photoUrl,    setPhotoUrl]    = useState('');
   const [photoData,   setPhotoData]   = useState('');
-  const [quoteText,   setQuoteText]   = useState(preset.prefill?.quoteText || '');
-  const [authorName,  setAuthorName]  = useState(preset.prefill?.authorName|| '');
+  const [quoteText,   setQuoteText]   = useState(preset.prefill?.quoteText || savedInputs?.quoteText || '');
+  const [authorName,  setAuthorName]  = useState(preset.prefill?.authorName|| savedInputs?.authorName|| '');
   const [authorTitle, setAuthorTitle] = useState('');
-  const [topic,       setTopic]       = useState(preset.prefill?.topic     || '');
+  const [topic,       setTopic]       = useState(preset.prefill?.topic     || savedInputs?.topic     || '');
   const [imageMode,    setImageMode]    = useState('ai');
   const [styleRefData, setStyleRefData] = useState(null);
-  const [generating,   setGenerating]   = useState(false);
-  const [result,       setResult]       = useState(null);
+  const [generating,   setGenerating]   = useState(_genActive === preset.id);
+  const [result,       setResult]       = useState(savedResult);
   const [error,        setError]        = useState(null);
   const [activeSlide,  setActiveSlide]  = useState(0);
+  const isMountedRef = useRef(true);
+  useEffect(() => { return () => { isMountedRef.current = false; }; }, []);
+
+  // Register global callbacks so an in-flight generation can reach THIS mounted instance
+  useEffect(() => {
+    var alive = true;
+    window.__onGenResult = function(data, presetId) {
+      if (alive && presetId === preset.id) { setGenerating(false); setResult(data); }
+    };
+    window.__onGenError = function(msg, presetId) {
+      if (alive && presetId === preset.id) { setGenerating(false); setError(msg); }
+    };
+    return function() { alive = false; };
+  }, []);
 
   const s = { newsText, setNewsText, photoUrl, setPhotoUrl, photoData, setPhotoData, quoteText, setQuoteText,
               authorName, setAuthorName, authorTitle, setAuthorTitle, topic, setTopic,
@@ -563,10 +654,14 @@ const GenerateChat = ({ preset, onBack }) => {
   }[preset.id] || false;
 
   const handleGenerate = async () => {
-    setGenerating(true);
-    setError(null);
-    setResult(null);
-    setActiveSlide(0);
+    _genActive    = preset.id;
+    _genStartTime = Date.now();
+    if (isMountedRef.current) { setGenerating(true); setError(null); setResult(null); setActiveSlide(0); }
+    sessionStorage.removeItem(GEN_KEY);
+    try {
+      sessionStorage.setItem(INPUTS_KEY, JSON.stringify({ newsText, quoteText, topic, authorName }));
+    } catch(_) {}
+    window.__setGenToast?.({ status: 'generating', label: preset.label, presetId: preset.id, preset });
     try {
       const userId   = window.__currentUser?.id;
       const clientId = window.__activeClientId || undefined;
@@ -576,20 +671,29 @@ const GenerateChat = ({ preset, onBack }) => {
         citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId, clientId },
         deepdive: { topic, userId, clientId },
       }[preset.id];
-      const res  = await fetch(`${GEN_API}${ep}`, {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
-      });
+      const res  = await veilleFetch(ep, { method: 'POST', body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur génération');
-      // Actu: server returns bgImage + metadata, client renders text with real fonts
-      if (data.bgImage) {
-        data.image = await renderActuCanvas(data);
+      if (data.bgImage) { data.image = await renderActuCanvas(data); }
+      try { sessionStorage.setItem(GEN_KEY, JSON.stringify(data)); } catch(_) {}
+      window.__setGenToast?.({ status: 'ready', label: preset.label, presetId: preset.id, preset });
+      if (isMountedRef.current) {
+        setResult(data);
+      } else {
+        // component navigated away — deliver result to whatever instance is mounted now
+        window.__onGenResult?.(data, preset.id);
       }
-      setResult(data);
     } catch (err) {
-      setError(err.message);
+      window.__setGenToast?.(null);
+      if (isMountedRef.current) {
+        setError(err.message);
+      } else {
+        window.__onGenError?.(err.message, preset.id);
+      }
     } finally {
-      setGenerating(false);
+      _genActive    = null;
+      _genStartTime = null;
+      if (isMountedRef.current) setGenerating(false);
     }
   };
 
@@ -604,12 +708,23 @@ const GenerateChat = ({ preset, onBack }) => {
 
   const previewImages = preset.id === 'deepdive' ? (result?.images || []) : (result?.image ? [result.image] : []);
 
+  // Si résultat déjà là et toast encore visible, on le dismiss
+  useEffect(() => { if (result) window.__setGenToast?.(null); }, [result]);
+
   return (
     <div className="gen-studio-body">
       <div className="gen-studio-head">
-        <button className="btn btn-ghost btn-sm" onClick={onBack}>
-          <AppIcon name="chevLeft" size={12}/>Formats
-        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => { sessionStorage.removeItem(GEN_KEY); onBack(); }}>
+            <AppIcon name="chevLeft" size={12}/>Formats
+          </button>
+          {preset.fromBoard && (
+            <button className="btn btn-ghost btn-sm" style={{ color:'var(--app-accent)' }}
+              onClick={() => { onGoToBoard?.(); }}>
+              <AppIcon name="news" size={12}/>Board
+            </button>
+          )}
+        </div>
         <div className="gen-studio-title-row">
           <AppIcon name={preset.icon} size={14} style={{color:'var(--app-fg-3)'}}/>
           <h1 className="gen-studio-title">{preset.label}</h1>
@@ -620,15 +735,10 @@ const GenerateChat = ({ preset, onBack }) => {
               <AppIcon name="image" size={12}/>Télécharger
             </button>
           )}
-          <button className="btn btn-primary btn-sm" onClick={handleGenerate} disabled={generating || !canGenerate}>
-            {generating
-              ? <><span style={{ display:'inline-block', width:10, height:10, border:'1.5px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite', marginRight:6 }}/>Génération…</>
-              : <><AppIcon name="sparkle" size={13}/>Générer</>}
-          </button>
         </div>
       </div>
 
-      <div className="gen-studio-grid gen-studio-grid--studio">
+      <div className={`gen-studio-grid${result || generating ? ' gen-studio-grid--studio' : ''}`}>
         {/* LEFT : formulaire */}
         <div className="gen-tools">
           <GenFormFields preset={preset} s={s}/>
@@ -638,26 +748,15 @@ const GenerateChat = ({ preset, onBack }) => {
               {error}
             </div>
           )}
-          <button
-            className="btn btn-primary"
-            onClick={handleGenerate}
-            disabled={generating || !canGenerate}
-            style={{ width:'100%', marginTop:16, justifyContent:'center', gap:8 }}
-          >
+          <button className="btn-forge" onClick={handleGenerate} disabled={generating || !canGenerate}>
             {generating
-              ? React.createElement('span', {style:{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}},
-                  React.createElement('span', {style:{display:'inline-block',width:12,height:12,border:'1.5px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'vb-spin .7s linear infinite'}}),
-                  'Generation...'
-                )
-              : React.createElement('span', {style:{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}},
-                  React.createElement(AppIcon, {name:'sparkle',size:14}),
-                  'Generer'
-                )
-            }
+              ? <><span style={{ display:'inline-block', width:13, height:13, border:'2px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/> Génération…</>
+              : <><AppIcon name="sparkle" size={15}/> Générer</>}
           </button>
         </div>
 
-        {/* RIGHT : preview */}
+        {/* RIGHT : preview — s'ouvre au déclenchement de la génération */}
+        {(result || generating) && (
         <div className="gen-preview">
           {preset.id === 'deepdive' && previewImages.length > 1 && (
             <div className="gen-preview-head">
@@ -672,33 +771,62 @@ const GenerateChat = ({ preset, onBack }) => {
           )}
           <div className="gen-preview-stage">
             {generating
-              ? <GenLoader preset={preset}/>
+              ? <GenLoader preset={preset} startTime={_genStartTime}/>
               : previewImages.length
                 ? <img src={previewImages[activeSlide] || previewImages[0]} alt=""/>
-                : <GenPlaceholder preset={preset}/>}
+                : null}
           </div>
-          {result && preset.id !== 'deepdive' && result.title && (
-            <div className="gen-preview-caption">
-              <div className="caption-head">
-                <span className="caption-label">{result.category} · {result.title}</span>
-              </div>
-              <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
-                {result.subtitle}
-              </div>
-            </div>
-          )}
-          {result && preset.id === 'deepdive' && result.slides && (
-            <div className="gen-preview-caption">
-              <div className="caption-head">
-                <span className="caption-label">Slide {activeSlide+1} / {result.slides.length}</span>
-              </div>
-              <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
-                <b>{result.slides[activeSlide]?.title}</b><br/>
-                {result.slides[activeSlide]?.body}
-              </div>
+          {result && (
+            <div className="gen-captions-scroll">
+              {preset.id !== 'deepdive' && result.title && (
+                <div className="gen-preview-caption gen-preview-caption--no-border">
+                  <div className="caption-head">
+                    <span className="caption-label">{result.category} · {result.title}</span>
+                  </div>
+                  <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
+                    {result.subtitle}
+                  </div>
+                </div>
+              )}
+              {preset.id === 'deepdive' && result.slides && (
+                <div className="gen-preview-caption gen-preview-caption--no-border">
+                  <div className="caption-head">
+                    <span className="caption-label">Slide {activeSlide+1} / {result.slides.length}</span>
+                  </div>
+                  <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
+                    <b>{result.slides[activeSlide]?.title}</b><br/>
+                    {result.slides[activeSlide]?.body}
+                  </div>
+                </div>
+              )}
+              {result.caption && <IgCaption caption={result.caption}/>}
             </div>
           )}
         </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const IgCaption = ({ caption }) => {
+  const [copied, setCopied] = React.useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(caption).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <div className="gen-preview-caption gen-ig-caption">
+      <div className="caption-head">
+        <span className="caption-label">Caption Instagram</span>
+        <button className="btn btn-ghost btn-sm" onClick={copy} style={{ padding:'3px 10px', fontSize:11 }}>
+          {copied ? '✓ Copié' : 'Copier'}
+        </button>
+      </div>
+      <div className="caption-ig-body">
+        {caption}
       </div>
     </div>
   );
@@ -805,23 +933,38 @@ const QueueScreen = ({ defaultView = 'calendar' }) => {
   );
 };
 
-const WEEK = ['LUN 14','MAR 15','MER 16','JEU 17','VEN 18','SAM 19','DIM 20'];
-const CAL_EVENTS = [
-  { day:0, hour:8,  dur:1, type:'quote',   title:'« L\'excellence… »', status:'ready' },
-  { day:1, hour:8,  dur:1, type:'product', title:'Sac Margot camel',   status:'ready' },
-  { day:1, hour:19, dur:1, type:'bts',     title:'Piquage · Noémie',    status:'ready' },
-  { day:2, hour:10, dur:1, type:'news',    title:'Émission Artisans',   status:'draft' },
-  { day:2, hour:18, dur:1, type:'product', title:'Margot · lancement',  status:'ready' },
-  { day:3, hour:12, dur:1, type:'pedago',  title:'Le mot · skiver',     status:'draft' },
-  { day:4, hour:17, dur:1, type:'quote',   title:'« Trois générations »', status:'ready' },
-];
-const QueueCalendar = () => (
+const CAL_EVENTS = [];
+const DAY_LABELS = ['LUN','MAR','MER','JEU','VEN','SAM','DIM'];
+const getWeekDays = (offset = 0) => {
+  const now = new Date();
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - ((now.getDay() + 6) % 7) + offset * 7);
+  return DAY_LABELS.map((l, i) => {
+    const d = new Date(mon); d.setDate(mon.getDate() + i);
+    return { label: l, num: d.getDate(), date: d };
+  });
+};
+const fmtWeekRange = (days) => {
+  const start = days[0].date;
+  const end = days[6].date;
+  const opts = { month:'long' };
+  const sameMonth = start.getMonth() === end.getMonth();
+  return sameMonth
+    ? `${start.getDate()} – ${end.getDate()} ${start.toLocaleDateString('fr-FR', opts)} ${start.getFullYear()}`
+    : `${start.getDate()} ${start.toLocaleDateString('fr-FR', opts)} – ${end.getDate()} ${end.toLocaleDateString('fr-FR', opts)} ${end.getFullYear()}`;
+};
+const QueueCalendar = () => {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const WEEK = getWeekDays(weekOffset);
+  const todayNum = new Date().getDate();
+  const todayOffset = 0;
+  return (
   <div className="card cal-card">
     <div className="cal-head">
       <div className="cal-nav">
-        <button className="btn btn-ghost btn-icon btn-sm"><AppIcon name="chevLeft" size={12}/></button>
-        <span className="cal-range">14 – 20 octobre 2025</span>
-        <button className="btn btn-ghost btn-icon btn-sm"><AppIcon name="chevRight" size={12}/></button>
+        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setWeekOffset(o => o - 1)}><AppIcon name="chevLeft" size={12}/></button>
+        <span className="cal-range">{fmtWeekRange(WEEK)}</span>
+        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setWeekOffset(o => o + 1)}><AppIcon name="chevRight" size={12}/></button>
       </div>
       <div className="cal-legend">
         <span className="cal-legend-item"><i className="cal-swatch cal-swatch--quote"/>Citation</span>
@@ -838,28 +981,32 @@ const QueueCalendar = () => (
           <div key={h} className="cal-hour">{h}:00</div>
         ))}
       </div>
-      {WEEK.map((d, di) => (
-        <div key={di} className="cal-day-col">
-          <div className="cal-day-head">
-            <span className="cal-day-label">{d.split(' ')[0]}</span>
-            <span className={`cal-day-num ${di===0?'today':''}`}>{d.split(' ')[1]}</span>
+      {WEEK.map((d, di) => {
+        const isToday = weekOffset === 0 && di === ((new Date().getDay() + 6) % 7);
+        return (
+          <div key={di} className="cal-day-col">
+            <div className="cal-day-head">
+              <span className="cal-day-label">{d.label}</span>
+              <span className={`cal-day-num ${isToday ? 'today' : ''}`}>{d.num}</span>
+            </div>
+            {[6,8,10,12,14,16,18,20].map(h => <div key={h} className="cal-slot"/>)}
+            {CAL_EVENTS.filter(e => e.day === di).map((e, i) => {
+              const top = ((e.hour - 6) / 2) * 64 + 40;
+              return (
+                <div key={i} className={`cal-event cal-event--${e.type} ${e.status==='draft'?'draft':''}`}
+                     style={{top, height: e.dur * 64 - 6}}>
+                  <div className="cal-event-time">{e.hour}:00</div>
+                  <div className="cal-event-title">{e.title}</div>
+                </div>
+              );
+            })}
           </div>
-          {[6,8,10,12,14,16,18,20].map(h => <div key={h} className="cal-slot"/>)}
-          {CAL_EVENTS.filter(e => e.day === di).map((e, i) => {
-            const top = ((e.hour - 6) / 2) * 64 + 40; // 40 is head
-            return (
-              <div key={i} className={`cal-event cal-event--${e.type} ${e.status==='draft'?'draft':''}`}
-                   style={{top, height: e.dur * 64 - 6}}>
-                <div className="cal-event-time">{e.hour}:00</div>
-                <div className="cal-event-title">{e.title}</div>
-              </div>
-            );
-          })}
-        </div>
-      ))}
+        );
+      })}
     </div>
   </div>
-);
+  );
+};
 
 const FEED_ITEMS = [
   { when:'Mardi 15 oct · 08:00', type:'Citation', swatch:'quote', status:'ready',
@@ -878,41 +1025,70 @@ const FEED_ITEMS = [
     title:'Le mot du métier : skiver',
     caption:'Amincir le cuir à l\'endroit d\'un pli. Pour qu\'il tombe, pas qu\'il se casse.' },
 ];
-const QueueFeed = () => (
-  <div className="queue-feed">
-    {FEED_ITEMS.map((it, i) => (
-      <div key={i} className="feed-row card">
-        <div className={`feed-thumb feed-thumb--${it.swatch}`}>
-          <div className="feed-thumb-inner">
-            {it.swatch === 'quote' && <div className="feed-thumb-quote">"</div>}
-            {it.swatch === 'bts' && <div className="feed-thumb-label">COULISSES<br/>03</div>}
-            {it.swatch === 'news' && <div className="feed-thumb-chip">• ACTU</div>}
-            {it.swatch === 'product' && <div className="feed-thumb-label">MARGOT<br/>CAMEL</div>}
-            {it.swatch === 'pedago' && <div className="feed-thumb-label">LE MOT<br/>Skiver</div>}
+const QueueFeed = () => {
+  const [validated, setValidated] = useState(new Set());
+  const [preview, setPreview] = useState(null);
+  return (
+    <div className="queue-feed">
+      {preview && (
+        <div className="feed-preview-overlay" onClick={() => setPreview(null)}>
+          <div className="feed-preview-modal" onClick={e => e.stopPropagation()}>
+            <div className={`feed-preview-thumb feed-thumb--${preview.swatch}`}>
+              <div className="feed-thumb-inner" style={{transform:'scale(2.5)', transformOrigin:'center'}}>
+                {preview.swatch === 'quote' && <div className="feed-thumb-quote">"</div>}
+                {preview.swatch === 'bts' && <div className="feed-thumb-label">COULISSES<br/>03</div>}
+                {preview.swatch === 'news' && <div className="feed-thumb-chip">• ACTU</div>}
+                {preview.swatch === 'product' && <div className="feed-thumb-label">MARGOT<br/>CAMEL</div>}
+                {preview.swatch === 'pedago' && <div className="feed-thumb-label">LE MOT<br/>Skiver</div>}
+              </div>
+            </div>
+            <div style={{padding:'20px 24px'}}>
+              <div className="feed-title" style={{fontSize:16, marginBottom:8}}>{preview.title}</div>
+              <div className="feed-caption" style={{fontSize:13}}>{preview.caption}</div>
+            </div>
+            <button onClick={() => setPreview(null)} style={{position:'absolute',top:12,right:14,background:'none',border:'none',fontSize:20,cursor:'pointer',color:'var(--app-fg-3)'}}>×</button>
           </div>
         </div>
-        <div className="feed-meta">
-          <div className="feed-meta-top">
-            <span className="feed-when">{it.when}</span>
-            <span className="feed-dot">·</span>
-            <span className="feed-type">{it.type}</span>
-            <span className={`tag tag-dot ${it.status==='ready'?'tag-success':'tag-warn'}`} style={{marginLeft:'auto'}}>
-              {it.status==='ready'?'Prêt':'Brouillon'}
-            </span>
+      )}
+      {FEED_ITEMS.map((it, i) => {
+        const isValidated = validated.has(i);
+        return (
+          <div key={i} className={`feed-row card${isValidated ? ' feed-row--validated' : ''}`}>
+            <div className={`feed-thumb feed-thumb--${it.swatch}`}>
+              <div className="feed-thumb-inner">
+                {it.swatch === 'quote' && <div className="feed-thumb-quote">"</div>}
+                {it.swatch === 'bts' && <div className="feed-thumb-label">COULISSES<br/>03</div>}
+                {it.swatch === 'news' && <div className="feed-thumb-chip">• ACTU</div>}
+                {it.swatch === 'product' && <div className="feed-thumb-label">MARGOT<br/>CAMEL</div>}
+                {it.swatch === 'pedago' && <div className="feed-thumb-label">LE MOT<br/>Skiver</div>}
+              </div>
+            </div>
+            <div className="feed-meta">
+              <div className="feed-meta-top">
+                <span className="feed-when">{it.when}</span>
+                <span className="feed-dot">·</span>
+                <span className="feed-type">{it.type}</span>
+                <span className={`tag tag-dot ${isValidated ? 'tag-success' : it.status==='ready' ? 'tag-success' : 'tag-warn'}`} style={{marginLeft:'auto'}}>
+                  {isValidated ? '✓ Validé' : it.status==='ready' ? 'Prêt' : 'Brouillon'}
+                </span>
+              </div>
+              <div className="feed-title">{it.title}</div>
+              <div className="feed-caption">{it.caption}</div>
+              <div className="feed-actions">
+                <Btn variant="ghost" size="sm" icon="eye" onClick={() => setPreview(it)}>Aperçu</Btn>
+                <Btn variant="ghost" size="sm" icon="edit">Éditer</Btn>
+                {!isValidated
+                  ? <Btn variant="accent" size="sm" icon="check" onClick={() => setValidated(v => new Set([...v, i]))}>Valider</Btn>
+                  : <Btn variant="ghost" size="sm" icon="check" style={{color:'var(--app-success,#16a34a)'}} onClick={() => setValidated(v => { const n=new Set(v); n.delete(i); return n; })}>Validé ✓</Btn>}
+                <Btn variant="ghost" size="sm" icon="more" style={{marginLeft:'auto'}}/>
+              </div>
+            </div>
           </div>
-          <div className="feed-title">{it.title}</div>
-          <div className="feed-caption">{it.caption}</div>
-          <div className="feed-actions">
-            <Btn variant="ghost" size="sm" icon="eye">Aperçu</Btn>
-            <Btn variant="ghost" size="sm" icon="edit">Éditer</Btn>
-            <Btn variant="accent" size="sm" icon="check">Valider</Btn>
-            <Btn variant="ghost" size="sm" icon="more" style={{marginLeft:'auto'}}></Btn>
-          </div>
-        </div>
-      </div>
-    ))}
-  </div>
-);
+        );
+      })}
+    </div>
+  );
+};
 
 const GRID_ITEMS = [
   { kind:'quote',   label:'« L\'excellence… »',      status:'done' },
@@ -1284,6 +1460,7 @@ const BrandScreen = ({ clientId, onSaved }) => {
   var [saving,          setSaving]          = useState(false);
   var [saveMsg,         setSaveMsg]         = useState('');
   var [saveErr,         setSaveErr]         = useState('');
+  var [showVeilleNudge, setShowVeilleNudge] = useState(false);
   var [igInput,         setIgInput]         = useState('');
   var [igAnalyzing,     setIgAnalyzing]     = useState(false);
   var [igResult,        setIgResult]        = useState(null);
@@ -1348,13 +1525,17 @@ const BrandScreen = ({ clientId, onSaved }) => {
     var sb = window.__supabase; var user = window.__currentUser;
     if (!sb || !user) return;
     setLogoUploading(true); setSaveErr('');
-    var path = user.id + '/logo.png';
+    var folder = clientId ? user.id + '/' + clientId : user.id + '/draft';
+    var path = folder + '/logo.png';
     sb.storage.from('brand-assets').upload(path, file, { upsert:true, contentType:'image/png' })
       .then(function(res) {
-        if (res.error) { setSaveErr('Upload echoue : ' + res.error.message); }
-        else {
-          var pub = sb.storage.from('brand-assets').getPublicUrl(path);
-          setLogoUrl(pub.data.publicUrl + '?t=' + Date.now());
+        if (res.error) { setSaveErr('Upload echoué : ' + res.error.message); setLogoUploading(false); return; }
+        var pub = sb.storage.from('brand-assets').getPublicUrl(path);
+        var url = pub.data.publicUrl + '?t=' + Date.now();
+        setLogoUrl(url);
+        if (clientId) {
+          sb.from('clients').update({ logo_url: url }).eq('id', clientId).eq('user_id', user.id)
+            .then(function(r) { if (r.error) setSaveErr('Logo sauvegardé localement, erreur DB : ' + r.error.message); });
         }
         setLogoUploading(false);
       });
@@ -1366,13 +1547,17 @@ const BrandScreen = ({ clientId, onSaved }) => {
     if (!sb || !user) return;
     setStyleRefUploading(true); setSaveErr('');
     var ext = file.type === 'image/png' ? 'png' : 'jpg';
-    var path = user.id + '/style-ref.' + ext;
+    var folder = clientId ? user.id + '/' + clientId : user.id + '/draft';
+    var path = folder + '/style-ref.' + ext;
     sb.storage.from('brand-assets').upload(path, file, { upsert:true, contentType:file.type })
       .then(function(res) {
-        if (res.error) { setSaveErr('Upload echoue : ' + res.error.message); }
-        else {
-          var pub = sb.storage.from('brand-assets').getPublicUrl(path);
-          setStyleRefUrl(pub.data.publicUrl + '?t=' + Date.now());
+        if (res.error) { setSaveErr('Upload echoué : ' + res.error.message); setStyleRefUploading(false); return; }
+        var pub = sb.storage.from('brand-assets').getPublicUrl(path);
+        var url = pub.data.publicUrl + '?t=' + Date.now();
+        setStyleRefUrl(url);
+        if (clientId) {
+          sb.from('clients').update({ style_ref_url: url }).eq('id', clientId).eq('user_id', user.id)
+            .then(function(r) { if (r.error) setSaveErr('Style ref sauvegardé localement, erreur DB : ' + r.error.message); });
         }
         setStyleRefUploading(false);
       });
@@ -1381,8 +1566,8 @@ const BrandScreen = ({ clientId, onSaved }) => {
   var analyzeInstagram = function() {
     if (!igInput.trim()) return;
     setIgAnalyzing(true); setIgErr(''); setIgResult(null);
-    fetch('/api/brand/analyze-instagram', {
-      method:'POST', headers:{ 'Content-Type':'application/json' },
+    veilleFetch('/brand/analyze-instagram', {
+      method: 'POST',
       body: JSON.stringify({ handle: igInput.trim() }),
     })
       .then(function(r) { return r.json(); })
@@ -1450,11 +1635,13 @@ const BrandScreen = ({ clientId, onSaved }) => {
     var query = clientId
       ? sb.from('clients').update(row).eq('id', clientId).eq('user_id', user.id).select('id').maybeSingle()
       : sb.from('clients').insert(row).select('id').maybeSingle();
+    var isNew = !clientId;
     query.then(function(res) {
       if (res.error) { setSaveErr(res.error.message); }
       else {
         setSaveMsg('Identite forgee. Chaque post genere sera maintenant fidele a la charte de ' + (name || 'ton media') + '.');
         setTimeout(function() { setSaveMsg(''); }, 6000);
+        if (isNew) setShowVeilleNudge(true);
         if (onSaved && res.data) onSaved(res.data.id);
       }
       setSaving(false);
@@ -1479,6 +1666,30 @@ const BrandScreen = ({ clientId, onSaved }) => {
 
   return (
     <div className="page-body" style={{ paddingBottom:60 }}>
+      {showVeilleNudge && (
+        <div className="veille-nudge-overlay">
+          <div className="veille-nudge-modal">
+            <div className="veille-nudge-icon">⚡</div>
+            <h2 className="veille-nudge-title">Identité forgée !</h2>
+            <p className="veille-nudge-desc">
+              Étape 1 sur 2 terminée. Active maintenant ta veille — Forje va surveiller les actus de ton univers en temps réel.
+            </p>
+            <div className="veille-nudge-steps">
+              <span className="veille-nudge-step veille-nudge-step--done">① Identité de marque ✓</span>
+              <span className="veille-nudge-step veille-nudge-step--active">② Sources & veille</span>
+            </div>
+            <div className="veille-nudge-actions">
+              <button className="btn btn-primary" style={{flex:1}}
+                onClick={() => { setShowVeilleNudge(false); window.__goToScreen?.('sources'); }}>
+                Configurer ma veille →
+              </button>
+              <button className="btn btn-ghost" onClick={() => setShowVeilleNudge(false)}>
+                Plus tard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="page-header" style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between' }}>
         <div>
           <h1 className="page-title">Forge ton identite</h1>
@@ -1626,6 +1837,7 @@ const BrandScreen = ({ clientId, onSaved }) => {
             desc="Utilise dans les logs, emails et dashboard. Le nom public de ton compte."
             tip="Ex : Footmercato, Raplume, Le Monde...">
             <input value={name} onChange={function(e){ setName(e.target.value); }}
+              onBlur={function(){ if (name.trim() && clientId) handleSave(); }}
               placeholder="Raplume, Footmercato, Le Monde..."
               style={inputStyle}/>
           </BrandSect>

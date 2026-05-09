@@ -52,7 +52,7 @@
 }
 .latest-row {
   display: grid;
-  grid-template-columns: 180px 1fr 52px;
+  grid-template-columns: 160px 1fr 76px;
   align-items: center;
   gap: 12px;
   padding: 11px 16px;
@@ -83,6 +83,28 @@
   -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 .latest-row-right { display: flex; justify-content: flex-end; }
+.latest-row-link {
+  font-size: 13px; color: var(--app-fg);
+  line-height: 1.35;
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  text-decoration: none;
+}
+.latest-row-link:hover { text-decoration: underline; text-decoration-color: var(--app-fg-3); }
+.latest-forge-btn {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+  padding: 5px 8px; border-radius: 7px;
+  background: var(--app-accent); color: #fff;
+  border: none; cursor: pointer;
+  opacity: 0; transition: opacity .15s, background .12s;
+  white-space: nowrap;
+}
+.latest-row:hover .latest-forge-btn { opacity: 1; }
+.latest-forge-btn:hover { filter: brightness(1.1); }
+@media (hover: none) {
+  .latest-forge-btn { opacity: 1; }
+}
 .latest-score {
   font-size: 11.5px; font-weight: 700;
   padding: 3px 7px; border-radius: 6px;
