@@ -110,15 +110,16 @@ async function renderActuCanvas(data) {
 
   return canvas.toDataURL('image/jpeg', 0.92);
 }
+window.__renderActuCanvas = renderActuCanvas;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GENERATE — hub (Higgsfield-like) + creation (2 variations via tweak)
 // ═══════════════════════════════════════════════════════════════════════════
-const GenerateScreen = ({ layoutVariant, preset, onPickPreset, onBack, onGoToBoard }) => {
+const GenerateScreen = ({ layoutVariant, preset, onPickPreset, onBack, onGoToBoard, brandScore, onGoBrand }) => {
   if (preset) {
     return layoutVariant === 'chat'
-      ? <GenerateChat preset={preset} onBack={onBack} onGoToBoard={onGoToBoard}/>
-      : <GenerateStudio preset={preset} onBack={onBack} onGoToBoard={onGoToBoard}/>;
+      ? <GenerateChat preset={preset} onBack={onBack} onGoToBoard={onGoToBoard} brandScore={brandScore} onGoBrand={onGoBrand}/>
+      : <GenerateStudio preset={preset} onBack={onBack} onGoToBoard={onGoToBoard} brandScore={brandScore} onGoBrand={onGoBrand}/>;
   }
   return <GenerateHub onPick={onPickPreset}/>;
 };
@@ -140,15 +141,107 @@ const HUB_PLACEHOLDERS = [
   '« On vient de recevoir le prix Innovation Durable 2026 — comment on annonce ça ? »',
 ];
 
+// ─── Format detector state partagé (survit entre re-renders) ─────────────────
+var _hubDetectedFormat = null; // { format, label } affiché en temps réel
+
 const GenerateHub = ({ onPick }) => {
-  var [text,      setText]      = useState('');
-  var [detecting, setDetecting] = useState(false);
-  var [err,       setErr]       = useState('');
-  var placeholder = HUB_PLACEHOLDERS[Math.floor(Date.now() / 30000) % HUB_PLACEHOLDERS.length];
+  var [text,         setText]        = useState('');
+  var [detecting,    setDetecting]   = useState(false);
+  var [detectedFmt,  setDetectedFmt] = useState(null);
+  var [err,          setErr]         = useState('');
+  var [attachments,  setAttachments] = useState([]); // [{name, dataUrl, type}]
+  var [dragging,     setDragging]    = useState(false);
+  var debounceRef  = useRef(null);
+  var taRef        = useRef(null);
+  var fileInputRef = useRef(null);
+  var placeholder  = HUB_PLACEHOLDERS[Math.floor(Date.now() / 30000) % HUB_PLACEHOLDERS.length];
+
+  useEffect(function() {
+    var el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+  }, [text]);
+
+  var processFiles = function(files) {
+    var allowed = Array.from(files).filter(function(f) {
+      return f.type.startsWith('image/') || f.type === 'application/pdf';
+    }).slice(0, 4); // max 4 fichiers
+    allowed.forEach(function(file) {
+      if (file.type.startsWith('image/')) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          setAttachments(function(prev) {
+            if (prev.some(function(a) { return a.name === file.name; })) return prev;
+            return [...prev, { name: file.name, dataUrl: e.target.result, type: 'image' }];
+          });
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setAttachments(function(prev) {
+          if (prev.some(function(a) { return a.name === file.name; })) return prev;
+          return [...prev, { name: file.name, dataUrl: null, type: 'file' }];
+        });
+      }
+    });
+  };
+
+  var handlePaste = function(e) {
+    var items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    var imageFound = false;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        var file = items[i].getAsFile();
+        if (file) { e.preventDefault(); imageFound = true; processFiles([file]); break; }
+      }
+    }
+    return imageFound;
+  };
+
+  var handleDragOver = function(e) { e.preventDefault(); e.stopPropagation(); setDragging(true); };
+  var handleDragLeave = function(e) { e.preventDefault(); e.stopPropagation(); setDragging(false); };
+  var handleDrop = function(e) {
+    e.preventDefault(); e.stopPropagation(); setDragging(false);
+    if (e.dataTransfer.files.length) processFiles(e.dataTransfer.files);
+  };
+  var removeAttachment = function(i) {
+    setAttachments(function(prev) { return prev.filter(function(_, j) { return j !== i; }); });
+  };
+
+  // Détection optimiste en tâche de fond dès 60 car (sans spinner, sans bloquer)
+  var triggerSilentDetect = function(t) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (t.length < 60) { setDetectedFmt(null); return; }
+    debounceRef.current = setTimeout(async function() {
+      try {
+        var res = await veilleFetch('/generate/detect-format', {
+          method: 'POST',
+          body: JSON.stringify({ text: t }),
+        });
+        var data = await res.json();
+        if (res.ok && data.format) {
+          var preset = PRESETS.find(function(p) { return p.id === data.format; }) || PRESETS[0];
+          _hubDetectedFormat = { ...data, preset };
+          setDetectedFmt({ id: data.format, label: preset.label });
+        }
+      } catch (_) { /* silencieux */ }
+    }, 900); // 900ms debounce
+  };
 
   var handleDetect = async function() {
     var t = text.trim();
     if (!t || detecting) return;
+    var attachedImages = attachments.filter(function(a) { return a.type === 'image'; });
+
+    // Si on a déjà une détection en cache (préchargée), on l'utilise directement
+    if (_hubDetectedFormat && _hubDetectedFormat.preset) {
+      var cached = _hubDetectedFormat;
+      _hubDetectedFormat = null;
+      onPick({ ...cached.preset, prefill: { ...cached, attachedImages }, autoStart: true });
+      return;
+    }
+
     setDetecting(true); setErr('');
     try {
       var res = await veilleFetch('/generate/detect-format', {
@@ -159,12 +252,17 @@ const GenerateHub = ({ onPick }) => {
       if (!res.ok) throw new Error(data.error || 'Erreur');
       var formatId = data.format || 'actu';
       var preset = PRESETS.find(function(p) { return p.id === formatId; }) || PRESETS[0];
-      onPick({ ...preset, prefill: data });
+      _hubDetectedFormat = null;
+      onPick({ ...preset, prefill: { ...data, attachedImages }, autoStart: true });
     } catch (e) {
       setErr(e.message);
       setDetecting(false);
     }
   };
+
+  var fmtBadgeLabel = detectedFmt
+    ? { actu:'Actualité', citation:'Citation', deepdive:'Deep Dive' }[detectedFmt.id] || detectedFmt.label
+    : null;
 
   return (
     <div className="page-body">
@@ -177,49 +275,128 @@ const GenerateHub = ({ onPick }) => {
         </div>
       </div>
 
-      <div className="gen-prompt-card">
-        <div className="gen-prompt-badge">
-          <AppIcon name="sparkle" size={14}/>
-          <span>Décris-le avec tes mots — Forje choisit le bon format</span>
-        </div>
-        <div className="gen-prompt-input">
-          <textarea
-            value={text}
-            onChange={function(e) { setText(e.target.value); setErr(''); }}
-            onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleDetect(); }}
-            placeholder={placeholder}
-            rows={3}
-            autoFocus
-          />
-        </div>
-        <div className="gen-prompt-foot">
-          <div className="gen-prompt-hints">
-            {err
-              ? <span style={{ color:'#ef4444' }}>{err}</span>
-              : text.length > 0 && text.length < 10
-                ? <span style={{ color:'#f59e0b' }}>Continue un peu…</span>
-                : <span>{detecting ? 'Analyse en cours...' : 'Forje détecte le format · ⌘↵ pour envoyer'}</span>}
+      <div
+        className={`aiprompt${text.length > 0 || attachments.length > 0 ? ' aiprompt--active' : ''}${dragging ? ' aiprompt--dragging' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="aiprompt-glow"/>
+
+        {/* Drag overlay */}
+        {dragging && (
+          <div className="aiprompt-drop-overlay">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Dépose ici
           </div>
-          {text.length > 0 && (
-            <span style={{ fontSize:11, color: text.length > 500 ? '#ef4444' : 'var(--app-fg-4)', marginRight:8, fontVariantNumeric:'tabular-nums' }}>
-              {text.length}
-            </span>
-          )}
-          <button
-            className={'btn btn-accent btn-sm' + (!text.trim() || detecting ? ' btn-disabled' : '')}
-            onClick={handleDetect}
-            disabled={!text.trim() || detecting}
-            style={{ display:'flex', alignItems:'center', gap:6 }}>
-            {detecting
-              ? <><div style={{ width:12, height:12, border:'1.5px solid rgba(255,255,255,.4)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/> Analyse...</>
-              : <><AppIcon name="arrowRight" size={13}/> Générer</>}
-          </button>
+        )}
+
+        {/* Attachment previews */}
+        {attachments.length > 0 && (
+          <div className="aiprompt-attachments">
+            {attachments.map(function(att, i) {
+              return att.type === 'image'
+                ? (
+                  <div key={i} className="aiprompt-att-img">
+                    <img src={att.dataUrl} alt={att.name}/>
+                    <button className="aiprompt-att-remove" onClick={function() { removeAttachment(i); }} title="Supprimer">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <div key={i} className="aiprompt-att-file">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
+                    </svg>
+                    <span>{att.name.length > 18 ? att.name.slice(0, 16) + '…' : att.name}</span>
+                    <button className="aiprompt-att-remove aiprompt-att-remove--inline" onClick={function() { removeAttachment(i); }}>
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+                  </div>
+                );
+            })}
+          </div>
+        )}
+
+        <textarea
+          ref={taRef}
+          className="aiprompt-ta"
+          value={text}
+          onChange={function(e) {
+            var v = e.target.value;
+            setText(v); setErr('');
+            if (!detecting) triggerSilentDetect(v.trim());
+          }}
+          onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleDetect(); }}
+          onPaste={handlePaste}
+          placeholder={placeholder}
+          rows={1}
+          autoFocus
+        />
+
+        <div className="aiprompt-bar">
+          {/* Left: clip button + hint */}
+          <div className="aiprompt-left">
+            <button
+              className="aiprompt-clip"
+              onClick={function() { fileInputRef.current && fileInputRef.current.click(); }}
+              title="Joindre image ou fichier">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              style={{ display:'none' }}
+              onChange={function(e) { if (e.target.files) processFiles(e.target.files); e.target.value = ''; }}
+            />
+            <div className="aiprompt-hint">
+              {err
+                ? <span className="aiprompt-hint--err">{err}</span>
+                : text.length > 0 && text.length < 10
+                  ? <span className="aiprompt-hint--warn">Continue un peu…</span>
+                  : fmtBadgeLabel && !detecting
+                    ? <span className="aiprompt-hint--fmt">
+                        <span className="aiprompt-fmt-dot"/>
+                        <b>{fmtBadgeLabel}</b>
+                        <span className="aiprompt-fmt-rest">détecté · ⌘↵ pour générer</span>
+                      </span>
+                    : <span className="aiprompt-hint--idle">
+                        {detecting ? 'Analyse en cours…' : attachments.length > 0 ? 'Image jointe · ⌘↵ pour envoyer' : '⌘↵ pour envoyer · glisse une image'}
+                      </span>}
+            </div>
+          </div>
+
+          {/* Right: count + send */}
+          <div className="aiprompt-right">
+            {text.length > 0 && (
+              <span className={`aiprompt-count${text.length > 500 ? ' aiprompt-count--over' : ''}`}>{text.length}</span>
+            )}
+            <button
+              className={`aiprompt-send${detecting ? ' aiprompt-send--loading' : !text.trim() ? ' aiprompt-send--empty' : ' aiprompt-send--ready'}`}
+              onClick={handleDetect}
+              disabled={!text.trim() || detecting}
+              title="Générer (⌘↵)">
+              {detecting
+                ? <span className="gen-bounce-loader--sm"/>
+                : <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 13L8 3M8 3L3.5 7.5M8 3L12.5 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--app-fg-4)', margin:'24px 0 12px' }}>
-        Ou choisissez un format directement
-      </div>
+      <div className="gen-section-divider">Ou choisissez un format directement</div>
 
       <div className="gen-preset-grid">
         {PRESETS.map(p => (
@@ -327,8 +504,9 @@ const RecentCard = ({ type, when, title, swatch }) => (
 
 // ─── Génération fonctionnelle (Actu / Citation / Deep Dive) ──────────────
 const GEN_API = '/api';
-var _genActive    = null; // preset ID of in-flight generation (survives navigation)
-var _genStartTime = null; // epoch ms when generation began (for loader resume)
+var _genActive       = null; // preset ID of in-flight generation (survives navigation)
+var _genStartTime    = null; // epoch ms when generation began (for loader resume)
+var _abortController = null; // AbortController for the current in-flight fetch
 
 async function veilleFetch(path, opts) {
   var sb = window.__supabase;
@@ -491,6 +669,12 @@ const GenFormFields = ({ preset, s }) => {
           Photo Google
         </button>
       </div>
+      {/* Indicateur de temps estimé selon le mode */}
+      <div className="vis-mode-timing">
+        {s.imageMode === 'classic'
+          ? <><AppIcon name="clock" size={11}/> <span>Rapide · ~15 sec</span></>
+          : <><AppIcon name="clock" size={11}/> <span>Qualité max · ~60–90 sec</span></>}
+      </div>
       {s.imageMode === 'classic' && (
         <div>
           <PhotoDropzone photoData={s.photoData} setPhotoData={s.setPhotoData}
@@ -501,7 +685,7 @@ const GenFormFields = ({ preset, s }) => {
       {s.imageMode === 'ai' && (
         <div>
           <div className="tool-sub">
-            GPT Image génère un visuel cinématique sur-mesure.
+            GPT Image-1 génère un visuel cinématique sur-mesure.
           </div>
           <StyleRefDropzone
             value={s.styleRefData}
@@ -528,124 +712,177 @@ const GenFormFields = ({ preset, s }) => {
 
   if (preset.id === 'deepdive') return (<>
     <ToolSection title="Sujet du carousel" icon="layers">
-      <GenFormInput value={s.topic} onChange={s.setTopic} rows={5}
-        placeholder="Decris le sujet — ex : L histoire du tannage vegetal en France..."/>
-      <div className="tool-sub">Forje genere 6 slides avec titre, texte et fond degrade editorial</div>
+      <GenFormInput value={s.topic} onChange={s.setTopic} rows={4}
+        placeholder="Ex : Pourquoi les startups françaises échouent avant 3 ans…"/>
+    </ToolSection>
+    <ToolSection title="Visuels" icon="image">
+      <div className="dd-mode-pills">
+        {[['none','Typo seul','Rapide'],['serp','Photo web','~10s'],['genai','IA cinéma','~30s, 0.15$'],['hybrid','Hybrid','Recommandé']].map(([val, label, sub]) => (
+          <button key={val}
+            className={`dd-mode-pill${s.ddImageMode === val ? ' dd-mode-pill--active' : ''}`}
+            onClick={() => s.setDdImageMode(val)}>
+            <span className="dd-mode-pill-label">{label}</span>
+            <span className="dd-mode-pill-sub">{sub}</span>
+          </button>
+        ))}
+      </div>
     </ToolSection>
   </>);
 
   return null;
 };
-const GenPlaceholder = () => (
-  <div className="gen-empty-wrap">
-    <div className="gen-empty-post-frame">
-      <div className="gen-empty-post-inner">
-        <span className="gen-empty-sparkle">✦</span>
-      </div>
-    </div>
-    <div className="gen-empty-text">Remplis le formulaire · Génère</div>
-  </div>
-);
 
 const LOADER_STEPS = {
   actu:     [[0,'Analyse de l\'actu…'],[5000,'Génération du visuel cinématique…'],[14000,'Rédaction du post…'],[22000,'Caption Instagram…'],[30000,'Finalisation…']],
   citation: [[0,'Composition visuelle…'],[6000,'Mise en forme typographique…'],[12000,'Finalisation…']],
-  deepdive: [[0,'Plan éditorial…'],[8000,'Génération des 6 slides…'],[18000,'Finalisation…']],
+  deepdive: [[0,'Orchestration du contenu…'],[10000,'Génération des 5 slides…'],[20000,'Sourcing des visuels…'],[35000,'Rendu du carousel…'],[48000,'Finalisation…']],
 };
-const LOADER_TOTAL = { actu: 36000, citation: 18000, deepdive: 28000 };
+const LOADER_TOTAL = { actu: 36000, citation: 18000, deepdive: 60000 };
 
-const GenLoader = ({ preset, startTime }) => {
-  const id = preset?.id || 'actu';
+function fmtElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  return String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+}
+
+const GenLoader = ({ preset, startTime, exiting }) => {
+  const id    = preset?.id || 'actu';
   const steps = LOADER_STEPS[id] || LOADER_STEPS.actu;
-  const total = LOADER_TOTAL[id] || 36000;
   const start = startTime || Date.now();
   const elapsed = Date.now() - start;
-
-  // Resume from correct step/progress when remounted mid-generation
   const initialStep = steps.reduce((acc, [delay], i) => (elapsed >= delay ? i : acc), 0);
-  const [stepIdx, setStepIdx] = useState(initialStep);
-  const [progress, setProgress] = useState(Math.min(elapsed / total * 100, 94));
+  const [stepIdx,   setStepIdx]  = useState(initialStep);
+  const [elapsedMs, setElapsed]  = useState(elapsed);
 
   useEffect(() => {
-    // Only schedule steps that haven't fired yet
-    const timers = steps.slice(1)
-      .map(([delay,], i) => {
-        const remaining = delay - elapsed;
-        if (remaining <= 0) return null;
-        return setTimeout(() => setStepIdx(i + 1), remaining);
-      })
-      .filter(Boolean);
-    const tick = setInterval(() => setProgress(Math.min((Date.now() - start) / total * 100, 94)), 120);
+    const timers = steps.slice(1).map(([delay], i) => {
+      const remaining = delay - (Date.now() - start);
+      if (remaining <= 0) return null;
+      return setTimeout(() => setStepIdx(i + 1), remaining);
+    }).filter(Boolean);
+    const tick = setInterval(() => setElapsed(Date.now() - start), 250);
     return () => { timers.forEach(clearTimeout); clearInterval(tick); };
   }, []);
 
   return (
-    <div className="gen-loader-wrap">
-      <div className="gen-loader-card">
-        <div className="gen-loader-card-inner">
-          <div className="gen-loader-shimmer"/>
-          {/* Instagram post skeleton */}
-          <div className="gen-loader-skel">
-            <div className="gen-skel-img"/>
-            <div className="gen-skel-foot">
-              <div className="gen-skel-avatar"/>
-              <div className="gen-skel-lines">
-                <div className="gen-skel-line gen-skel-line--70"/>
-                <div className="gen-skel-line gen-skel-line--45"/>
-              </div>
-            </div>
-          </div>
+    <div className={`gen-card-loader${exiting ? ' gen-card-loader--exiting' : ''}`}>
+      <button className="gen-card-loader__cancel" onClick={() => window.__cancelGen?.()}>
+        Annuler
+      </button>
+      <div className="gen-speeder-fazers">
+        <span/><span/><span/><span/>
+      </div>
+      <div className="gen-speeder">
+        <span>
+          <span/><span/><span/><span/>
+        </span>
+        <div className="gen-speeder-base">
+          <span/>
+          <div className="gen-speeder-face"/>
         </div>
       </div>
-      <div className="gen-loader-bar-wrap">
-        <div className="gen-loader-bar-fill" style={{ width: progress + '%' }}/>
-      </div>
-      <div className="gen-loader-info">
-        <div className="gen-loader-step" key={stepIdx}>{steps[stepIdx][1]}</div>
-        <div className="gen-loader-dots"><span/><span/><span/></div>
-      </div>
+      <div className="gen-card-loader__step" key={stepIdx}>{steps[stepIdx][1]}</div>
+      <div className="gen-card-loader__counter">{fmtElapsed(elapsedMs)}</div>
     </div>
   );
 };
 
-const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
-  const GEN_KEY     = `forje_gen_result_${preset.id}`;
-  const INPUTS_KEY  = `forje_gen_inputs_${preset.id}`;
+const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand }) => {
+  const GEN_KEY    = `forje_gen_result_${preset.id}`;
+  const FEED_KEY   = `forje_gen_feed_${preset.id}`;
+  const INPUTS_KEY = `forje_gen_inputs_${preset.id}`;
 
-  const savedResult = (() => { try { return JSON.parse(sessionStorage.getItem(GEN_KEY) || 'null'); } catch(_){ return null; } })();
   const savedInputs = (() => { try { return JSON.parse(sessionStorage.getItem(INPUTS_KEY) || 'null'); } catch(_){ return null; } })();
 
-  const [newsText,    setNewsText]    = useState(preset.prefill?.newsText  || savedInputs?.newsText  || '');
-  const [photoUrl,    setPhotoUrl]    = useState('');
-  const [photoData,   setPhotoData]   = useState('');
-  const [quoteText,   setQuoteText]   = useState(preset.prefill?.quoteText || savedInputs?.quoteText || '');
-  const [authorName,  setAuthorName]  = useState(preset.prefill?.authorName|| savedInputs?.authorName|| '');
-  const [authorTitle, setAuthorTitle] = useState('');
-  const [topic,       setTopic]       = useState(preset.prefill?.topic     || savedInputs?.topic     || '');
-  const [imageMode,    setImageMode]    = useState('ai');
+  const [newsText,     setNewsText]     = useState(preset.prefill?.newsText   || savedInputs?.newsText   || '');
+  const [photoUrl,     setPhotoUrl]     = useState('');
+  const [photoData,    setPhotoData]    = useState('');
+  const [quoteText,    setQuoteText]    = useState(preset.prefill?.quoteText  || savedInputs?.quoteText  || '');
+  const [authorName,   setAuthorName]   = useState(preset.prefill?.authorName || savedInputs?.authorName || '');
+  const [authorTitle,  setAuthorTitle]  = useState('');
+  const [topic,        setTopic]        = useState(preset.prefill?.topic      || savedInputs?.topic      || '');
+  // Mode image : si l'user vient du Hub (autoStart), on préfère 'classic' (plus rapide, ~15s vs ~90s)
+  // L'user peut toujours basculer sur 'ai' depuis le formulaire
+  const [imageMode,    setImageMode]    = useState(preset.autoStart ? 'classic' : 'ai');
+  const [ddImageMode,  setDdImageMode]  = useState('none');
   const [styleRefData, setStyleRefData] = useState(null);
-  const [generating,   setGenerating]   = useState(_genActive === preset.id);
-  const [result,       setResult]       = useState(savedResult);
+  const [generating,   setGenerating]   = useState(_genActive === preset.id || !!preset.autoStart);
+  const [results,      setResults]      = useState([]);
+  const [genPhase,     setGenPhase]     = useState('idle'); // idle|generating|exiting
   const [error,        setError]        = useState(null);
   const [activeSlide,  setActiveSlide]  = useState(0);
-  const isMountedRef = useRef(true);
+  const [expandedItem, setExpandedItem] = useState(null);
+  const isMountedRef   = useRef(true);
+  const loadingIdRef   = useRef(null);
+  const autoStartedRef = useRef(false);
   useEffect(() => { return () => { isMountedRef.current = false; }; }, []);
 
-  // Register global callbacks so an in-flight generation can reach THIS mounted instance
+  // Charge les posts depuis Supabase au mount
+  useEffect(() => {
+    const sb = window.__supabase;
+    const user = window.__currentUser;
+    if (!sb || !user) return;
+    sb.from('generated_posts')
+      .select('id, preset_id, title, subtitle, caption, image, category, pack_id, created_at, meta')
+      .eq('user_id', user.id)
+      .eq('preset_id', preset.id)
+      .order('created_at', { ascending: true })
+      .limit(20)
+      .then(({ data }) => {
+        if (!isMountedRef.current) return;
+        if (data && data.length) {
+          setResults(data.map(r => ({
+            ...r.meta,
+            id: r.id,
+            preset_id: r.preset_id,
+            title: r.title,
+            subtitle: r.subtitle,
+            caption: r.caption,
+            image: r.image,
+            category: r.category,
+            packId: r.pack_id,
+          })));
+        }
+        // Si une génération est toujours en vol, restaure le placeholder de chargement
+        if (_genActive === preset.id) {
+          setGenPhase('generating');
+          setResults(prev => {
+            if (prev.some(r => r.loading)) return prev;
+            return [...prev, { id: 'reload-loading', loading: true, preset_id: preset.id }];
+          });
+        }
+      });
+  }, []);
+
+  // Callbacks globaux pour les générations en vol (survive aux navigations)
   useEffect(() => {
     var alive = true;
-    window.__onGenResult = function(data, presetId) {
-      if (alive && presetId === preset.id) { setGenerating(false); setResult(data); }
+    window.__onGenResult = function(entry, presetId) {
+      if (!alive || presetId !== preset.id) return;
+      setResults(prev => {
+        const loadingItem = prev.find(r => r.loading);
+        if (loadingItem) {
+          return prev.map(r => r.loading ? { ...entry, id: loadingItem.id } : r);
+        }
+        // Pas encore de placeholder (race Supabase load) — on append, Supabase dédupliquera au prochain mount
+        return [...prev, entry];
+      });
+      setGenerating(false);
+      setGenPhase('exiting');
+      setTimeout(() => { if (alive) setGenPhase('idle'); }, 380);
     };
     window.__onGenError = function(msg, presetId) {
-      if (alive && presetId === preset.id) { setGenerating(false); setError(msg); }
+      if (!alive || presetId !== preset.id) return;
+      setResults(prev => prev.filter(r => !r.loading));
+      setGenerating(false);
+      setGenPhase('idle');
+      setError(msg);
     };
     return function() { alive = false; };
   }, []);
 
   const s = { newsText, setNewsText, photoUrl, setPhotoUrl, photoData, setPhotoData, quoteText, setQuoteText,
               authorName, setAuthorName, authorTitle, setAuthorTitle, topic, setTopic,
-              imageMode, setImageMode, styleRefData, setStyleRefData };
+              imageMode, setImageMode, ddImageMode, setDdImageMode, styleRefData, setStyleRefData };
 
   const canGenerate = {
     actu:     newsText.trim().length > 10,
@@ -654,13 +891,20 @@ const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
   }[preset.id] || false;
 
   const handleGenerate = async () => {
-    _genActive    = preset.id;
-    _genStartTime = Date.now();
-    if (isMountedRef.current) { setGenerating(true); setError(null); setResult(null); setActiveSlide(0); }
-    sessionStorage.removeItem(GEN_KEY);
-    try {
-      sessionStorage.setItem(INPUTS_KEY, JSON.stringify({ newsText, quoteText, topic, authorName }));
-    } catch(_) {}
+    const lId = Date.now();
+    loadingIdRef.current = lId;
+    _genActive       = preset.id;
+    _genStartTime    = Date.now();
+    _abortController = new AbortController();
+    window.__cancelGen = () => _abortController?.abort();
+    if (isMountedRef.current) {
+      setGenerating(true);
+      setGenPhase('generating');
+      setError(null);
+      setActiveSlide(0);
+      setResults(prev => [...prev, { id: lId, loading: true, preset_id: preset.id }]);
+    }
+    try { sessionStorage.setItem(INPUTS_KEY, JSON.stringify({ newsText, quoteText, topic, authorName })); } catch(_){}
     window.__setGenToast?.({ status: 'generating', label: preset.label, presetId: preset.id, preset });
     try {
       const userId   = window.__currentUser?.id;
@@ -669,47 +913,80 @@ const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
       const body = {
         actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, clientId, imageMode, styleRefData: styleRefData || undefined },
         citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId, clientId },
-        deepdive: { topic, userId, clientId },
+        deepdive: { topic, userId, clientId, imageMode: ddImageMode },
       }[preset.id];
-      const res  = await veilleFetch(ep, { method: 'POST', body: JSON.stringify(body) });
+      const res  = await veilleFetch(ep, { method: 'POST', body: JSON.stringify(body), signal: _abortController.signal });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur génération');
       if (data.bgImage) { data.image = await renderActuCanvas(data); }
-      try { sessionStorage.setItem(GEN_KEY, JSON.stringify(data)); } catch(_) {}
       window.__setGenToast?.({ status: 'ready', label: preset.label, presetId: preset.id, preset });
+      const entry = { ...data, id: lId, preset_id: preset.id };
+      // Sauvegarde Supabase — toujours, même si le composant est démonté
+      const sb = window.__supabase; const user = window.__currentUser;
+      if (sb && user) {
+        sb.from('generated_posts').insert({
+          user_id:   user.id,
+          client_id: window.__activeClientId || null,
+          preset_id: preset.id,
+          title:     data.title     || null,
+          subtitle:  data.subtitle  || null,
+          caption:   data.caption   || null,
+          image:     data.image     || null,
+          category:  data.category  || null,
+          pack_id:   data.packId    || null,
+          meta:      (({ image: _i, bgImage: _b, ...rest }) => rest)(data),
+        }).select('id').single().then(({ data: row }) => {
+          if (row && isMountedRef.current) {
+            setResults(prev => prev.map(r => r.id === lId ? { ...r, id: row.id } : r));
+          }
+        });
+      }
       if (isMountedRef.current) {
-        setResult(data);
+        setResults(prev => prev.map(r => r.id === lId ? entry : r));
+        setGenPhase('exiting');
+        setTimeout(() => setGenPhase('idle'), 380);
+        window.__setGenToast?.(null);
       } else {
-        // component navigated away — deliver result to whatever instance is mounted now
-        window.__onGenResult?.(data, preset.id);
+        // Composant démonté — signal vers le nouveau composant s'il est déjà remonté
+        window.__setGenToast?.(null);
+        window.__onGenResult?.(entry, preset.id);
       }
     } catch (err) {
       window.__setGenToast?.(null);
-      if (isMountedRef.current) {
+      if (err.name === 'AbortError') {
+        // Annulation silencieuse — pas d'affichage d'erreur
+        if (isMountedRef.current) {
+          setResults(prev => prev.filter(r => r.id !== lId));
+          setGenPhase('idle');
+        }
+      } else if (isMountedRef.current) {
+        setResults(prev => prev.filter(r => r.id !== lId));
+        setGenPhase('idle');
         setError(err.message);
       } else {
         window.__onGenError?.(err.message, preset.id);
       }
     } finally {
-      _genActive    = null;
-      _genStartTime = null;
+      _genActive       = null;
+      _genStartTime    = null;
+      _abortController = null;
+      window.__cancelGen = null;
       if (isMountedRef.current) setGenerating(false);
     }
   };
 
-  const handleDownload = () => {
-    const src  = preset.id === 'deepdive' ? result?.images?.[activeSlide] : result?.image;
-    if (!src) return;
-    const link = document.createElement('a');
-    link.href  = src;
-    link.download = `forje-${preset.id}-${Date.now()}.jpg`;
-    link.click();
-  };
-
-  const previewImages = preset.id === 'deepdive' ? (result?.images || []) : (result?.image ? [result.image] : []);
-
-  // Si résultat déjà là et toast encore visible, on le dismiss
-  useEffect(() => { if (result) window.__setGenToast?.(null); }, [result]);
+  // ─── AutoStart : si l'user vient du Hub avec un texte détecté, on génère immédiatement
+  // On utilise une ref pour éviter de lancer 2x en React Strict Mode (double-invoke)
+  useEffect(() => {
+    if (!preset.autoStart || autoStartedRef.current) return;
+    if (!canGenerate) return; // sécurité : les champs doivent être valides
+    autoStartedRef.current = true;
+    // Petit délai pour laisser le composant se monter entièrement (état + DOM)
+    var t = setTimeout(function() {
+      if (isMountedRef.current) handleGenerate();
+    }, 120);
+    return function() { clearTimeout(t); };
+  }, [canGenerate]); // déclenche quand canGenerate devient true (après init des states)
 
   return (
     <div className="gen-studio-body">
@@ -730,17 +1007,33 @@ const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
           <h1 className="gen-studio-title">{preset.label}</h1>
         </div>
         <div className="gen-studio-actions">
-          {result && (
-            <button className="btn btn-ghost btn-sm" onClick={handleDownload}>
-              <AppIcon name="image" size={12}/>Télécharger
-            </button>
-          )}
         </div>
       </div>
 
-      <div className={`gen-studio-grid${result || generating ? ' gen-studio-grid--studio' : ''}`}>
+      <div className="gen-studio-grid gen-studio-grid--studio">
         {/* LEFT : formulaire */}
         <div className="gen-tools">
+          {/* Bandeau brand health — affiché si identité incomplète */}
+          {brandScore < 4 && (
+            <div className="gen-brand-warn-banner">
+              <div className="gen-brand-warn-main">
+                <AppIcon name="bolt" size={13}/>
+                <span>Tes posts seront génériques — ton identité de marque est incomplète ({brandScore}/7 champs)</span>
+              </div>
+              {onGoBrand && (
+                <button className="gen-brand-warn-link" onClick={onGoBrand}>
+                  Configurer en 2 min →
+                </button>
+              )}
+            </div>
+          )}
+          {/* Bandeau "généré depuis le Hub" — affiché seulement en mode autoStart */}
+          {preset.autoStart && preset.prefill && (
+            <div className="gen-autostart-banner">
+              <AppIcon name="bolt" size={12}/>
+              <span>Généré depuis ta saisie · modifie les champs et relance si besoin</span>
+            </div>
+          )}
           <GenFormFields preset={preset} s={s}/>
           {error && (
             <div style={{ marginTop:12, padding:'10px 14px', borderRadius:8, fontSize:12,
@@ -748,85 +1041,172 @@ const GenerateChat = ({ preset, onBack, onGoToBoard }) => {
               {error}
             </div>
           )}
-          <button className="btn-forge" onClick={handleGenerate} disabled={generating || !canGenerate}>
+          <button
+            className={`btn-forge${!canGenerate ? ' btn-forge--inactive' : ''}`}
+            onClick={canGenerate ? handleGenerate : () => setError(
+              { actu:'Décris l\'actu (10 caractères min.)', citation:'Remplis la citation et l\'auteur.', deepdive:'Décris le sujet (5 caractères min.).' }[preset.id]
+            )}
+            disabled={generating}>
             {generating
               ? <><span style={{ display:'inline-block', width:13, height:13, border:'2px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/> Génération…</>
               : <><AppIcon name="sparkle" size={15}/> Générer</>}
           </button>
         </div>
 
-        {/* RIGHT : preview — s'ouvre au déclenchement de la génération */}
-        {(result || generating) && (
-        <div className="gen-preview">
-          {preset.id === 'deepdive' && previewImages.length > 1 && (
-            <div className="gen-preview-head">
-              <div className="gen-preview-variants">
-                {previewImages.map((_, i) => (
-                  <button key={i} className={`gen-variant-btn ${activeSlide===i?'active':''}`} onClick={() => setActiveSlide(i)}>
-                    Slide {i+1}
-                  </button>
-                ))}
-              </div>
+        {/* RIGHT : colonne résultats — loading épinglé au-dessus du scroll */}
+        <div className="gen-results-col">
+          {results.some(r => r.loading) && (
+            <div className="gen-feed-card gen-feed-card--loading">
+              <GenLoader preset={preset} startTime={_genStartTime} exiting={genPhase === 'exiting'}/>
             </div>
           )}
-          <div className="gen-preview-stage">
-            {generating
-              ? <GenLoader preset={preset} startTime={_genStartTime}/>
-              : previewImages.length
-                ? <img src={previewImages[activeSlide] || previewImages[0]} alt=""/>
-                : null}
+          <div className="gen-feed-panel">
+            {[...results].filter(r => !r.loading).reverse().map(item =>
+              <GenFeedCard key={item.id} item={item} onExpand={setExpandedItem}/>
+            )}
           </div>
-          {result && (
-            <div className="gen-captions-scroll">
-              {preset.id !== 'deepdive' && result.title && (
-                <div className="gen-preview-caption gen-preview-caption--no-border">
-                  <div className="caption-head">
-                    <span className="caption-label">{result.category} · {result.title}</span>
-                  </div>
-                  <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
-                    {result.subtitle}
-                  </div>
-                </div>
-              )}
-              {preset.id === 'deepdive' && result.slides && (
-                <div className="gen-preview-caption gen-preview-caption--no-border">
-                  <div className="caption-head">
-                    <span className="caption-label">Slide {activeSlide+1} / {result.slides.length}</span>
-                  </div>
-                  <div className="caption-body" style={{ fontSize:13, color:'var(--app-fg-3)' }}>
-                    <b>{result.slides[activeSlide]?.title}</b><br/>
-                    {result.slides[activeSlide]?.body}
-                  </div>
-                </div>
-              )}
-              {result.caption && <IgCaption caption={result.caption}/>}
-            </div>
-          )}
         </div>
-        )}
       </div>
+      {expandedItem && <GenExpandModal item={expandedItem} onClose={() => setExpandedItem(null)}/>}
     </div>
   );
 };
 
 const IgCaption = ({ caption }) => {
+  const [text, setText]   = React.useState(caption);
   const [copied, setCopied] = React.useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(caption).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const taRef = React.useRef(null);
+
+  // Auto-resize à chaque frappe
+  React.useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, [text]);
+
+  const copy  = () => navigator.clipboard.writeText(text).then(() => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  });
+  const reset = () => { setText(caption); };
+  const isDirty = text !== caption;
+
   return (
     <div className="gen-preview-caption gen-ig-caption">
       <div className="caption-head">
         <span className="caption-label">Caption Instagram</span>
-        <button className="btn btn-ghost btn-sm" onClick={copy} style={{ padding:'3px 10px', fontSize:11 }}>
-          {copied ? '✓ Copié' : 'Copier'}
-        </button>
+        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+          {isDirty && (
+            <button className="btn btn-ghost btn-sm" onClick={reset}
+              style={{ padding:'3px 8px', fontSize:11, color:'var(--app-fg-3)' }}>
+              Réinitialiser
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={copy} style={{ padding:'3px 10px', fontSize:11 }}>
+            {copied ? '✓ Copié' : 'Copier'}
+          </button>
+        </div>
       </div>
-      <div className="caption-ig-body">
-        {caption}
+      <textarea
+        ref={taRef}
+        className="caption-ig-body caption-ig-editable"
+        value={text}
+        onChange={e => setText(e.target.value)}
+        spellCheck={false}
+      />
+    </div>
+  );
+};
+
+/* ── Carte de résultat dans le feed ──────────────────────────────────── */
+function downloadImage(dataUrl) {
+  var a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = 'forje-post.jpg';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+const GenFeedCard = ({ item, onExpand }) => {
+  const src = item.preset_id === 'deepdive' ? item.images?.[0] : item.image;
+  const [caption, setCaption] = useState(item.caption || '');
+  const [copied,  setCopied]  = useState(false);
+  const taRef = useRef(null);
+
+  const copy = () => navigator.clipboard.writeText(caption).then(() => {
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  });
+
+  return (
+    <div className="gen-feed-card gen-result--entering">
+      <div className="gen-feed-thumb" onClick={() => onExpand(item)} title="Voir en grand">
+        {src ? <img src={src} alt=""/> : <div className="gen-feed-thumb-empty"/>}
+        <div className="gen-feed-thumb-expand"><AppIcon name="image" size={13}/></div>
+      </div>
+      <div className="gen-feed-content">
+        {item.title && (
+          <div className="gen-feed-meta">
+            {item.category && <span className="caption-label" style={{fontSize:11}}>{item.category}</span>}
+            <div className="gen-feed-title">{item.title}</div>
+            {item.subtitle && <div className="gen-feed-subtitle">{item.subtitle}</div>}
+          </div>
+        )}
+        <div className="gen-feed-caption-wrap">
+          <div className="caption-head">
+            <span className="caption-label">Caption Instagram</span>
+            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+              {src && (
+                <button className="btn btn-accent btn-sm" onClick={() => downloadImage(src)}
+                  style={{ padding:'3px 10px', fontSize:11, display:'flex', alignItems:'center', gap:5 }}>
+                  <AppIcon name="arrowUp" size={11}/>
+                  Télécharger
+                </button>
+              )}
+              <button className="btn btn-ghost btn-sm" onClick={copy} style={{padding:'3px 10px', fontSize:11}}>
+                {copied ? '✓ Copié' : 'Copier'}
+              </button>
+            </div>
+          </div>
+          <textarea
+            ref={taRef}
+            className="caption-ig-body caption-ig-editable"
+            value={caption}
+            onChange={e => setCaption(e.target.value)}
+            spellCheck={false}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── Modale plein écran d'une carte ──────────────────────────────────── */
+const GenExpandModal = ({ item, onClose }) => {
+  const images = item.preset_id === 'deepdive' ? (item.images || []) : (item.image ? [item.image] : []);
+  const [slide, setSlide] = useState(0);
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, []);
+  return (
+    <div className="gen-expand-overlay" onClick={onClose}>
+      <div className="gen-expand-modal" onClick={e => e.stopPropagation()}>
+        <button className="gen-expand-close" onClick={onClose}>
+          <AppIcon name="x" size={16}/>
+        </button>
+        <img src={images[slide] || images[0]} alt="" className="gen-expand-img"/>
+        {images.length > 1 && (
+          <div className="gen-expand-slides">
+            {images.map((_, i) => (
+              <button key={i} className={`gen-variant-btn${slide===i?' active':''}`} onClick={() => setSlide(i)}>
+                Slide {i+1}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

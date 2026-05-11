@@ -21,6 +21,7 @@
 <link id="css-a2" rel="stylesheet" href="app-dashboard.css" media="none"/>
 <link id="css-a3" rel="stylesheet" href="app-screens.css" media="none"/>
 <link id="css-a4" rel="stylesheet" href="app-sources.css" media="none"/>
+<link id="css-a5" rel="stylesheet" href="app-onboarding.css" media="none"/>
 
 <style>
   body { margin:0; background:#000004; }
@@ -39,7 +40,7 @@
     try {
       var raw = localStorage.getItem('sb-tmsbtjczvjdwzfkoprwq-auth-token');
       if (raw && JSON.parse(raw).access_token) {
-        ['css-a1','css-a2','css-a3','css-a4'].forEach(function(id) {
+        ['css-a1','css-a2','css-a3','css-a4','css-a5'].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) el.media = '';
         });
@@ -91,6 +92,7 @@
     'app-dashboard.jsx',
     'app-screens.jsx',
     'app-sources.jsx',
+    'app-onboarding.jsx',
     'app-main.jsx',
     'app-auth.jsx',
     'root.jsx',

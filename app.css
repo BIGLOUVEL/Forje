@@ -540,8 +540,14 @@ button { font-family: inherit; }
   display: grid; place-items: center;
 }
 
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ─── Page content wrapper ─── */
 .page-body {
+  animation: pageEnter 0.22s ease-out;
   padding: 28px 32px 64px;
   max-width: 1240px;
   width: 100%;
@@ -695,6 +701,53 @@ button { font-family: inherit; }
   letter-spacing: 0.02em;
 }
 
+/* ─── Bouncing block loader ─────────────────────────────────────────────── */
+.gen-bounce-loader {
+  width: 48px; height: 48px; position: relative; display: inline-block;
+}
+.gen-bounce-loader::before {
+  content: ''; width: 48px; height: 5px;
+  background: rgba(99,102,241,.25);
+  position: absolute; top: 60px; left: 0;
+  border-radius: 50%;
+  animation: gbl-shadow .5s linear infinite;
+}
+.gen-bounce-loader::after {
+  content: ''; width: 100%; height: 100%;
+  background: var(--app-accent);
+  position: absolute; top: 0; left: 0;
+  border-radius: 4px;
+  animation: gbl-jump .5s linear infinite;
+}
+.gen-bounce-loader--sm {
+  width: 16px; height: 16px; position: relative; display: inline-block; flex-shrink: 0;
+}
+.gen-bounce-loader--sm::after {
+  content: ''; width: 100%; height: 100%;
+  background: currentColor;
+  position: absolute; top: 0; left: 0;
+  border-radius: 2px;
+  animation: gbl-jump-sm .5s linear infinite;
+}
+@keyframes gbl-jump {
+  15%  { border-bottom-right-radius: 3px; }
+  25%  { transform: translateY(9px) rotate(22.5deg); }
+  50%  { transform: translateY(18px) scale(1,.9) rotate(45deg); border-bottom-right-radius: 40px; }
+  75%  { transform: translateY(9px) rotate(67.5deg); }
+  100% { transform: translateY(0) rotate(90deg); }
+}
+@keyframes gbl-shadow {
+  0%, 100% { transform: scale(1,1); }
+  50%       { transform: scale(1.2,1); }
+}
+@keyframes gbl-jump-sm {
+  15%  { border-bottom-right-radius: 1px; }
+  25%  { transform: translateY(3px) rotate(22.5deg); }
+  50%  { transform: translateY(6px) scale(1,.9) rotate(45deg); border-bottom-right-radius: 12px; }
+  75%  { transform: translateY(3px) rotate(67.5deg); }
+  100% { transform: translateY(0) rotate(90deg); }
+}
+
 /* ─── Floating Gen Toast ────────────────────────────────────────────────── */
 .gen-toast {
   position: fixed; bottom: 24px; right: 24px; z-index: 800;
@@ -719,14 +772,15 @@ button { font-family: inherit; }
   100% { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 0 rgba(99,102,241,0); }
 }
 .gen-toast-icon { flex-shrink: 0; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--app-surface-2); }
-.gen-toast-spinner {
-  display: block; width: 14px; height: 14px;
-  border: 2px solid var(--app-line-2); border-top-color: var(--app-accent);
-  border-radius: 50%; animation: vb-spin .7s linear infinite;
-}
 .gen-toast-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .gen-toast-label { font-size: 13px; font-weight: 600; color: var(--app-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gen-toast-action { font-size: 11.5px; color: var(--app-accent); font-weight: 600; }
+.gen-toast-cancel {
+  flex-shrink: 0; background: none; border: 1px solid var(--app-line-2); border-radius: 5px;
+  cursor: pointer; font-size: 11px; font-weight: 600; color: var(--app-fg-3);
+  padding: 3px 7px; line-height: 1; white-space: nowrap; transition: border-color .15s, color .15s;
+}
+.gen-toast-cancel:hover { border-color: var(--app-fg-3); color: var(--app-fg); }
 .gen-toast-close {
   flex-shrink: 0; background: none; border: none; cursor: pointer;
   font-size: 16px; color: var(--app-fg-4); padding: 0 2px; line-height: 1;

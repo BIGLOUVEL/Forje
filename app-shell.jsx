@@ -153,7 +153,6 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
         <div className="workspace-avatar">{initials}</div>
         <div className="workspace-meta">
           <div className="workspace-name">{displayName}</div>
-          <div className="workspace-plan">Atelier · {planLabel}</div>
         </div>
         <AppIcon name="chevDown" size={14} className="workspace-chev"/>
       </div>

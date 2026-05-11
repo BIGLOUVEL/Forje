@@ -1,5 +1,28 @@
 /* global React, AppIcon, Btn */
-var { useState } = React;
+var { useState, useEffect } = React;
+
+// ─── Time helper ───────────────────────────────────────────────────────────
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  var diff = Date.now() - new Date(dateStr).getTime();
+  var mins  = Math.floor(diff / 60000);
+  var hours = Math.floor(mins / 60);
+  var days  = Math.floor(hours / 24);
+  if (mins < 2)   return 'à l\'instant';
+  if (mins < 60)  return 'il y a ' + mins + ' min';
+  if (hours < 24) return 'il y a ' + hours + 'h';
+  return 'il y a ' + days + ' j';
+}
+
+// ─── Fetch helper (uses Supabase token if available) ──────────────────────
+async function apiFetch(path) {
+  var sb = window.__supabase;
+  var token = null;
+  if (sb) { var sess = await sb.auth.getSession(); token = sess.data?.session?.access_token; }
+  var headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch('/api' + path, { headers });
+}
 
 const formatDateFr = () => {
   const now = new Date();
@@ -20,6 +43,26 @@ const DashboardScreen = ({ onNav, onCreateFromSource, authUser }) => {
   const greeting = firstName
     ? `Bonjour ${firstName.charAt(0).toUpperCase() + firstName.slice(1)}.`
     : 'Bonjour.';
+
+  const [news, setNews]               = useState([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+
+  useEffect(() => {
+    var clientId = window.__activeClientId;
+    if (!clientId) {
+      setNewsLoading(false);
+      return;
+    }
+    apiFetch('/scoring/board?compte_id=' + clientId + '&limit=5')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        // board = scored news (non-breaking), breaking = alertes
+        var items = [].concat(data.breaking || [], data.board || []);
+        setNews(items.slice(0, 5));
+        setNewsLoading(false);
+      })
+      .catch(function() { setNewsLoading(false); });
+  }, []);
 
   return (
     <div className="page-body">
@@ -60,33 +103,39 @@ const DashboardScreen = ({ onNav, onCreateFromSource, authUser }) => {
               <Btn variant="ghost" size="sm" icon="settings">Sources</Btn>
             </div>
             <div className="news-list">
-              <NewsRow
-                source="Les Échos · Mode"
-                time="il y a 2h"
-                topic="Luxe & artisanat"
-                headline="La relocalisation des ateliers de maroquinerie en France franchit un cap historique"
-                blurb="38 nouvelles manufactures ouvertes en 2025, contre 11 en 2021 — un mouvement porté par la demande d'authenticité."
-                angle="Ton atelier à Roubaix incarne exactement ce mouvement."
-                onCreate={() => onCreateFromSource('news-1')}
-              />
-              <NewsRow
-                source="Vogue Business"
-                time="il y a 5h"
-                topic="Saison & tendance"
-                headline="Le retour du camel : les maisons historiques redéfinissent la couleur de l'hiver"
-                blurb="Hermès, Loro Piana, Lemaire — le camel saturé domine les collections AH25."
-                angle="Ta collection d'automne exploite ce ton depuis septembre. Moment parfait pour le dire."
-                onCreate={() => onCreateFromSource('news-2')}
-              />
-              <NewsRow
-                source="Instagram · @lemonde_mode"
-                time="hier"
-                topic="Conversation"
-                headline="« Pourquoi payer 800€ pour un sac ? » — le débat qui agite les réseaux"
-                blurb="Thread viral sur la valeur perçue du cuir. 4.2k commentaires, majoritairement curieux."
-                angle="Occasion d'éduquer sur tes procédés sans défensif."
-                onCreate={() => onCreateFromSource('news-3')}
-              />
+              {newsLoading && (
+                <>
+                  <SkeletonNewsRow/>
+                  <SkeletonNewsRow/>
+                  <SkeletonNewsRow/>
+                </>
+              )}
+              {!newsLoading && news.length === 0 && (
+                <div style={{ padding:'32px 20px', textAlign:'center', color:'var(--app-fg-4)', fontSize:13 }}>
+                  Aucune actu aujourd'hui — tes sources sont en cours de veille.
+                </div>
+              )}
+              {!newsLoading && news.map(function(item, i) {
+                var raw = item.news_raw || {};
+                var titre    = raw.titre || raw.title || '';
+                var desc     = raw.description || '';
+                var blurb    = desc ? desc.slice(0, 150) + (desc.length > 150 ? '…' : '') : titre.slice(0, 120) + '…';
+                var source   = raw.source || 'Veille';
+                var dateStr  = raw.published_at || item.created_at || '';
+                var angle    = item.angle || '';
+                return (
+                  <NewsRow
+                    key={item.id || i}
+                    source={source}
+                    time={timeAgo(dateStr)}
+                    topic={item.flag === 'urgent' ? 'Urgent' : item.format_suggere || 'Actu'}
+                    headline={titre}
+                    blurb={blurb}
+                    angle={angle}
+                    onCreate={() => onCreateFromSource({ title: titre, url: raw.url || '', text: desc })}
+                  />
+                );
+              })}
             </div>
           </section>
 
@@ -208,6 +257,23 @@ const KpiCard = ({ label, value, delta, kind, sub, accent, chromatic }) => (
       )}
     </div>
     <div className="kpi-sub">{sub}</div>
+  </div>
+);
+
+const SkeletonNewsRow = () => (
+  <div className="news-row" style={{ gap:8 }}>
+    <div className="news-row-meta" style={{ display:'flex', gap:8, marginBottom:8 }}>
+      <div className="skeleton" style={{ width:80, height:12, borderRadius:4 }}/>
+      <div className="skeleton" style={{ width:50, height:12, borderRadius:4 }}/>
+      <div className="skeleton" style={{ width:60, height:12, borderRadius:4 }}/>
+    </div>
+    <div className="skeleton" style={{ width:'70%', height:14, borderRadius:4, marginBottom:6 }}/>
+    <div className="skeleton" style={{ width:'90%', height:11, borderRadius:4, marginBottom:4 }}/>
+    <div className="skeleton" style={{ width:'60%', height:11, borderRadius:4, marginBottom:12 }}/>
+    <div style={{ display:'flex', gap:8 }}>
+      <div className="skeleton" style={{ width:120, height:28, borderRadius:6 }}/>
+      <div className="skeleton" style={{ width:90, height:28, borderRadius:6 }}/>
+    </div>
   </div>
 );
 

@@ -213,7 +213,6 @@ function buildImagePrompt(brief, client) {
 }
 
 // Extrait des descripteurs de style depuis une image via GPT-4o Vision
-// Utilisé pour injecter le style dans le prompt GPT-Image-1
 async function extractStyleDescriptors(styleRefBuffer) {
   if (!openaiClient || !styleRefBuffer) return null;
   try {
@@ -236,16 +235,81 @@ async function extractStyleDescriptors(styleRefBuffer) {
   }
 }
 
-async function generateImageGPT(prompt, styleRefBuffer = null) {
+// Analyse les images Serper via Vision pour décrire précisément le sujet (personne, objet, événement)
+async function describeReferenceImages(imageBuffers) {
+  if (!openaiClient || !imageBuffers || !imageBuffers.length) return null;
+  try {
+    const content = [
+      ...imageBuffers.slice(0, 3).map(buf => ({
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${buf.toString('base64')}`, detail: 'low' },
+      })),
+      {
+        type: 'text',
+        text: 'These are reference images of the subject of a news article. In 2-3 sentences, describe precisely: who or what is depicted (physical appearance, distinctive features, clothing, context), and the visual atmosphere. Be specific — this description will guide an AI image generator to depict this subject accurately in an editorial photo.',
+      },
+    ];
+    const resp = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 200,
+      messages: [{ role: 'user', content }],
+    });
+    const desc = resp.choices?.[0]?.message?.content?.trim() || null;
+    if (desc) console.log('[RefImages] Subject described:', desc.slice(0, 100) + '...');
+    return desc;
+  } catch (e) {
+    console.warn('[RefImages] Vision failed:', e.message);
+    return null;
+  }
+}
+
+async function generateImageGPT(prompt, styleRefBuffer = null, referenceBuffers = []) {
   if (!openaiClient) throw new Error('OpenAI client not initialized');
   let finalPrompt = prompt;
-  if (styleRefBuffer) {
-    const styleDesc = await extractStyleDescriptors(styleRefBuffer);
-    if (styleDesc) {
-      finalPrompt = prompt + ` Visual style reference (follow this aesthetic, not the objects): ${styleDesc}`;
+
+  // Analyser les images Serper et injecter la description du sujet dans le prompt
+  if (referenceBuffers.length > 0) {
+    const refDesc = await describeReferenceImages(referenceBuffers);
+    if (refDesc) {
+      finalPrompt = finalPrompt + ` Subject visual reference (depict this subject accurately): ${refDesc}`;
     }
   }
 
+  // Injecter le style de référence utilisateur si fourni
+  if (styleRefBuffer) {
+    const styleDesc = await extractStyleDescriptors(styleRefBuffer);
+    if (styleDesc) {
+      finalPrompt = finalPrompt + ` Visual style (aesthetic only, not content): ${styleDesc}`;
+    }
+  }
+
+  // Passer les images Serper directement à images.edit pour la meilleure fidélité au sujet
+  if (referenceBuffers.length > 0) {
+    try {
+      const { toFile } = require('openai');
+      const files = await Promise.all(
+        referenceBuffers.slice(0, 4).map((buf, i) =>
+          toFile(buf, `ref${i}.jpg`, { type: 'image/jpeg' })
+        )
+      );
+      const response = await openaiClient.images.edit({
+        model:   'gpt-image-1',
+        image:   files.length === 1 ? files[0] : files,
+        prompt:  finalPrompt,
+        size:    '1024x1536',
+        quality: 'high',
+      });
+      const b64 = response.data?.[0]?.b64_json;
+      if (b64) {
+        console.log('[GPT] images.edit with Serper references OK');
+        return Buffer.from(b64, 'base64');
+      }
+    } catch (editErr) {
+      console.warn('[GPT] images.edit failed, fallback to generate:', editErr.message);
+    }
+  }
+
+  // Génération standard (sans références ou si edit a échoué)
   const response = await openaiClient.images.generate({
     model:   'gpt-image-1',
     prompt:  finalPrompt,
@@ -374,7 +438,7 @@ router.post('/actu', async (req, res) => {
     if (imageMode === 'ai' && visual_brief) {
       const prompt = buildImagePrompt(brief, client);
       try {
-        photoBuffer = await withTimeout(generateImageGPT(prompt, styleRefBuffer), 90000, 'GPT-Image-1');
+        photoBuffer = await withTimeout(generateImageGPT(prompt, styleRefBuffer, serperBuffers), 90000, 'GPT-Image-1');
         console.log('[Actu] GPT image OK');
       } catch (gptErr) {
         console.warn('[Actu] GPT failed:', gptErr.message, '— falling back to Serper');
@@ -562,138 +626,331 @@ router.post('/citation', async (req, res) => {
   }
 });
 
+// ─── Deep Dive — System Prompt ───────────────────────────────────────────────
+const DEEP_DIVE_SYSTEM_PROMPT = `Tu es l'orchestrateur Deep Dive de Forje Studio. Tu génères le contenu structuré d'un carousel Instagram éducatif de 5 slides (format 4:5, 1080×1350px).
+
+ENTRÉE (JSON message user) :
+{ "topic":"string", "brand":{"primary":"#hex","secondary":"#hex","bg":"#hex","text":"#hex","handle":"@compte","tone":"punchy|informatif|premium|storytelling|académique","darkMode":true}, "template_id":"T1|T2|T3|T4|T5|null", "image_mode":"none|serp|genai|hybrid", "language":"fr" }
+
+SORTIE STRICTE — JSON uniquement, zéro texte avant ou après :
+{
+  "meta": { "topic_refined":"...", "template_id":"T2", "image_mode":"..." },
+  "content": {
+    "topic":"...", "subtitle":"...",
+    "points": [
+      { "num":"01", "title":"...", "body":"...", "stat":"...", "stat_label":"..." },
+      { "num":"02", "title":"...", "body":"...", "stat":null, "stat_label":null },
+      { "num":"03", "title":"...", "body":"...", "stat":"...", "stat_label":"..." }
+    ],
+    "cta":"..."
+  },
+  "slides": [
+    { "index":0, "type":"hook",  "variant":"B", "image":{"mode":"genai","prompt":"STYLE: cinematic photography SUBJECT: ... MOOD: ... FORMAT: portrait 4:5 AVOID: text watermarks faces logos"} },
+    { "index":1, "type":"point", "variant":"A", "image":null },
+    { "index":2, "type":"point", "variant":"B", "image":{"mode":"serp","search_query":"..."} },
+    { "index":3, "type":"point", "variant":"A", "image":null },
+    { "index":4, "type":"cta",   "variant":"A", "image":null }
+  ],
+  "caption":"...",
+  "hashtags":["#deepdive","..."]
+}
+
+RÈGLES CONTENU :
+- Hook : titre max 12 mots, tension (paradoxe/chiffre/question). Sous-titre : promet le bénéfice en une phrase.
+- Points 1–3 : titre 3–7 mots, body 25–45 mots. Stat réelle et vérifiable uniquement — null si incertaine.
+- CTA : action concrète + micro-raison. Variant toujours A, image toujours null.
+- Alterne variant A et B au moins 2 fois sur les 5 slides.
+- Ton : punchy=phrases courtes/verbes d'action ; premium=posé/raffiné ; académique=rigoureux/nuancé ; storytelling=narratif ; informatif=neutre/clair.
+- Langue : toujours celle du champ language.
+- Si image_mode=none : tous slides ont "image":null et variant "A". Si image_mode=serp : search_query précise, journalistique, -logo -text. Si image_mode=genai : prompt STYLE/SUBJECT/MOOD/FORMAT/AVOID. Si image_mode=hybrid : index 0→genai, index 1-2→serp si factuel/genai si abstrait, index 3→genai, index 4→null.
+
+TEMPLATE (si template_id null) : punchy→T3, storytelling→T2, premium→T5, analytique→T4, informatif→T1.`;
+
+// ─── Deep Dive — Brand helper ─────────────────────────────────────────────────
+function buildDeepDiveBrand(client) {
+  const colors  = client?.brand_colors || [];
+  const tagStr  = [...(client?.tone_tags || []), client?.mood || ''].join(' ').toLowerCase();
+  let tone = 'informatif';
+  if (/punchy|viral|percutant|fort|impact/.test(tagStr)) tone = 'punchy';
+  else if (/premium|luxe|haut|elite|raffiné/.test(tagStr)) tone = 'premium';
+  else if (/storytell|narratif|histoire|cinéma/.test(tagStr)) tone = 'storytelling';
+  else if (/academ|expert|rigueur|technique|data/.test(tagStr)) tone = 'académique';
+  return {
+    primary:     colors[0] || '#6366F1',
+    secondary:   colors[1] || '#F5F500',
+    bg:          '#0A0A0A',
+    text:        '#FFFFFF',
+    textMuted:   '#888888',
+    handle:      client?.name ? '@' + client.name.toLowerCase().replace(/[^a-z0-9_]/g, '') : '@compte',
+    logo:        client?.logo_url || null,
+    darkMode:    true,
+    tone,
+  };
+}
+
+const TONE_TO_TEMPLATE = { punchy:'T3', storytelling:'T2', premium:'T5', académique:'T4', informatif:'T1' };
+
+// ─── Deep Dive — Image resolver ───────────────────────────────────────────────
+async function resolveSlideImage(slide) {
+  if (!slide.image) return null;
+  const { mode, prompt, search_query } = slide.image;
+  try {
+    if (mode === 'genai' && openaiClient) {
+      const resp = await withTimeout(
+        openaiClient.images.generate({ model:'gpt-image-1', prompt: prompt || 'abstract cinematic background dark', n:1, size:'1024x1536', quality: slide.index === 0 ? 'high' : 'standard' }),
+        60000, 'GPT-Image deepdive'
+      );
+      const b64 = resp.data?.[0]?.b64_json;
+      return b64 ? Buffer.from(b64, 'base64') : null;
+    }
+    if (mode === 'serp' && process.env.SERPER_API_KEY) {
+      const imgs = await serperImages(search_query || '');
+      const urls = imgs.map(i => i.imageUrl).filter(Boolean);
+      return urls.length ? await tryDownloadFirst(urls) : null;
+    }
+  } catch (e) { console.warn('[DeepDive/Image]', e.message); }
+  return null;
+}
+
+// ─── Deep Dive — Slide renderer (Sharp + SVG) ─────────────────────────────────
+async function renderDeepDiveSlide(tplId, slideIndex, slideType, variant, brand, content, imgBuf) {
+  const W = 1080, H = 1350, PAD = 60;
+  const primary = brand.primary || '#6366F1';
+
+  // Template palette
+  const TC = {
+    T1: { bg:'#FAFAF8', text:'#111111', accent: primary, muted:'#555555', barLeft:true,  uppercase:false },
+    T2: { bg:'#080808', text:'#FFFFFF', accent: primary, muted:'rgba(255,255,255,0.55)', barTop:true,   uppercase:true  },
+    T3: { bg:'#000000', text:'#FFFFFF', accent: primary, muted:'rgba(255,255,255,0.50)', barTop:true,   uppercase:true  },
+    T4: { bg:'#0D0B1E', text:'#FFFFFF', accent: primary, muted:'rgba(255,255,255,0.50)', barTop:true,   uppercase:false },
+    T5: { bg:'#F5F0E8', text:'#1A1A1A', accent:'#C9A96E',muted:'#7A6952',               barLeft:true,  uppercase:false },
+  };
+  const tc = TC[tplId] || TC.T2;
+
+  // Content for this slide
+  let title = '', body = '', num = '', stat = '', statLab = '';
+  if (slideType === 'hook') {
+    title = content.topic || '';
+    body  = content.subtitle || '';
+  } else if (slideType === 'point') {
+    const pt = content.points?.[slideIndex - 1] || {};
+    num      = pt.num     || String(slideIndex).padStart(2, '0');
+    title    = pt.title   || '';
+    body     = pt.body    || '';
+    stat     = pt.stat    || '';
+    statLab  = pt.stat_label || '';
+  } else {
+    title = content.cta || 'Sauvegardez ce carousel.';
+  }
+  if (tc.uppercase) { title = title.toUpperCase(); }
+
+  // Base background
+  const bgSvg = Buffer.from(
+    `<svg width="${W}" height="${H}">` +
+    `<rect width="${W}" height="${H}" fill="${escapeXml(tc.bg)}"/>` +
+    (tc.barTop  ? `<rect x="0" y="0" width="${W}" height="5" fill="${escapeXml(tc.accent)}"/>` : '') +
+    (tc.barLeft ? `<rect x="${PAD}" y="80" width="4" height="${H - 160}" rx="2" fill="${escapeXml(tc.accent)}" opacity="0.35"/>` : '') +
+    `</svg>`
+  );
+  let base = await sharp(bgSvg).png().toBuffer();
+  const composites = [];
+
+  // Background image (variant B)
+  if (imgBuf && variant === 'B') {
+    try {
+      const imgResized = await sharp(imgBuf).resize(W, H, { fit:'cover', position:'center' }).png().toBuffer();
+      composites.push({ input: imgResized, left:0, top:0 });
+      // Use userSpaceOnUse + black overlay so gradient renders correctly across all librsvg versions
+      const overlay = Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+        `<defs><linearGradient id="ov" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${H}">` +
+        `<stop offset="0%" stop-color="black" stop-opacity="0.28"/>` +
+        `<stop offset="55%" stop-color="black" stop-opacity="0.52"/>` +
+        `<stop offset="100%" stop-color="black" stop-opacity="0.78"/>` +
+        `</linearGradient></defs>` +
+        `<rect width="${W}" height="${H}" fill="url(#ov)"/>` +
+        `</svg>`
+      );
+      composites.push({ input: await sharp(overlay).png().toBuffer(), left:0, top:0 });
+    } catch (_) {}
+  }
+
+  // Ghost big number (T3 background effect)
+  if (tplId === 'T3' && num) {
+    const ghostSvg = Buffer.from(
+      `<svg width="${W}" height="400">` +
+      `<text x="${W - 40}" y="360" text-anchor="end" font-family="Arial Black,Arial,sans-serif" font-size="340" font-weight="900" fill="${escapeXml(tc.accent)}" opacity="0.08">${escapeXml(num)}</text>` +
+      `</svg>`
+    );
+    composites.push({ input: ghostSvg, left:0, top: H - 460 });
+  }
+
+  // Slide counter
+  const ctrSvg = Buffer.from(
+    `<svg width="180" height="36">` +
+    `<text x="180" y="26" text-anchor="end" font-family="Arial,sans-serif" font-size="20" fill="${escapeXml(tc.muted)}">${slideIndex + 1} / 5</text>` +
+    `</svg>`
+  );
+  composites.push({ input: ctrSvg, left: W - PAD - 180, top: 48 });
+
+  // Number badge (points)
+  if (num && tplId !== 'T3') {
+    const numSvg = Buffer.from(
+      `<svg width="200" height="80">` +
+      `<text x="0" y="64" font-family="Arial Black,Arial,sans-serif" font-size="64" font-weight="900" fill="${escapeXml(tc.accent)}">${escapeXml(num)}</text>` +
+      `</svg>`
+    );
+    composites.push({ input: numSvg, left: tc.barLeft ? PAD + 20 : PAD, top: 100 });
+  }
+  if (num && tplId === 'T3') {
+    const numSvg = Buffer.from(
+      `<svg width="200" height="80">` +
+      `<text x="0" y="64" font-family="Arial Black,Arial,sans-serif" font-size="56" font-weight="900" fill="${escapeXml(tc.accent)}">${escapeXml(num)}</text>` +
+      `</svg>`
+    );
+    composites.push({ input: numSvg, left: PAD, top: 100 });
+  }
+
+  // Title
+  if (title) {
+    const fs       = slideType === 'hook' ? 84 : (tplId === 'T3' ? 76 : 68);
+    const maxW     = W - PAD * 2 - (tc.barLeft ? 20 : 0);
+    const titleLines = wrapText(title, Math.floor(maxW / (fs * (tc.uppercase ? 0.62 : 0.52)))).slice(0, 3);
+    const lineH    = fs + 14;
+    const titleH   = titleLines.length * lineH;
+    const titleSvg = Buffer.from(
+      `<svg width="${maxW}" height="${titleH + 20}">` +
+      titleLines.map((l, j) =>
+        `<text x="0" y="${fs + j * lineH}" font-family="${tplId === 'T5' ? 'Georgia,serif' : 'Arial Black,Arial,sans-serif'}" font-size="${fs}" font-weight="900" fill="${escapeXml(tc.text)}">${escapeXml(l)}</text>`
+      ).join('') +
+      `</svg>`
+    );
+    const titleLeft = tc.barLeft ? PAD + 24 : PAD;
+    const titleTop  = slideType === 'hook' ? 180 : (num ? 210 : 160);
+    composites.push({ input: titleSvg, left: titleLeft, top: titleTop });
+
+    // Body text (below title)
+    if (body) {
+      const bodyLines = wrapText(body, Math.floor(maxW / 19)).slice(0, 4);
+      const bodySvg = Buffer.from(
+        `<svg width="${maxW}" height="${bodyLines.length * 52 + 20}">` +
+        bodyLines.map((l, j) =>
+          `<text x="0" y="${40 + j * 52}" font-family="Arial,sans-serif" font-size="33" font-weight="400" fill="${escapeXml(tc.muted)}">${escapeXml(l)}</text>`
+        ).join('') +
+        `</svg>`
+      );
+      const bodyLeft = titleLeft;
+      const bodyTop  = titleTop + titleH + (slideType === 'hook' ? 36 : 28);
+      composites.push({ input: bodySvg, left: bodyLeft, top: bodyTop });
+    }
+  }
+
+  // Stat block (points)
+  if (stat) {
+    const statSvg = Buffer.from(
+      `<svg width="${W - PAD * 2}" height="180">` +
+      `<text x="0" y="120" font-family="Arial Black,Arial,sans-serif" font-size="108" font-weight="900" fill="${escapeXml(tc.accent)}">${escapeXml(stat)}</text>` +
+      (statLab ? `<text x="0" y="158" font-family="Arial,sans-serif" font-size="28" fill="${escapeXml(tc.muted)}">${escapeXml(statLab)}</text>` : '') +
+      `</svg>`
+    );
+    composites.push({ input: statSvg, left: tc.barLeft ? PAD + 24 : PAD, top: H - 350 });
+  }
+
+  // CTA accent (slide 4)
+  if (slideType === 'cta') {
+    const lineSvg = Buffer.from(
+      `<svg width="80" height="6"><rect width="80" height="4" rx="2" fill="${escapeXml(tc.accent)}"/></svg>`
+    );
+    composites.push({ input: lineSvg, left: PAD, top: 155 });
+  }
+
+  // Handle (bottom left)
+  const handleSvg = Buffer.from(
+    `<svg width="400" height="40">` +
+    `<text x="0" y="28" font-family="Arial,sans-serif" font-size="22" fill="${escapeXml(tc.muted)}">${escapeXml(brand.handle || '@compte')}</text>` +
+    `</svg>`
+  );
+  composites.push({ input: handleSvg, left: tc.barLeft ? PAD + 24 : PAD, top: H - 72 });
+
+  // Progress bar
+  const prog = Math.round(((slideIndex + 1) / 5) * (W - PAD * 2));
+  const progSvg = Buffer.from(
+    `<svg width="${W}" height="8">` +
+    `<rect width="${W - PAD * 2}" height="2" x="${PAD}" y="3" fill="rgba(128,128,128,0.2)" rx="1"/>` +
+    `<rect width="${prog}" height="2" x="${PAD}" y="3" fill="${escapeXml(tc.accent)}" rx="1"/>` +
+    `</svg>`
+  );
+  composites.push({ input: progSvg, left: 0, top: H - 24 });
+
+  return sharp(base).composite(composites).jpeg({ quality: 90 }).toBuffer();
+}
+
 // ─── POST /api/generate/deepdive ─────────────────────────────────────────────
 router.post('/deepdive', async (req, res) => {
   if (!sharp) return res.status(500).json({ error: 'Sharp non installe' });
 
-  const { topic, userId } = req.body;
+  const { topic, userId, clientId, imageMode = 'none', templateId } = req.body;
   if (!topic) return res.status(400).json({ error: 'topic manquant' });
 
   try {
-    const client    = await getClientBrand(userId);
-    const brandCtx  = buildBrandContext(client);
-    const packId    = getPackId(client?.graphic_style);
-    const pack      = getPack(client?.graphic_style);
-    const fDefs     = fontDefs(packId);
-    const fontFam   = PACK_FONTS_GF[packId]?.name || pack.headFont;
-    const accentCol = client?.brand_colors?.[1] || null;
+    const client = await getClientBrand(userId, clientId);
+    const brand  = buildDeepDiveBrand(client);
 
-    // 1. Gemini -> plan 6 slides
-    const raw = await gemini(
-      'Plan un carousel Instagram pedagogique de 6 slides sur : "' + topic + '"' + brandCtx + '\n\n' +
-      'Retourne UNIQUEMENT ce JSON :\n' +
-      '{\n' +
-      '  "slides": [\n' +
-      '    {\n' +
-      '      "position": 1,\n' +
-      '      "role": "hook",\n' +
-      '      "title": "titre accrocheur max 5 mots",\n' +
-      '      "body": "phrase courte max 15 mots",\n' +
-      '      "color_from": "#hexcolor",\n' +
-      '      "color_to": "#hexcolor"\n' +
-      '    }\n' +
-      '  ]\n' +
-      '}\n\n' +
-      'Roles : hook (slide 1), content (slides 2-5), cta (slide 6).\n' +
-      'Pour color_from et color_to : choisis des degrades coherents et distincts par slide, ambiance editoriale sombre.\n' +
-      'La progression doit etre narrative : accroche -> developpement -> conclusion actionnable.'
+    // 1. Template auto-selection
+    const tplId = templateId || TONE_TO_TEMPLATE[brand.tone] || 'T2';
+
+    // 2. Claude orchestration — structured JSON content
+    const userMsg = JSON.stringify({ topic, brand, template_id: tplId, image_mode: imageMode, language: 'fr' });
+    const aiResp  = await haiku.messages.create({
+      model:      'claude-sonnet-4-6',
+      max_tokens: 3000,
+      system:     DEEP_DIVE_SYSTEM_PROMPT,
+      messages:   [{ role: 'user', content: userMsg }],
+    });
+    const rawJson = aiResp.content.find(b => b.type === 'text')?.text || '';
+    let carousel;
+    try { carousel = parseAIJson(rawJson); } catch (_) { throw new Error('Claude JSON invalide'); }
+
+    const { meta = {}, content = {}, slides: slideSpecs = [] } = carousel;
+    if (!slideSpecs.length) throw new Error('Aucun slide dans la réponse Claude');
+
+    // Use effective template (Claude may override)
+    const effectiveTpl = meta.template_id || tplId;
+
+    // 3. Resolve images in parallel (if imageMode !== 'none')
+    const imgBuffers = new Array(5).fill(null);
+    if (imageMode !== 'none') {
+      await Promise.all(slideSpecs.map(async (spec) => {
+        // CTA slide never gets an image
+        if (spec.index === 4) return;
+        // For serp-only mode: override any spec that has an image (or add one for first 3 slides)
+        if (imageMode === 'serp') {
+          const query = spec.image?.search_query || content.points?.[spec.index - 1]?.title || content.topic || 'news';
+          const buf = await resolveSlideImage({ index: spec.index, image: { mode: 'serp', search_query: query } });
+          if (buf) imgBuffers[spec.index] = buf;
+          return;
+        }
+        if (!spec.image) return;
+        const buf = await resolveSlideImage(spec);
+        if (buf) imgBuffers[spec.index] = buf;
+      }));
+    }
+
+    // 4. Render 5 slides (parallel)
+    const SLIDE_TYPES = ['hook', 'point', 'point', 'point', 'cta'];
+    const slideBuffers = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => {
+        const spec     = slideSpecs.find(s => s.index === i) || { index:i, type: SLIDE_TYPES[i], variant:'A' };
+        const imgBuf   = imgBuffers[i];
+        return renderDeepDiveSlide(effectiveTpl, i, spec.type || SLIDE_TYPES[i], imgBuf ? 'B' : (spec.variant || 'A'), brand, content, imgBuf);
+      })
     );
 
-    let slides;
-    try { slides = parseAIJson(raw).slides; } catch (_) { slides = []; }
+    // 5. Caption (from Claude or fallback)
+    const caption = carousel.caption || await generateCaption('deepdive', { topic, hookTitle: content.topic, hookBody: content.subtitle }, client).catch(() => '');
 
-    if (!slides || !slides.length) throw new Error('Pas de plan genere');
-
-    const hook = slides[0] || {};
-    const captionPromise = generateCaption('deepdive', { topic, hookTitle: hook.title, hookBody: hook.body }, client).catch(() => '');
-
-    // 2. Sharp composite chaque slide
-    const W = 1080, H = 1080;
-
-    const DEFAULTS = [
-      ['#0F0C29', '#302B63'], ['#1A1A2E', '#16213E'],
-      ['#0D0D0D', '#1a1a2e'], ['#0F2027', '#203A43'],
-      ['#1a1a2e', '#16213E'], ['#0D0D0D', '#302B63'],
-    ];
-
-    const slideBuffers = await Promise.all(slides.map(async (slide, i) => {
-      const cf = slide.color_from || DEFAULTS[i][0];
-      const ct = slide.color_to   || DEFAULTS[i][1];
-      const isHook = slide.role === 'hook';
-
-      const bg = Buffer.from(
-        `<svg width="${W}" height="${H}"><defs>` +
-        `<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">` +
-        `<stop offset="0%" stop-color="${escapeXml(cf)}"/>` +
-        `<stop offset="100%" stop-color="${escapeXml(ct)}"/>` +
-        `</linearGradient>` +
-        `<linearGradient id="ov" x1="0" y1="0" x2="0" y2="1">` +
-        `<stop offset="0%" stop-color="black" stop-opacity="0.1"/>` +
-        `<stop offset="100%" stop-color="black" stop-opacity="0.55"/>` +
-        `</linearGradient></defs>` +
-        `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
-        `<rect width="${W}" height="${H}" fill="url(#ov)"/>` +
-        `</svg>`
-      );
-
-      const base = await sharp(bg).png().toBuffer();
-
-      const numSvg = Buffer.from(
-        `<svg width="120" height="30">` +
-        `<text x="0" y="22" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="500" fill="rgba(255,255,255,0.38)" letter-spacing="1">${slide.position} / 6</text>` +
-        `</svg>`
-      );
-
-      const fs = isHook ? 96 : 76;
-      const slideText  = pack.transform ? (slide.title || '').toUpperCase() : (slide.title || '');
-      const titleLines = wrapText(slideText, isHook ? 14 : 18);
-      const titleSvg = Buffer.from(
-        `<svg width="${W - 80}" height="${titleLines.length * (fs + 10) + 20}">` +
-        fDefs +
-        titleLines.map((l, j) =>
-          `<text x="0" y="${fs + j * (fs + 10)}" font-family="${fontFam}" font-size="${fs}" font-weight="${pack.headWeight}" font-style="${pack.headStyle}" fill="white" letter-spacing="${pack.headSpacing}">${escapeXml(l)}</text>`
-        ).join('') +
-        `</svg>`
-      );
-
-      const bodyLines = wrapText(slide.body || '', 38);
-      const bodySvg = Buffer.from(
-        `<svg width="${W - 80}" height="${bodyLines.length * 44 + 10}">` +
-        bodyLines.map((l, j) =>
-          `<text x="0" y="${36 + j * 44}" font-family="${pack.bodyFont}" font-size="30" font-weight="400" fill="rgba(255,255,255,0.72)">${escapeXml(l)}</text>`
-        ).join('') +
-        `</svg>`
-      );
-
-      const prog = Math.round((slide.position / 6) * (W - 80));
-      const progBar = Buffer.from(
-        `<svg width="${W}" height="8">` +
-        `<rect width="${W - 80}" height="2" x="40" y="3" fill="rgba(255,255,255,0.15)" rx="1"/>` +
-        `<rect width="${prog}" height="2" x="40" y="3" fill="${accentCol || 'rgba(255,255,255,0.8)'}" rx="1"/>` +
-        `</svg>`
-      );
-
-      const titleH        = titleLines.length * (fs + 10) + 20;
-      const bodyH         = bodyLines.length * 44 + 10;
-      const totalContentH = titleH + 24 + bodyH;
-      const contentTop    = H - 80 - totalContentH;
-
-      return sharp(base)
-        .composite([
-          { input: numSvg,   left: 40, top: 44 },
-          { input: titleSvg, left: 40, top: Math.max(80, contentTop) },
-          { input: bodySvg,  left: 40, top: Math.max(80, contentTop) + titleH + 20 },
-          { input: progBar,  left: 0,  top: H - 48 },
-        ])
-        .jpeg({ quality: 92 })
-        .toBuffer();
-    }));
-
-    const [images, caption] = await Promise.all([
-      Promise.resolve(slideBuffers.map(b => 'data:image/jpeg;base64,' + b.toString('base64'))),
-      captionPromise,
-    ]);
-    res.json({ images, slides, caption });
+    const images = slideBuffers.map(b => 'data:image/jpeg;base64,' + b.toString('base64'));
+    res.json({ images, content, meta: { ...meta, template_id: effectiveTpl }, caption, hashtags: carousel.hashtags || [] });
 
   } catch (err) {
     console.error('[Generate/DeepDive]', err.message);
@@ -729,6 +986,62 @@ router.post('/detect-format', async (req, res) => {
     res.json(parseAIJson(raw));
   } catch (err) {
     console.error('[DetectFormat]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Brand Identity Generation (onboarding Step 3B) ──────────────────────────
+router.post('/brand-identity', async (req, res) => {
+  try {
+    const { name, topics, styleWords, colorUniverse, typographyFeel } = req.body;
+    if (!name) return res.status(400).json({ error: 'name requis' });
+
+    const isDark  = colorUniverse !== 'light';
+    const isPunchy = typographyFeel === 'punchy';
+    const bgDesc  = isDark ? 'dark background (#080814) with white text' : 'light background (#F0F0EB) with dark text';
+    const typoDesc = isPunchy ? 'bold condensed display typography (Bebas Neue style, uppercase)' : 'clean modern sans-serif (DM Sans style, mixed case)';
+
+    const prompt = `Create a complete brand identity style guide for a French digital media brand called "${name}".
+
+Topics covered: ${(topics || []).join(', ') || 'general news'}
+Style keywords: ${(styleWords || []).join(', ') || 'modern, premium'}
+Color universe: ${bgDesc}
+Typography feel: ${typoDesc}
+
+The style guide must include:
+1. A bold logo mark — letter-based (first letter of "${name}" stylized) or a clean abstract symbol
+2. The brand name "${name}" set in the chosen typography
+3. A color palette of 4 colors with large visible hex codes (#XXXXXX format)
+4. Two example Instagram post mockups (1:1 square frames) showing the visual style in use
+5. Typography hierarchy: headline font name + body font name
+
+Visual requirements:
+- ${bgDesc}
+- The brand must look like a premium French editorial media brand
+- Aesthetic references: ${(styleWords || ['modern', 'premium']).join(' + ')}
+- Editorial, credible, contemporary — not corporate or generic
+- Include the brand name "${name}" on the posts, never lorem ipsum
+
+Format: professional brand style guide sheet, ${isDark ? 'dark' : 'light'} background, all elements clearly separated.`;
+
+    const response = await openaiClient.images.generate({
+      model: 'gpt-image-1',
+      prompt,
+      n: 1,
+      size: '1024x1024',
+    });
+
+    const imgData = response.data[0];
+    const imageUrl = imgData.url
+      ? imgData.url
+      : imgData.b64_json
+        ? 'data:image/png;base64,' + imgData.b64_json
+        : null;
+
+    if (!imageUrl) throw new Error('Aucune image retournée par GPT-Image');
+    res.json({ ok: true, imageUrl });
+  } catch (err) {
+    console.error('[brand-identity]', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1,4 +1,4 @@
-/* global React, ReactDOM, AppIcon, Sidebar, Topbar, Btn, DashboardScreen, GenerateScreen, QueueScreen, BrandScreen, SourcesScreen */
+/* global React, ReactDOM, AppIcon, Sidebar, Topbar, Btn, DashboardScreen, GenerateScreen, QueueScreen, BrandScreen, SourcesScreen, OnboardingShell, OnboardingBanner */
 var { useState, useEffect, useRef } = React;
 
 const TWEAKS = /*EDITMODE-BEGIN*/{
@@ -25,6 +25,13 @@ const App = () => {
   const [genToast, setGenToast] = useState(null); // { status:'generating'|'ready', label, presetId }
   const presetRef = useRef(null); // keeps last active preset alive across screen changes
 
+  // Onboarding state
+  const [showOnboarding,      setShowOnboarding]      = useState(false);
+  const [obStep,              setObStep]              = useState(1);
+  const [obProfileType,       setObProfileType]       = useState(null);
+  const [obClientId,          setObClientId]          = useState(null);
+  const [showOnboardingBanner, setShowOnboardingBanner] = useState(false);
+
   const computeBrandScore = (c) => {
     if (!c) return 0;
     return [c.name, c.logo_url, c.graphic_style, c.tone_tags?.length > 0, c.mood, c.topics?.length > 0, c.instagram_handle]
@@ -35,7 +42,7 @@ const App = () => {
     const sb = window.__supabase;
     const user = window.__currentUser;
     if (!sb || !user) return;
-    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, graphic_style, tone_tags, mood, topics')
+    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, graphic_style, tone_tags, mood, topics, onboarding_completed, onboarding_step, profile_type')
       .eq('user_id', user.id).order('created_at')
       .then(({ data }) => {
         const list = data || [];
@@ -55,6 +62,17 @@ const App = () => {
       setActiveClientId(active);
       window.__activeClientId = active;
       setBrandScore(computeBrandScore(activeClient));
+
+      // Onboarding check — new user or incomplete onboarding
+      const firstClient = list[0] || null;
+      if (!firstClient || !firstClient.onboarding_completed) {
+        setObStep(firstClient?.onboarding_step || 1);
+        setObProfileType(firstClient?.profile_type || null);
+        setObClientId(firstClient?.id || null);
+        setShowOnboarding(true);
+        return; // don't set screen state while onboarding is active
+      }
+      setShowOnboardingBanner(true);
     });
 
     // Prefill venant du board (clic "Générer post" sur une news)
@@ -102,6 +120,22 @@ const App = () => {
     loadClients();
   };
 
+  const handleOnboardingComplete = (clientId) => {
+    setShowOnboarding(false);
+    setShowOnboardingBanner(true);
+    setObClientId(clientId);
+    setActiveClientId(clientId);
+    window.__activeClientId = clientId;
+    const user = window.__currentUser;
+    if (user) localStorage.setItem('forje_active_client_' + user.id, clientId);
+    loadClients((list) => {
+      const c = list.find(x => x.id === clientId) || list[0] || null;
+      setBrandScore(computeBrandScore(c));
+      if (c) setProfile({ plan: c.plan, credits: c.credits });
+    });
+    setScreen('home');
+  };
+
   useEffect(() => { if (preset) presetRef.current = preset; }, [preset]);
 
   useEffect(() => {
@@ -140,11 +174,28 @@ const App = () => {
     settings:  ['Atelier', 'Paramètres'],
   }[screen] || ['Studio'];
 
-  const handleCreateFromSource = (id) => {
-    // Pretend to pre-fill from a source and open Generate
-    setPreset({ id:'actu', label:'Actualité', icon:'news', visual:'actu', img:'assets/actu.png' });
+  const handleCreateFromSource = (source) => {
+    // source peut être un id string (legacy) ou un objet { title, url, text }
+    var newsText = '';
+    if (source && typeof source === 'object') {
+      newsText = [source.title, source.text].filter(Boolean).join('\n\n');
+    }
+    setPreset({ id:'actu', label:'Actualité', icon:'news', visual:'actu', img:'assets/actu.webp',
+                prefill: newsText ? { newsText } : undefined });
     setScreen('generate');
   };
+
+  // Show onboarding instead of regular app
+  if (showOnboarding) {
+    return (
+      <OnboardingShell
+        onComplete={handleOnboardingComplete}
+        initialStep={obStep}
+        initialProfileType={obProfileType}
+        existingClientId={obClientId}
+      />
+    );
+  }
 
   return (
     <>
@@ -162,14 +213,21 @@ const App = () => {
                  onNewClient={handleNewClient}/>
         <main className="app-main">
           <Topbar breadcrumb={crumbs}/>
-          {screen === 'home' && <DashboardScreen onNav={setScreen} onCreateFromSource={handleCreateFromSource} authUser={window.__currentUser}/>}
+          {screen === 'home' && (
+            <>
+              {showOnboardingBanner && <OnboardingBanner clientId={activeClientId || obClientId}/>}
+              <DashboardScreen onNav={setScreen} onCreateFromSource={handleCreateFromSource} authUser={window.__currentUser}/>
+            </>
+          )}
           {screen === 'generate' && (
             <GenerateScreen
               layoutVariant={tweaks.genLayout}
               preset={preset}
               onPickPreset={setPreset}
               onBack={() => setPreset(null)}
-              onGoToBoard={() => { setPreset(null); setScreen('sources'); }}/>
+              onGoToBoard={() => { setPreset(null); setScreen('sources'); }}
+              brandScore={brandScore}
+              onGoBrand={() => { setPreset(null); setScreen('brand'); }}/>
           )}
           {screen === 'queue' && <QueueScreen defaultView={tweaks.defaultQueueView}/>}
           {screen === 'calendar' && <QueueScreen defaultView="calendar"/>}
@@ -194,7 +252,7 @@ const App = () => {
         >
           <div className="gen-toast-icon">
             {genToast.status === 'generating'
-              ? <span className="gen-toast-spinner"/>
+              ? <span className="gen-bounce-loader--sm" style={{ color: 'var(--app-accent)' }}/>
               : <span style={{fontSize:14}}>⚡</span>}
           </div>
           <div className="gen-toast-body">
@@ -207,6 +265,11 @@ const App = () => {
               {genToast.status === 'generating' ? 'Revenir voir →' : 'Voir le résultat →'}
             </span>
           </div>
+          {genToast.status === 'generating' && (
+            <button className="gen-toast-cancel" onClick={(e) => { e.stopPropagation(); window.__cancelGen?.(); setGenToast(null); }}>
+              Annuler
+            </button>
+          )}
           <button className="gen-toast-close" onClick={(e) => { e.stopPropagation(); setGenToast(null); }}>×</button>
         </div>
       )}
