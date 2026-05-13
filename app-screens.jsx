@@ -86,8 +86,11 @@ async function renderActuCanvas(data) {
   var catLabel = data.category.toUpperCase();
   ctx.font = '700 19px ' + catFamily;
   var catW = ctx.measureText(catLabel).width + 36;
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 18; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 4;
   ctx.fillStyle = badgeColor;
   ctx.beginPath(); ctx.roundRect(60, startY, catW, badgeH, 4); ctx.fill();
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
   ctx.fillStyle = '#ffffff';
   ctx.font = '700 19px ' + catFamily;
   ctx.letterSpacing = '2px';
@@ -95,6 +98,8 @@ async function renderActuCanvas(data) {
   ctx.letterSpacing = '0px';
 
   // 7. Title
+  ctx.shadowColor = 'rgba(0,0,0,0.75)';
+  ctx.shadowBlur = 24; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 5;
   ctx.fillStyle = '#ffffff';
   ctx.font = headFont;
   ctx.letterSpacing = headSpacing + 'px';
@@ -103,11 +108,13 @@ async function renderActuCanvas(data) {
   ctx.letterSpacing = '0px';
 
   // 8. Subtitle
+  ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
   ctx.fillStyle = 'rgba(255,255,255,0.72)';
   ctx.font = subFont;
   var sy = ty + titleH + gap;
   subLines.forEach(function(line, i) { ctx.fillText(line, 60, sy + 28 + i * 40); });
 
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   return canvas.toDataURL('image/jpeg', 0.92);
 }
 window.__renderActuCanvas = renderActuCanvas;
@@ -1602,6 +1609,51 @@ const BRAND_TONES = [
   'Emotionnel', 'Factuel', 'Inspirant', 'Provocateur', 'Pedagogue',
 ];
 
+// Carte "Brand Kit" — pack personnalisé basé sur font_primary / fontBody du client
+const CustomPackCard = function(props) {
+  var active = props.active; var onSelect = props.onSelect;
+  var fontTitle = props.fontPrimary || 'DM Sans';
+  var fontBody  = props.fontBody    || 'DM Sans';
+  var accent    = props.accentColor || '#6366F1';
+  var primary   = props.primaryColor|| '#111';
+  return (
+    <div onClick={onSelect} style={{ cursor:'pointer', borderRadius:8, overflow:'hidden',
+      transition:'border-color .15s',
+      border:'2px solid ' + (active ? accent : 'var(--app-line)'),
+      background: active ? 'rgba(99,102,241,.04)' : 'transparent' }}>
+      <div style={{ aspectRatio:'4/5', background:'#0a0a12', position:'relative', overflow:'hidden',
+        padding:'10px 9px', display:'flex', flexDirection:'column', justifyContent:'space-between' }}>
+        <div style={{ position:'absolute', top:-6, right:-4, fontSize:68, lineHeight:'1', opacity:.13,
+          fontFamily:"'" + fontTitle + "',sans-serif", color:'#fff', pointerEvents:'none', userSelect:'none' }}>
+          Aa
+        </div>
+        <div style={{ fontSize:7, letterSpacing:'0.3em', textTransform:'uppercase', color: accent, fontFamily:'DM Sans,sans-serif', fontWeight:600, position:'relative', zIndex:1 }}>
+          Brand Kit
+        </div>
+        <div style={{ position:'relative', zIndex:1 }}>
+          <div style={{ fontFamily:"'" + fontTitle + "',Impact,sans-serif", fontSize:22, fontWeight:700, lineHeight:'1.0', color:'#fff', marginBottom:4 }}>
+            TON TITRE ICI
+          </div>
+          <div style={{ fontFamily:"'" + fontBody + "',DM Sans,sans-serif", fontSize:8, color:'rgba(255,255,255,.45)', lineHeight:'1.6' }}>
+            Corps de texte
+          </div>
+        </div>
+        <div style={{ fontSize:8, color:'rgba(255,255,255,.25)', fontFamily:'DM Sans,sans-serif' }}>{fontTitle}</div>
+        <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background: accent }}/>
+      </div>
+      <div style={{ padding:'8px 10px', background:'var(--app-surface-2)', borderTop:'1px solid var(--app-line)' }}>
+        <div style={{ fontWeight:600, fontSize:11, marginBottom:3, color: active ? accent : 'var(--app-fg)' }}>Personnalisé</div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
+          {['Brand Kit', 'Sur mesure'].map(function(t) {
+            return <span key={t} style={{ fontSize:8, padding:'1px 5px', borderRadius:8, border:'1px solid var(--app-line)', color:'var(--app-fg-4)' }}>{t}</span>;
+          })}
+        </div>
+        <div style={{ fontSize:9, color:'var(--app-fg-4)' }}>{fontTitle} + {fontBody}</div>
+      </div>
+    </div>
+  );
+};
+
 // Mini card representing a font pack (used in the picker grid)
 const PackMiniCard = function(props) {
   var pack = props.pack; var active = props.active; var onSelect = props.onSelect;
@@ -1661,11 +1713,48 @@ const PackMiniCard = function(props) {
 
 // Live preview panel (right column)
 const BrandPostPreview = function(props) {
-  var pack = FONT_PACKS.find(function(p) { return p.id === props.graphicStyle; });
+  var isCustom     = props.graphicStyle === 'custom';
+  var pack         = isCustom ? null : FONT_PACKS.find(function(p) { return p.id === props.graphicStyle; });
   var primaryColor = props.primaryColor;
   var accentColor  = props.accentColor;
   var logoUrl      = props.logoUrl;
   var name         = props.name;
+  var badgeVisible = props.badgeVisible !== false;
+  var barVisible   = props.barVisible !== false;
+  var fontTitle    = props.fontPrimary || (pack ? pack.headStyle.fontFamily : 'DM Sans');
+  var fontBody     = props.fontSecondary || (pack ? pack.bodyStyle.fontFamily : 'DM Sans');
+
+  if (isCustom) {
+    return (
+      <div style={{ width:220, aspectRatio:'4/5', borderRadius:12, overflow:'hidden',
+        background:'#08080f', position:'relative', boxShadow:'0 20px 60px rgba(0,0,0,.45)', flexShrink:0 }}>
+        <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 30%, rgba(0,0,0,.85) 100%)' }}/>
+        {logoUrl && (
+          <img src={logoUrl} alt="" style={{ position:'absolute', top:14, right:14,
+            height:40, width:'auto', objectFit:'contain', zIndex:2 }}/>
+        )}
+        <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'16px 14px', zIndex:1 }}>
+          {badgeVisible && (
+            <div style={{ display:'inline-block', padding:'2px 8px', borderRadius:3,
+              background: accentColor || primaryColor, fontSize:9, fontWeight:700, color:'#fff',
+              letterSpacing:1.5, marginBottom:8, textTransform:'uppercase', fontFamily:'DM Sans,sans-serif' }}>
+              SPORT
+            </div>
+          )}
+          <div style={{ fontFamily:"'" + fontTitle + "',Impact,sans-serif", fontSize:22, fontWeight:700,
+            color:'#fff', lineHeight:1.05, marginBottom:6, textTransform:'uppercase' }}>
+            {name ? name.toUpperCase() : 'TON TITRE ICI'}
+          </div>
+          <div style={{ fontFamily:"'" + fontBody + "',DM Sans,sans-serif", fontSize:10, color:'rgba(255,255,255,.55)', lineHeight:1.5 }}>
+            L'actu en temps réel.
+          </div>
+          {barVisible && (
+            <div style={{ position:'absolute', bottom:0, left:0, right:0, height:3, background: accentColor || primaryColor }}/>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (pack) {
     var isLight = pack.bg === '#ffffff' || pack.bg === '#f5f4f2';
@@ -1706,21 +1795,25 @@ const BrandPostPreview = function(props) {
             filter: isLight ? 'none' : 'brightness(0) invert(1)' }}/>
         )}
         <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'16px 14px', zIndex:1 }}>
-          <div style={{ display:'inline-block', padding:'2px 8px',
-            background:primaryColor, fontSize:9, fontWeight:700, color:'#fff',
-            letterSpacing:1.5, marginBottom:8, textTransform:'uppercase',
-            fontFamily:pack.catStyle.fontFamily }}>
-            SPORT
-          </div>
-          <div style={{ ...pack.headStyle, fontSize: Math.round(pack.headStyle.fontSize * .65), marginBottom:6,
+          {badgeVisible && (
+            <div style={{ display:'inline-block', padding:'2px 8px',
+              background:primaryColor, fontSize:9, fontWeight:700, color:'#fff',
+              letterSpacing:1.5, marginBottom:8, textTransform:'uppercase',
+              fontFamily:pack.catStyle.fontFamily }}>
+              SPORT
+            </div>
+          )}
+          <div style={{ ...pack.headStyle, fontFamily: fontTitle, fontSize: Math.round(pack.headStyle.fontSize * .65), marginBottom:6,
             color: isLight ? '#0a0a0a' : pack.headStyle.color }}>
             {name ? name.toUpperCase() : pack.sampleHead}
           </div>
-          <div style={{ ...pack.bodyStyle, fontSize: Math.round(pack.bodyStyle.fontSize * 1.3),
+          <div style={{ ...pack.bodyStyle, fontFamily: fontBody, fontSize: Math.round(pack.bodyStyle.fontSize * 1.3),
             color: isLight ? '#666' : pack.bodyStyle.color }}>
             L'actu en temps reel.
           </div>
-          <div style={{ position:'absolute', bottom:0, left:0, right:0, height:3, background:accentColor }}/>
+          {barVisible && (
+            <div style={{ position:'absolute', bottom:0, left:0, right:0, height:3, background:accentColor }}/>
+          )}
         </div>
       </div>
     );
@@ -1744,18 +1837,22 @@ const BrandPostPreview = function(props) {
           height:22, width:'auto', objectFit:'contain', zIndex:2, filter:'brightness(0) invert(1)' }}/>
       )}
       <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'16px 14px', zIndex:1 }}>
-        <div style={{ display:'inline-block', padding:'2px 8px', borderRadius:3,
-          background:primaryColor, fontSize:9, fontWeight:700, color:'#fff',
-          letterSpacing:1.5, marginBottom:8, textTransform:'uppercase' }}>
-          SPORT
-        </div>
+        {badgeVisible && (
+          <div style={{ display:'inline-block', padding:'2px 8px', borderRadius:3,
+            background:primaryColor, fontSize:9, fontWeight:700, color:'#fff',
+            letterSpacing:1.5, marginBottom:8, textTransform:'uppercase' }}>
+            SPORT
+          </div>
+        )}
         <div style={{ fontSize:22, fontWeight:900, color:'#fff', lineHeight:1.05,
           marginBottom:6, letterSpacing:-0.5, textTransform:'uppercase',
-          fontFamily:(props.fontPrimary || 'DM Sans')+',sans-serif' }}>
+          fontFamily: fontTitle + ',sans-serif' }}>
           {name ? name.toUpperCase().slice(0,12) : 'MON MEDIA'}
         </div>
-        <div style={{ fontSize:11, color:'rgba(255,255,255,.6)' }}>L'actu en temps reel.</div>
-        <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:accentColor }}/>
+        <div style={{ fontSize:11, color:'rgba(255,255,255,.6)', fontFamily: fontBody + ',sans-serif' }}>L'actu en temps reel.</div>
+        {barVisible && (
+          <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:accentColor }}/>
+        )}
       </div>
     </div>
   );
@@ -1819,7 +1916,7 @@ const BrandSect = ({ num, title, desc, tip, children }) => (
   </div>
 );
 
-const BrandScreen = ({ clientId, onSaved }) => {
+const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   var [name,            setName]            = useState('');
   var [logoUrl,         setLogoUrl]         = useState('');
   var [logoUploading,   setLogoUploading]   = useState(false);
@@ -1840,20 +1937,28 @@ const BrandScreen = ({ clientId, onSaved }) => {
   var [saving,          setSaving]          = useState(false);
   var [saveMsg,         setSaveMsg]         = useState('');
   var [saveErr,         setSaveErr]         = useState('');
-  var [showVeilleNudge, setShowVeilleNudge] = useState(false);
-  var [igInput,         setIgInput]         = useState('');
-  var [igAnalyzing,     setIgAnalyzing]     = useState(false);
-  var [igResult,        setIgResult]        = useState(null);
-  var [igErr,           setIgErr]           = useState('');
+  var [showVeilleNudge,   setShowVeilleNudge]   = useState(false);
+  var [igInput,           setIgInput]           = useState('');
+  var [igAnalyzing,       setIgAnalyzing]       = useState(false);
+  var [igResult,          setIgResult]          = useState(null);
+  var [igErr,             setIgErr]             = useState('');
+  var [fontSecondary,     setFontSecondary]     = useState('');
+  var [badgeVisible,      setBadgeVisible]      = useState(true);
+  var [barVisible,        setBarVisible]        = useState(true);
+  var [confirmingDelete,  setConfirmingDelete]  = useState(false);
+  var [deleting,          setDeleting]          = useState(false);
+  var [brandKitUrl,       setBrandKitUrl]       = useState('');
+  var [relogoing,         setRelogoing]         = useState(false);
 
   // Load from Supabase — réagit au changement de clientId (switch de compte)
   useEffect(function() {
     var sb = window.__supabase; var user = window.__currentUser;
     // Reset du formulaire à chaque changement de compte
     setName(''); setLogoUrl(''); setStyleRefUrl('');
-    setPrimaryColor('#6366F1'); setAccentColor('#10B981'); setFontPrimary('DM Sans');
+    setPrimaryColor('#6366F1'); setAccentColor('#10B981'); setFontPrimary('DM Sans'); setFontSecondary('');
     setMood(''); setToneTags([]); setGraphicStyle(''); setTopics([]);
     setInstaHandle(''); setHashtags([]); setPreferredFormat('4:5');
+    setBadgeVisible(true); setBarVisible(true);
     setSaveMsg(''); setSaveErr(''); setIgInput(''); setIgResult(null); setIgErr('');
 
     if (!sb || !user) { setLoading(false); return; }
@@ -1869,15 +1974,21 @@ const BrandScreen = ({ clientId, onSaved }) => {
           if (d.brand_colors && d.brand_colors[0]) setPrimaryColor(d.brand_colors[0]);
           if (d.brand_colors && d.brand_colors[1]) setAccentColor(d.brand_colors[1]);
           setFontPrimary(d.font_primary || 'DM Sans');
+          setFontSecondary(d.font_secondary || '');
           setMood(d.mood || '');
           setToneTags(d.tone_tags || []);
           var gs = d.graphic_style || '';
-          setGraphicStyle(STYLE_TO_PACK[gs] || gs);
+          var resolvedGs = STYLE_TO_PACK[gs] || gs;
+          if (!resolvedGs && d.font_primary) resolvedGs = 'custom';
+          setGraphicStyle(resolvedGs);
           setTopics(d.topics || []);
           setInstaHandle(d.instagram_handle || '');
           setHashtags(d.hashtags || []);
           setPreferredFormat(d.preferred_format || '4:5');
           setStyleRefUrl(d.style_ref_url || '');
+          setBadgeVisible(d.badge_visible !== false);
+          setBarVisible(d.bar_visible !== false);
+          setBrandKitUrl(d.brand_kit_url || '');
         }
         setLoading(false);
       });
@@ -1893,11 +2004,55 @@ const BrandScreen = ({ clientId, onSaved }) => {
     document.head.appendChild(link);
   }, []);
 
-  // Sync fontPrimary when pack changes
+  // Inject bento CSS once
   useEffect(function() {
-    var pf = PACK_FONTS[graphicStyle];
-    if (pf) setFontPrimary(pf);
-  }, [graphicStyle]);
+    var id = 'brand-bento-css';
+    if (document.getElementById(id)) return;
+    var s = document.createElement('style');
+    s.id = id;
+    s.textContent = [
+      '.brand-bento{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}',
+      '.bento-tile{background:var(--app-surface-2);border:1px solid var(--app-line);border-radius:14px;padding:18px 20px;transition:border-color .18s,box-shadow .18s;position:relative;overflow:hidden;box-sizing:border-box;}',
+      '.bento-tile:hover{border-color:rgba(99,102,241,.3);box-shadow:0 0 0 1px rgba(99,102,241,.08),0 4px 24px rgba(0,0,0,.18);}',
+      '.bento-tile--wide{grid-column:span 2;}',
+      '.bento-tile--full{grid-column:span 3;}',
+      '.bento-tile-lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--app-fg-4);margin-bottom:14px;display:flex;align-items:center;gap:6px;}',
+      '.bento-color-block{height:48px;border-radius:9px;cursor:pointer;transition:transform .15s;margin-bottom:7px;}',
+      '.bento-color-block:hover{transform:scaleY(1.04);}',
+    ].join('');
+    document.head.appendChild(s);
+  }, []);
+
+  var loadCustomFont = function(name) {
+    if (!name || !name.trim()) return;
+    var key = 'gf-custom-' + name.trim().toLowerCase().replace(/\s+/g, '-');
+    if (document.getElementById(key)) return;
+    var link = document.createElement('link');
+    link.id = key; link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=' + name.trim().replace(/\s+/g, '+') + ':ital,wght@0,400;0,700;1,400&display=swap';
+    document.head.appendChild(link);
+  };
+
+  var handleRelogo = async function() {
+    if (!brandKitUrl || !clientId || relogoing) return;
+    setRelogoing(true); setSaveErr('');
+    try {
+      var sb = window.__supabase;
+      var token = null;
+      if (sb) { var sess = await sb.auth.getSession(); token = sess.data?.session?.access_token; }
+      var res = await fetch('/api/generate/brand-identity/relogo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}) },
+        body: JSON.stringify({ clientId, imageUrl: brandKitUrl }),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur');
+      if (data.logoUrl) setLogoUrl(data.logoUrl);
+    } catch(e) {
+      setSaveErr('Relogo échoué : ' + e.message);
+    }
+    setRelogoing(false);
+  };
 
   var handleLogoUpload = function(file) {
     if (!file) return;
@@ -2002,7 +2157,10 @@ const BrandScreen = ({ clientId, onSaved }) => {
       name:             name,
       logo_url:         logoUrl,
       brand_colors:     [primaryColor, accentColor],
-      font_primary:     PACK_FONTS[graphicStyle] || fontPrimary,
+      font_primary:     fontPrimary,
+      font_secondary:   fontSecondary || null,
+      badge_visible:    badgeVisible,
+      bar_visible:      barVisible,
       mood:             mood,
       tone_tags:        toneTags,
       graphic_style:    graphicStyle,
@@ -2026,6 +2184,21 @@ const BrandScreen = ({ clientId, onSaved }) => {
       }
       setSaving(false);
     });
+  };
+
+  var handleDelete = function() {
+    if (!clientId) return;
+    if (!confirmingDelete) { setConfirmingDelete(true); return; }
+    var sb = window.__supabase; var user = window.__currentUser;
+    if (!sb || !user) return;
+    setDeleting(true);
+    sb.from('clients').delete().eq('id', clientId).eq('user_id', user.id)
+      .then(function(res) {
+        setDeleting(false);
+        setConfirmingDelete(false);
+        if (res.error) { setSaveErr('Suppression échouée : ' + res.error.message); return; }
+        if (onDeleted) onDeleted();
+      });
   };
 
   var inputStyle = {
@@ -2070,16 +2243,43 @@ const BrandScreen = ({ clientId, onSaved }) => {
           </div>
         </div>
       )}
+      {/* ── Page header ── */}
       <div className="page-header" style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between' }}>
         <div>
           <h1 className="page-title">Forge ton identite</h1>
-          <p className="page-subtitle">
-            Tout ce que tu remplis ici sera utilise a chaque generation.
-            Plus tu es precis, plus tes posts seront fideles a ta marque.
-          </p>
+          <p className="page-subtitle">Tout ce que tu remplis ici sera utilise a chaque generation.</p>
         </div>
-        <button onClick={handleSave} disabled={saving || !canSave}
-          style={{ all:'unset', flexShrink:0, marginTop:4, cursor: canSave && !saving ? 'pointer' : 'not-allowed',
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0, marginTop:4 }}>
+          {/* Progress pill */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 14px',
+            borderRadius:20, background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
+            fontSize:12, color:'var(--app-fg-3)' }}>
+            <div style={{ width:36, height:3.5, background:'var(--app-line)', borderRadius:2, position:'relative', overflow:'hidden' }}>
+              <div style={{ position:'absolute', left:0, top:0, height:'100%',
+                width:(completedCount / 7 * 100) + '%',
+                background: completedCount === 7 ? '#22c55e' : 'var(--app-accent)',
+                borderRadius:2, transition:'width .3s ease' }}/>
+            </div>
+            <span style={{ fontVariantNumeric:'tabular-nums' }}>
+              {completedCount}<span style={{ opacity:.45 }}>/7</span>
+            </span>
+          </div>
+          {clientId && (
+            <button
+              onClick={confirmingDelete ? handleDelete : () => setConfirmingDelete(true)}
+              onBlur={() => setTimeout(() => setConfirmingDelete(false), 200)}
+              disabled={deleting}
+              style={{ all:'unset', cursor:'pointer', padding:'8px 14px', borderRadius:'var(--radius)',
+                fontSize:13, fontWeight:500, border:'1px solid',
+                borderColor: confirmingDelete ? 'var(--app-danger)' : 'var(--app-line-2)',
+                color: confirmingDelete ? 'var(--app-danger)' : 'var(--app-fg-3)',
+                background: confirmingDelete ? 'rgba(209,69,69,.07)' : 'transparent',
+                transition:'all .15s', whiteSpace:'nowrap' }}>
+              {deleting ? 'Suppression...' : confirmingDelete ? 'Confirmer ?' : 'Supprimer'}
+            </button>
+          )}
+          <button onClick={handleSave} disabled={saving || !canSave}
+          style={{ all:'unset', flexShrink:0, marginTop:0, cursor: canSave && !saving ? 'pointer' : 'not-allowed',
             padding:'9px 20px', borderRadius:'var(--radius)', fontSize:13, fontWeight:600,
             background: canSave && !saving ? 'var(--app-accent)' : 'var(--app-surface-3)',
             color: canSave && !saving ? '#fff' : 'var(--app-fg-4)',
@@ -2095,441 +2295,300 @@ const BrandScreen = ({ clientId, onSaved }) => {
                 canSave ? 'Enregistrer' : 'Ajoute un nom')
           }
         </button>
+        </div>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) 260px', gap:40, alignItems:'start' }}>
+      {/* ── Outer: bento grid + live preview ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) 240px', gap:24, alignItems:'start' }}>
 
-        <div style={{ maxWidth:640 }}>
+        {/* ── BENTO GRID ── */}
+        <div className="brand-bento">
 
-          {/* Bloc analyse Instagram */}
-          <div style={{ marginBottom:24, padding:'16px 18px', borderRadius:'var(--radius)',
-            background:'linear-gradient(135deg, rgba(99,102,241,.07) 0%, rgba(16,185,129,.05) 100%)',
-            border:'1px solid rgba(99,102,241,.18)' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-              <AppIcon name="sparkle" size={14} style={{ color:'var(--app-accent)' }}/>
-              <span style={{ fontSize:13, fontWeight:600, color:'var(--app-fg)' }}>
-                Remplis automatiquement depuis Instagram
-              </span>
-            </div>
-            <p style={{ margin:'0 0 12px', fontSize:12, color:'var(--app-fg-4)', lineHeight:1.5 }}>
-              Colle ton URL ou ton @handle — l'IA analyse ton profil et pre-remplit tous les champs.
-            </p>
-            <div style={{ display:'flex', gap:8 }}>
-              <input value={igInput} onChange={function(e){ setIgInput(e.target.value); }}
-                onKeyDown={function(e){ if (e.key === 'Enter') analyzeInstagram(); }}
-                placeholder="@footmercato ou https://instagram.com/footmercato"
-                style={{ flex:1, background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
-                  borderRadius:'var(--radius)', padding:'8px 12px', color:'var(--app-fg)',
-                  fontFamily:'DM Sans,sans-serif', fontSize:13, outline:'none' }}/>
-              <button onClick={analyzeInstagram} disabled={igAnalyzing || !igInput.trim()}
-                style={{ all:'unset', cursor: igInput.trim() && !igAnalyzing ? 'pointer' : 'not-allowed',
-                  padding:'8px 16px', borderRadius:'var(--radius)', fontSize:13, fontWeight:600,
-                  background:'var(--app-accent)', color:'#fff', flexShrink:0,
-                  opacity: igInput.trim() && !igAnalyzing ? 1 : 0.5,
-                  display:'flex', alignItems:'center', gap:6 }}>
-                {igAnalyzing
-                  ? React.createElement('span', { style:{display:'flex',alignItems:'center',gap:6} },
-                      React.createElement('span', { style:{width:12,height:12,border:'2px solid rgba(255,255,255,.3)',
-                        borderTopColor:'#fff',borderRadius:'50%',animation:'vb-spin .7s linear infinite'} }),
-                      'Analyse...')
-                  : React.createElement('span', { style:{display:'flex',alignItems:'center',gap:6} },
-                      React.createElement(AppIcon, { name:'sparkle', size:13 }), 'Analyser')
-                }
-              </button>
-            </div>
-            {igErr && (
-              <div style={{ marginTop:10, fontSize:12, color:'#ef4444', padding:'6px 10px',
-                background:'rgba(239,68,68,.06)', borderRadius:6, border:'1px solid rgba(239,68,68,.15)' }}>
-                {igErr}
+          {/* TILE 1 — Identité + IG auto — full width */}
+          <div className="bento-tile bento-tile--full">
+            <div className="bento-tile-lbl"><AppIcon name="sparkle" size={11}/>Identite du media</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr minmax(0,290px)', gap:20, alignItems:'start' }}>
+              <div>
+                <div style={{ fontSize:10.5, color:'var(--app-fg-4)', marginBottom:6, letterSpacing:'.08em', textTransform:'uppercase' }}>Nom public</div>
+                <input value={name} onChange={function(e){ setName(e.target.value); }}
+                  onBlur={function(){ if (name.trim() && clientId) handleSave(); }}
+                  placeholder="Raplume, Footmercato, Le Monde..."
+                  style={{ width:'100%', boxSizing:'border-box',
+                    background:'transparent', border:'none',
+                    borderBottom:'1.5px solid var(--app-line-2)',
+                    padding:'4px 0 10px', color:'var(--app-fg)',
+                    fontFamily:'DM Sans,sans-serif', fontSize:22, fontWeight:600,
+                    outline:'none', letterSpacing:'-0.01em' }}/>
               </div>
-            )}
+              <div>
+                <div style={{ fontSize:10.5, color:'var(--app-fg-4)', marginBottom:6, letterSpacing:'.08em', textTransform:'uppercase' }}>Auto-remplir depuis Instagram</div>
+                <div style={{ display:'flex', gap:6 }}>
+                  <input value={igInput} onChange={function(e){ setIgInput(e.target.value); }}
+                    onKeyDown={function(e){ if (e.key === 'Enter') analyzeInstagram(); }}
+                    placeholder="@compte ou URL Instagram"
+                    style={{ flex:1, background:'var(--app-surface-3)', border:'1px solid var(--app-line)',
+                      borderRadius:8, padding:'7px 10px', color:'var(--app-fg)',
+                      fontFamily:'DM Sans,sans-serif', fontSize:12.5, outline:'none' }}/>
+                  <button onClick={analyzeInstagram} disabled={igAnalyzing || !igInput.trim()}
+                    style={{ all:'unset', cursor: igInput.trim() && !igAnalyzing ? 'pointer' : 'default',
+                      padding:'7px 13px', borderRadius:8, fontSize:12.5, fontWeight:600,
+                      background:'var(--app-accent)', color:'#fff', flexShrink:0,
+                      opacity: igInput.trim() && !igAnalyzing ? 1 : 0.45,
+                      display:'flex', alignItems:'center', gap:5 }}>
+                    {igAnalyzing
+                      ? <span style={{width:11,height:11,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'vb-spin .7s linear infinite',display:'inline-block'}}/>
+                      : <AppIcon name="sparkle" size={12}/>
+                    }
+                    {igAnalyzing ? 'Analyse...' : 'Analyser'}
+                  </button>
+                </div>
+                {igErr && <div style={{ marginTop:6, fontSize:11.5, color:'#ef4444' }}>{igErr}</div>}
+              </div>
+            </div>
             {igResult && igResult.suggestions && (
-              <div style={{ marginTop:12, padding:'12px 14px', background:'var(--app-surface-2)',
-                borderRadius:'var(--radius)', border:'1px solid var(--app-line-3)' }}>
-                <div style={{ display:'flex', alignItems:'flex-start', gap:10, marginBottom:10 }}>
+              <div style={{ marginTop:14, padding:'12px 14px', background:'rgba(99,102,241,.06)', borderRadius:10, border:'1px solid rgba(99,102,241,.18)' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
                   {igResult.avatarUrl && (
-                    <img src={igResult.avatarUrl} style={{ width:36, height:36, borderRadius:'50%',
-                      objectFit:'cover', flexShrink:0 }} onError={function(e){ e.target.style.display='none'; }}/>
+                    <img src={igResult.avatarUrl} style={{ width:28, height:28, borderRadius:'50%', objectFit:'cover', flexShrink:0 }} onError={function(e){ e.target.style.display='none'; }}/>
                   )}
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:'var(--app-fg)' }}>{igResult.name}</div>
-                    {igResult.bio && (
-                      <div style={{ fontSize:11.5, color:'var(--app-fg-4)', lineHeight:1.4,
-                        marginTop:2, overflow:'hidden', display:'-webkit-box',
-                        WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
-                        {igResult.bio}
-                      </div>
-                    )}
+                    <div style={{ fontSize:12.5, fontWeight:600, color:'var(--app-fg)' }}>{igResult.name}</div>
+                    {igResult.bio && <div style={{ fontSize:11, color:'var(--app-fg-4)', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{igResult.bio}</div>}
+                  </div>
+                  <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                    <button onClick={applyIgSuggestions} style={{ all:'unset', cursor:'pointer', padding:'5px 12px', borderRadius:6, background:'var(--app-accent)', color:'#fff', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:5 }}>
+                      <AppIcon name="check" size={12}/>Appliquer
+                    </button>
+                    <button onClick={function(){ setIgResult(null); }} style={{ all:'unset', cursor:'pointer', padding:'5px 10px', borderRadius:6, border:'1px solid var(--app-line)', color:'var(--app-fg-4)', fontSize:12 }}>Ignorer</button>
                   </div>
                 </div>
-                <div style={{ fontSize:11.5, color:'var(--app-fg-4)', marginBottom:10, lineHeight:1.6 }}>
-                  <strong style={{ color:'var(--app-fg-3)' }}>Mood</strong> {igResult.suggestions.mood}
-                  {' · '}
-                  <strong style={{ color:'var(--app-fg-3)' }}>Pack</strong> {igResult.suggestions.graphic_style}
-                  {' · '}
-                  <strong style={{ color:'var(--app-fg-3)' }}>Ton</strong> {(igResult.suggestions.tone_tags || []).join(', ')}
-                  <br/>
-                  <strong style={{ color:'var(--app-fg-3)' }}>Sujets</strong> {(igResult.suggestions.topics || []).join(' · ')}
-                  {igResult.suggestions.rationale && (
-                    React.createElement(React.Fragment, null,
-                      React.createElement('br'),
-                      React.createElement('em', null, igResult.suggestions.rationale)
-                    )
-                  )}
-                </div>
-                <div style={{ display:'flex', gap:8 }}>
-                  <button onClick={applyIgSuggestions}
-                    style={{ all:'unset', cursor:'pointer', padding:'7px 14px', borderRadius:6,
-                      background:'var(--app-accent)', color:'#fff', fontSize:12, fontWeight:600,
-                      display:'flex', alignItems:'center', gap:6 }}>
-                    <AppIcon name="check" size={12}/>
-                    Appliquer les suggestions
-                  </button>
-                  <button onClick={function(){ setIgResult(null); }}
-                    style={{ all:'unset', cursor:'pointer', padding:'7px 12px', borderRadius:6,
-                      border:'1px solid var(--app-line)', color:'var(--app-fg-4)', fontSize:12 }}>
-                    Ignorer
-                  </button>
+                <div style={{ fontSize:11, color:'var(--app-fg-4)', lineHeight:1.6 }}>
+                  Mood: <strong style={{ color:'var(--app-fg-3)' }}>{igResult.suggestions.mood}</strong>
+                  {' · '}Pack: <strong style={{ color:'var(--app-fg-3)' }}>{igResult.suggestions.graphic_style}</strong>
+                  {' · '}Ton: <strong style={{ color:'var(--app-fg-3)' }}>{(igResult.suggestions.tone_tags||[]).join(', ')}</strong>
+                  {igResult.suggestions.rationale && (<><br/><em style={{ opacity:.7 }}>{igResult.suggestions.rationale}</em></>)}
                 </div>
               </div>
             )}
           </div>
 
-          {/* Barre de progression */}
-          <div style={{ marginBottom:28, padding:'14px 18px', background:'var(--app-surface-2)',
-            borderRadius:'var(--radius)', border:'1px solid var(--app-line)' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:8 }}>
-              <span style={{ fontSize:13, fontWeight:600, color:'var(--app-fg)' }}>
-                {completedCount} / 7 champs completes
-              </span>
-              <span style={{ fontSize:12, color: canSave ? '#22c55e' : 'var(--app-fg-4)' }}>
-                {completedCount === 7 ? 'Profil complet' : (7 - completedCount) + ' a completer'}
-              </span>
-            </div>
-            <div style={{ height:4, background:'var(--app-line)', borderRadius:2 }}>
-              <div style={{ height:'100%', width:(completedCount / 7 * 100) + '%',
-                background:'var(--app-accent)', borderRadius:2, transition:'width .3s ease' }}/>
-            </div>
-          </div>
-
-          {/* 01 Nom */}
-          <BrandSect num="01" title="Nom du media"
-            desc="Utilise dans les logs, emails et dashboard. Le nom public de ton compte."
-            tip="Ex : Footmercato, Raplume, Le Monde...">
-            <input value={name} onChange={function(e){ setName(e.target.value); }}
-              onBlur={function(){ if (name.trim() && clientId) handleSave(); }}
-              placeholder="Raplume, Footmercato, Le Monde..."
-              style={inputStyle}/>
-          </BrandSect>
-
-          {/* 02 Logo */}
-          <BrandSect num="02" title="Logo"
-            desc="Place en haut a droite de chaque post genere. Redimensionne a 48px de hauteur automatiquement."
-            tip="Utilise la version blanche ou claire sur fond transparent.">
+          {/* TILE 2 — Logo */}
+          <div className="bento-tile" style={{ display:'flex', flexDirection:'column', minHeight:200 }}>
+            <div className="bento-tile-lbl"><AppIcon name="image" size={11}/>Logo</div>
             {logoUrl ? (
-              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px',
-                background:'var(--app-surface-3)', borderRadius:'var(--radius)',
-                border:'1px solid var(--app-line-3)' }}>
-                <div style={{ width:52, height:52, borderRadius:8, background:'#14141e',
-                  display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', flexShrink:0 }}>
-                  <img src={logoUrl} style={{ maxWidth:46, maxHeight:40, objectFit:'contain' }}/>
+              <div style={{ flex:1, display:'flex', flexDirection:'column', gap:8 }}>
+                <div style={{ flex:1, background:'#0a0a15', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', padding:16, minHeight:100, border:'1px solid rgba(255,255,255,.06)' }}>
+                  <img src={logoUrl} style={{ maxWidth:'100%', maxHeight:80, objectFit:'contain' }}/>
                 </div>
-                <div style={{ flex:1, fontSize:12, color:'var(--app-fg-3)' }}>Logo uploade avec succes</div>
-                <button onClick={function(){ setLogoUrl(''); }}
-                  style={{ all:'unset', cursor:'pointer', fontSize:12, color:'#ef4444',
-                    padding:'4px 10px', borderRadius:6, border:'1px solid #ef4444' }}>
-                  Supprimer
-                </button>
+                <div style={{ display:'flex', gap:6 }}>
+                  {brandKitUrl && (
+                    <button onClick={handleRelogo} disabled={relogoing} style={{ all:'unset', cursor: relogoing ? 'default' : 'pointer', flex:1, padding:'6px 8px', borderRadius:7, border:'1px solid var(--app-line)', color:'var(--app-accent)', fontSize:11, textAlign:'center', opacity: relogoing ? 0.6 : 1 }}>
+                      {relogoing ? '↻ ...' : '↻ Brand kit'}
+                    </button>
+                  )}
+                  <button onClick={function(){ setLogoUrl(''); }} style={{ all:'unset', cursor:'pointer', flex:1, padding:'6px 8px', borderRadius:7, border:'1px solid rgba(239,68,68,.35)', color:'#ef4444', fontSize:11, textAlign:'center' }}>Supprimer</button>
+                </div>
               </div>
             ) : (
-              <div onClick={function(){
-                  var inp = document.createElement('input');
-                  inp.type = 'file'; inp.accept = 'image/png';
-                  inp.onchange = function(e){ handleLogoUpload(e.target.files[0]); };
-                  inp.click();
-                }}
-                style={{ border:'2px dashed var(--app-line)', borderRadius:8, padding:'22px 16px',
-                  textAlign:'center', cursor:'pointer', transition:'border-color .15s, background .15s',
-                  background: logoUploading ? 'var(--app-surface-2)' : 'transparent' }}>
-                {logoUploading ? (
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-                    fontSize:13, color:'var(--app-fg-4)' }}>
-                    <div style={{ width:14, height:14, border:'2px solid var(--app-line)',
-                      borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/>
-                    Upload en cours...
-                  </div>
-                ) : (
-                  <div style={{ fontSize:13, color:'var(--app-fg-4)', lineHeight:1.8 }}>
-                    Clique pour uploader ton logo<br/>
-                    <span style={{ fontSize:11, opacity:.65 }}>PNG uniquement — fond transparent</span>
-                  </div>
-                )}
+              <div onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/png'; inp.onchange=function(e){ handleLogoUpload(e.target.files[0]); }; inp.click(); }}
+                style={{ flex:1, border:'1.5px dashed var(--app-line)', borderRadius:10, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, cursor:'pointer', padding:16, background: logoUploading ? 'var(--app-surface-3)' : 'transparent', minHeight:120 }}>
+                {logoUploading
+                  ? <div style={{width:18,height:18,border:'2px solid var(--app-line)',borderTopColor:'var(--app-accent)',borderRadius:'50%',animation:'vb-spin .7s linear infinite'}}/>
+                  : <><div style={{width:36,height:36,borderRadius:9,background:'var(--app-surface-3)',display:'flex',alignItems:'center',justifyContent:'center'}}><AppIcon name="image" size={17}/></div><div style={{fontSize:12,color:'var(--app-fg-4)',lineHeight:1.6,textAlign:'center'}}>Glisse ou clique<br/><span style={{fontSize:10,opacity:.6}}>PNG transparent</span></div></>
+                }
               </div>
             )}
-          </BrandSect>
+          </div>
 
-          {/* 03 Référence visuelle */}
-          <BrandSect num="03" title="Référence visuelle de style"
-            desc="Une image dont l'IA s'inspirera pour l'esthétique de TOUS tes visuels générés. Style, ambiance, composition — pas les objets ni les couleurs forcément."
-            tip="Le prompt texte prime toujours. Cette ref influence uniquement l'atmosphère et le traitement visuel.">
+          {/* TILE 3 — Référence visuelle */}
+          <div className="bento-tile" style={{ display:'flex', flexDirection:'column', minHeight:200 }}>
+            <div className="bento-tile-lbl"><AppIcon name="layers" size={11}/>Style de reference</div>
             {styleRefUrl ? (
-              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px',
-                background:'var(--app-surface-3)', borderRadius:'var(--radius)',
-                border:'1px solid var(--app-line-3)' }}>
-                <img src={styleRefUrl} style={{ width:64, height:64, borderRadius:8,
-                  objectFit:'cover', flexShrink:0, border:'1px solid var(--app-line)' }}/>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:12, color:'var(--app-fg-3)', marginBottom:3 }}>Référence de style active</div>
-                  <div style={{ fontSize:11, color:'var(--app-fg-4)' }}>Influence toutes les générations de visuels</div>
+              <div style={{ flex:1, display:'flex', flexDirection:'column', gap:8 }}>
+                <div style={{ flex:1, position:'relative', borderRadius:10, overflow:'hidden', minHeight:100 }}>
+                  <img src={styleRefUrl} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block', minHeight:100 }}/>
+                  <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,.5) 0%, transparent 55%)' }}/>
+                  <div style={{ position:'absolute', bottom:8, left:10, fontSize:10, color:'rgba(255,255,255,.7)', fontWeight:500 }}>Ref active</div>
                 </div>
-                <button onClick={function(){
-                    var inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
-                    inp.onchange = function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click();
-                  }} style={{ all:'unset', cursor:'pointer', fontSize:12, color:'var(--app-accent)',
-                    padding:'4px 10px', borderRadius:6, border:'1px solid var(--app-accent)' }}>
-                  Changer
-                </button>
-                <button onClick={function(){ setStyleRefUrl(''); }}
-                  style={{ all:'unset', cursor:'pointer', fontSize:12, color:'#ef4444',
-                    padding:'4px 10px', borderRadius:6, border:'1px solid #ef4444' }}>
-                  Supprimer
-                </button>
+                <div style={{ display:'flex', gap:6 }}>
+                  <button onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click(); }} style={{ all:'unset', flex:1, cursor:'pointer', padding:'6px 8px', borderRadius:7, border:'1px solid var(--app-accent)', color:'var(--app-accent)', fontSize:11, textAlign:'center' }}>Changer</button>
+                  <button onClick={function(){ setStyleRefUrl(''); }} style={{ all:'unset', cursor:'pointer', padding:'6px 12px', borderRadius:7, border:'1px solid rgba(239,68,68,.35)', color:'#ef4444', fontSize:11 }}>×</button>
+                </div>
               </div>
             ) : (
-              <div onClick={function(){
-                  var inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
-                  inp.onchange = function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click();
-                }}
-                style={{ border:'2px dashed var(--app-line)', borderRadius:8, padding:'22px 16px',
-                  textAlign:'center', cursor:'pointer', transition:'border-color .15s, background .15s',
-                  background: styleRefUploading ? 'var(--app-surface-2)' : 'transparent' }}>
-                {styleRefUploading ? (
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-                    fontSize:13, color:'var(--app-fg-4)' }}>
-                    <div style={{ width:14, height:14, border:'2px solid var(--app-line)',
-                      borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/>
-                    Upload en cours...
-                  </div>
-                ) : (
-                  <div style={{ fontSize:13, color:'var(--app-fg-4)', lineHeight:1.8 }}>
-                    Clique pour ajouter une image de référence<br/>
-                    <span style={{ fontSize:11, opacity:.65 }}>JPG, PNG, WebP — style/ambiance uniquement</span>
-                  </div>
-                )}
+              <div onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click(); }}
+                style={{ flex:1, border:'1.5px dashed var(--app-line)', borderRadius:10, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, cursor:'pointer', padding:16, background: styleRefUploading ? 'var(--app-surface-3)' : 'transparent', minHeight:120 }}>
+                {styleRefUploading
+                  ? <div style={{width:18,height:18,border:'2px solid var(--app-line)',borderTopColor:'var(--app-accent)',borderRadius:'50%',animation:'vb-spin .7s linear infinite'}}/>
+                  : <><div style={{width:36,height:36,borderRadius:9,background:'var(--app-surface-3)',display:'flex',alignItems:'center',justifyContent:'center'}}><AppIcon name="layers" size={17}/></div><div style={{fontSize:12,color:'var(--app-fg-4)',lineHeight:1.6,textAlign:'center'}}>Ref visuelle IA<br/><span style={{fontSize:10,opacity:.6}}>JPG, PNG, WebP</span></div></>
+                }
               </div>
             )}
-          </BrandSect>
+          </div>
 
-          {/* 04 Palette */}
-          <BrandSect num="04" title="Palette de couleurs"
-            desc="Principale = badges, barres de progression, elements structurants. Accent = highlights et details."
-            tip="Ces couleurs structurent visuellement tous tes posts.">
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
+          {/* TILE 4 — Palette */}
+          <div className="bento-tile" style={{ display:'flex', flexDirection:'column' }}>
+            <div className="bento-tile-lbl"><AppIcon name="palette" size={11}/>Palette</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:10, flex:1 }}>
               {[
                 ['Principale', primaryColor, function(e){ setPrimaryColor(e.target.value); }],
                 ['Accent',     accentColor,  function(e){ setAccentColor(e.target.value); }],
               ].map(function(cfg) {
                 return (
-                  <div key={cfg[0]}>
-                    <div style={{ fontSize:11, color:'var(--app-fg-4)', marginBottom:6,
-                      textTransform:'uppercase', letterSpacing:.8 }}>{cfg[0]}</div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px',
-                      background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
-                      borderRadius:'var(--radius)' }}>
-                      <input type="color" value={cfg[1]} onChange={cfg[2]}
-                        style={{ width:28, height:28, borderRadius:4, border:'none', padding:0, cursor:'pointer', background:'none' }}/>
-                      <span style={{ fontSize:12, color:'var(--app-fg-3)', fontFamily:'JetBrains Mono,monospace' }}>{cfg[1]}</span>
+                  <label key={cfg[0]} style={{ display:'block', cursor:'pointer', position:'relative' }}>
+                    <div style={{ fontSize:10, color:'var(--app-fg-4)', marginBottom:5, textTransform:'uppercase', letterSpacing:'.08em' }}>{cfg[0]}</div>
+                    <div className="bento-color-block" style={{ background:cfg[1], boxShadow:'0 2px 10px ' + cfg[1] + '44' }}/>
+                    <input type="color" value={cfg[1]} onChange={cfg[2]} style={{ position:'absolute', opacity:0, width:1, height:1, top:0, left:0, pointerEvents:'none' }}/>
+                    <div style={{ fontSize:11.5, color:'var(--app-fg-3)', fontFamily:'JetBrains Mono,monospace', display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:-2 }}>
+                      <span>{cfg[1]}</span><AppIcon name="edit" size={11}/>
                     </div>
+                  </label>
+                );
+              })}
+              <div style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 10px', background:'var(--app-surface-3)', borderRadius:8, marginTop:'auto' }}>
+                {badgeVisible && <div style={{ padding:'3px 8px', borderRadius:3, background:primaryColor, fontSize:9, fontWeight:700, color:'#fff', letterSpacing:1.2, textTransform:'uppercase', flexShrink:0 }}>SPORT</div>}
+                {barVisible && <div style={{ width:24, height:2.5, borderRadius:2, background:accentColor, flexShrink:0 }}/>}
+                {!badgeVisible && !barVisible && <span style={{ fontSize:10, color:'var(--app-fg-4)', fontStyle:'italic', flex:1 }}>Aucun element</span>}
+                <div style={{ marginLeft:'auto', display:'flex', gap:10 }}>
+                  {[['Badge', badgeVisible, setBadgeVisible],['Barre', barVisible, setBarVisible]].map(function(t) {
+                    return (<label key={t[0]} style={{ display:'flex', alignItems:'center', gap:4, cursor:'pointer', fontSize:11, color:'var(--app-fg-4)', userSelect:'none' }}><input type="checkbox" checked={t[1]} onChange={function(e){ t[2](e.target.checked); }} style={{ accentColor:'var(--app-accent)', cursor:'pointer' }}/>{t[0]}</label>);
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* TILE 5 — Pack typographique (wide 2-col) */}
+          <div className="bento-tile bento-tile--wide">
+            <div className="bento-tile-lbl"><AppIcon name="grid" size={11}/>Pack typographique</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:8, marginBottom:12 }}>
+              <CustomPackCard active={graphicStyle === 'custom'} fontPrimary={fontPrimary} fontBody={fontSecondary || 'DM Sans'} primaryColor={primaryColor} accentColor={accentColor} onSelect={function(){ setGraphicStyle('custom'); }}/>
+              {FONT_PACKS.map(function(p) {
+                return (<PackMiniCard key={p.id} pack={p} active={graphicStyle === p.id} onSelect={function(){ setGraphicStyle(p.id); setFontPrimary(PACK_FONTS[p.id] || fontPrimary); }}/>);
+              })}
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, paddingTop:12, borderTop:'1px solid var(--app-line)' }}>
+              {[
+                ['Titre / Display', fontPrimary, setFontPrimary, 'Bebas Neue, Playfair Display...'],
+                ['Corps / Body',    fontSecondary, setFontSecondary, 'DM Sans, Lato...'],
+              ].map(function(cfg) {
+                return (
+                  <div key={cfg[0]}>
+                    <div style={{ fontSize:10, color:'var(--app-fg-4)', marginBottom:5, textTransform:'uppercase', letterSpacing:'.08em' }}>{cfg[0]}</div>
+                    <input value={cfg[1]} onChange={function(e){ cfg[2](e.target.value); }}
+                      onBlur={function(){ loadCustomFont(cfg[1]); }}
+                      onKeyDown={function(e){ if (e.key === 'Enter') loadCustomFont(cfg[1]); }}
+                      placeholder={cfg[3]}
+                      style={{ width:'100%', boxSizing:'border-box', background:'var(--app-surface-3)', border:'1px solid var(--app-line)', borderRadius:7, padding:'7px 10px', color:'var(--app-fg)', fontFamily:'DM Sans,sans-serif', fontSize:12.5, outline:'none' }}/>
+                    {cfg[1] && (
+                      <div style={{ marginTop:5, fontSize: cfg[0].startsWith('Titre') ? 17 : 12, fontFamily: cfg[1] + ',sans-serif', color:'var(--app-fg-3)', padding:'5px 8px', background:'var(--app-surface-3)', borderRadius:6, lineHeight:1.4 }}>
+                        {cfg[0].startsWith('Titre') ? 'TITRE EXEMPLE' : 'Corps de texte'}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px',
-              background:'var(--app-surface-2)', borderRadius:'var(--radius)', border:'1px solid var(--app-line)' }}>
-              <div style={{ padding:'4px 12px', borderRadius:3, background:primaryColor,
-                fontSize:11, fontWeight:700, color:'#fff', letterSpacing:1.5,
-                textTransform:'uppercase', fontFamily:'DM Sans,sans-serif', flexShrink:0 }}>SPORT</div>
-              <div style={{ width:40, height:3, borderRadius:2, background:accentColor, flexShrink:0 }}/>
-              <span style={{ fontSize:12, color:'var(--app-fg-4)', fontStyle:'italic' }}>Apercu badge + barre</span>
-            </div>
-          </BrandSect>
+          </div>
 
-          {/* 04 Pack typographique */}
-          <BrandSect num="05" title="Pack typographique"
-            desc="Typo + style graphique de tous tes posts. Chaque pack est cale sur les medias qui performent le plus sur Instagram en 2026."
-            tip="L'analyse Instagram peut suggerer le bon pack automatiquement.">
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8, marginBottom:10 }}>
-              {FONT_PACKS.map(function(p) {
-                return <PackMiniCard key={p.id} pack={p} active={graphicStyle === p.id}
-                  onSelect={function(){ setGraphicStyle(p.id); }}/>;
-              })}
-            </div>
-            {graphicStyle && (
-              <div style={{ padding:'10px 14px', background:'var(--app-surface-2)',
-                border:'1px solid var(--app-line)', borderRadius:'var(--radius)',
-                display:'flex', alignItems:'center', gap:12 }}>
-                <div style={{ fontSize:12, color:'var(--app-fg-3)' }}>
-                  Police display : <strong style={{ color:'var(--app-fg)',
-                    fontFamily: PACK_FONTS[graphicStyle] + ',sans-serif' }}>
-                    {PACK_FONTS[graphicStyle]}
-                  </strong>
-                </div>
-                <div style={{ fontSize:11, color:'var(--app-fg-4)', marginLeft:'auto' }}>
-                  {FONT_PACKS.find(function(p){ return p.id === graphicStyle; })?.usage}
-                </div>
-              </div>
-            )}
-          </BrandSect>
-
-          {/* 05 Mood */}
-          <BrandSect num="06" title="Mood editorial"
-            desc="L'ambiance visuelle globale. Gemini l'utilise pour definir lumiere, contraste et traitement de chaque visuel."
-            tip="Ce mood est l'ame visuelle de chaque image generee.">
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+          {/* TILE 6 — Mood éditorial */}
+          <div className="bento-tile">
+            <div className="bento-tile-lbl"><AppIcon name="bolt" size={11}/>Mood editorial</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
               {BRAND_MOODS.map(function(m) {
                 var active = mood === m.id;
                 return (
                   <div key={m.id} onClick={function(){ setMood(m.id); }}
-                    style={{ padding:'12px 14px', borderRadius:'var(--radius)',
-                      border:'2px solid ' + (active ? 'var(--app-accent)' : 'var(--app-line)'),
-                      background: active ? 'rgba(99,102,241,.06)' : 'var(--app-surface-2)',
-                      cursor:'pointer', transition:'all .15s' }}>
-                    <div style={{ fontWeight:600, fontSize:13,
-                      color: active ? 'var(--app-accent)' : 'var(--app-fg)', marginBottom:3 }}>
-                      {m.label}
-                    </div>
-                    <div style={{ fontSize:11.5, color:'var(--app-fg-4)', lineHeight:1.45 }}>{m.desc}</div>
+                    style={{ padding:'9px 12px', borderRadius:9, border:'1.5px solid ' + (active ? 'var(--app-accent)' : 'var(--app-line)'), background: active ? 'rgba(99,102,241,.07)' : 'var(--app-surface-3)', cursor:'pointer', transition:'all .15s', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                    <span style={{ fontWeight: active ? 600 : 400, fontSize:13, color: active ? 'var(--app-accent)' : 'var(--app-fg-2)' }}>{m.label}</span>
+                    {active && <div style={{ width:6, height:6, borderRadius:'50%', background:'var(--app-accent)', flexShrink:0 }}/>}
                   </div>
                 );
               })}
             </div>
-          </BrandSect>
+          </div>
 
-          {/* 06 Ton */}
-          <BrandSect num="07" title="Ton editorial"
-            desc="3 mots max. Calibrent le ton des titres generes et briefent Gemini sur l'ambiance."
-            tip="Selectionne jusqu'a 3 mots. Ils definissent comment ton media parle.">
-            <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginBottom:8 }}>
+          {/* TILE 7 — Ton éditorial (wide 2-col) */}
+          <div className="bento-tile bento-tile--wide">
+            <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="quote" size={11}/>Ton editorial</span>
+              <span style={{ fontSize:11, color: toneTags.length >= 3 ? 'var(--app-accent)' : 'var(--app-fg-4)', letterSpacing:'.05em', textTransform:'lowercase', fontWeight:500 }}>{toneTags.length}/3 selectionnes</span>
+            </div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
               {BRAND_TONES.map(function(t) {
                 var active = toneTags.includes(t);
-                var maxed  = toneTags.length >= 3 && !active;
+                var maxed = toneTags.length >= 3 && !active;
                 return (
                   <button key={t} onClick={function(){ if (!maxed) toggleTone(t); }}
-                    style={{ all:'unset', cursor: maxed ? 'not-allowed' : 'pointer',
-                      padding:'5px 12px', borderRadius:20, fontSize:12.5, fontWeight:500,
-                      border:'1.5px solid ' + (active ? 'var(--app-accent)' : 'var(--app-line)'),
-                      color: active ? 'var(--app-accent)' : maxed ? 'var(--app-fg-4)' : 'var(--app-fg-2)',
-                      background: active ? 'rgba(99,102,241,.08)' : 'var(--app-surface-2)',
-                      transition:'all .15s', opacity: maxed ? 0.4 : 1 }}>
+                    style={{ all:'unset', cursor: maxed ? 'not-allowed' : 'pointer', padding:'5px 13px', borderRadius:20, fontSize:12.5, fontWeight: active ? 600 : 400, border:'1.5px solid ' + (active ? 'var(--app-accent)' : 'var(--app-line)'), color: active ? 'var(--app-accent)' : maxed ? 'var(--app-fg-4)' : 'var(--app-fg-2)', background: active ? 'rgba(99,102,241,.08)' : 'var(--app-surface-3)', transition:'all .15s', opacity: maxed ? 0.35 : 1 }}>
                     {t}
                   </button>
                 );
               })}
             </div>
-            {toneTags.length > 0 && (
-              <div style={{ fontSize:12, color:'var(--app-fg-4)' }}>
-                Selectionne : {toneTags.join(' · ')} ({toneTags.length}/3)
-              </div>
-            )}
-          </BrandSect>
+          </div>
 
-          {/* 07 Sujets */}
-          <BrandSect num="08" title="Sujets couverts"
-            desc="L'agent de veille score chaque actu selon ces topics. Les actus 85+ declenchent une alerte Actu Chaude."
-            tip="Minimum 3 sujets requis. Maximum 10 recommandes. Tape un sujet puis Entree.">
-            <BrandTagInput tags={topics} setTags={setTopics}
-              placeholder="Football, PSG, Transferts... (Entree pour valider)"
-              max={10}/>
-            <div style={{ marginTop:6, fontSize:11.5,
-              color: topics.length >= 3 ? '#22c55e' : 'var(--app-fg-4)' }}>
-              {topics.length}/10 sujets{topics.length < 3 ? ' — minimum 3 requis' : ''}
+          {/* TILE 8 — Sujets couverts */}
+          <div className="bento-tile">
+            <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="target" size={11}/>Sujets couverts</span>
+              <span style={{ fontSize:11, color: topics.length >= 3 ? '#22c55e' : 'var(--app-fg-4)', letterSpacing:'.05em', textTransform:'lowercase', fontWeight:500 }}>{topics.length}/10{topics.length < 3 ? ' — min 3' : ''}</span>
             </div>
-          </BrandSect>
+            <BrandTagInput tags={topics} setTags={setTopics} placeholder="Football, PSG, Transferts..." max={10}/>
+          </div>
 
-          {/* Options avancees */}
-          <div style={{ marginBottom:28 }}>
+          {/* TILE 9 — Options avancées (full width) */}
+          <div className="bento-tile bento-tile--full">
             <button onClick={function(){ setAdvancedOpen(!advancedOpen); }}
-              style={{ all:'unset', cursor:'pointer', display:'flex', alignItems:'center', gap:8,
-                fontSize:13, fontWeight:500, color:'var(--app-fg-3)',
-                marginBottom: advancedOpen ? 20 : 0 }}>
-              <AppIcon name={advancedOpen ? 'chevDown' : 'chevRight'} size={14}/>
-              Options avancees
+              style={{ all:'unset', cursor:'pointer', display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:500, color:'var(--app-fg-3)', marginBottom: advancedOpen ? 16 : 0, width:'100%' }}>
+              <AppIcon name={advancedOpen ? 'chevDown' : 'chevRight'} size={14}/>Options avancees
             </button>
             {advancedOpen && (
-              <div>
-                <BrandSect num="+" title="Compte Instagram"
-                  desc="Future integration Meta API. Affiche dans le dashboard.">
-                  <input value={instaHandle} onChange={function(e){ setInstaHandle(e.target.value); }}
-                    placeholder="@votre_compte" style={inputStyle}/>
-                </BrandSect>
-                <BrandSect num="+" title="Hashtags habituels"
-                  desc="Ajoutes automatiquement dans la caption suggeree.">
-                  <BrandTagInput tags={hashtags} setTags={setHashtags}
-                    placeholder="#football, #psg... (Entree pour ajouter)"/>
-                </BrandSect>
-                <BrandSect num="+" title="Format prefere"
-                  desc="Format par defaut lors de la generation. Portrait 4:5 = le plus performant sur Instagram.">
-                  <div style={{ display:'flex', gap:10 }}>
-                    {[['4:5','Portrait 4:5'],['1:1','Carre 1:1'],['9:16','Story 9:16']].map(function(opt) {
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16, paddingTop:4 }}>
+                <div>
+                  <div style={{ fontSize:10.5, color:'var(--app-fg-4)', marginBottom:6, textTransform:'uppercase', letterSpacing:'.08em' }}>Compte Instagram</div>
+                  <input value={instaHandle} onChange={function(e){ setInstaHandle(e.target.value); }} placeholder="@votre_compte" style={{ width:'100%', boxSizing:'border-box', background:'var(--app-surface-3)', border:'1px solid var(--app-line)', borderRadius:7, padding:'8px 10px', color:'var(--app-fg)', fontFamily:'DM Sans,sans-serif', fontSize:13, outline:'none' }}/>
+                </div>
+                <div>
+                  <div style={{ fontSize:10.5, color:'var(--app-fg-4)', marginBottom:6, textTransform:'uppercase', letterSpacing:'.08em' }}>Hashtags habituels</div>
+                  <BrandTagInput tags={hashtags} setTags={setHashtags} placeholder="#football..."/>
+                </div>
+                <div>
+                  <div style={{ fontSize:10.5, color:'var(--app-fg-4)', marginBottom:6, textTransform:'uppercase', letterSpacing:'.08em' }}>Format prefere</div>
+                  <div style={{ display:'flex', gap:6 }}>
+                    {[['4:5','Portrait'],['1:1','Carré'],['9:16','Story']].map(function(opt) {
                       var active = preferredFormat === opt[0];
                       return (
                         <button key={opt[0]} onClick={function(){ setPreferredFormat(opt[0]); }}
-                          style={{ all:'unset', cursor:'pointer', padding:'8px 16px',
-                            border:'2px solid ' + (active ? 'var(--app-accent)' : 'var(--app-line)'),
-                            borderRadius:'var(--radius)', fontSize:13,
-                            fontWeight: active ? 600 : 400,
-                            color: active ? 'var(--app-accent)' : 'var(--app-fg-2)',
-                            background: active ? 'rgba(99,102,241,.06)' : 'var(--app-surface-2)',
-                            transition:'all .15s' }}>
-                          {opt[1]}
+                          style={{ all:'unset', flex:1, cursor:'pointer', padding:'7px 6px', textAlign:'center', border:'1.5px solid ' + (active ? 'var(--app-accent)' : 'var(--app-line)'), borderRadius:7, fontSize:11, fontWeight: active ? 600 : 400, color: active ? 'var(--app-accent)' : 'var(--app-fg-2)', background: active ? 'rgba(99,102,241,.06)' : 'var(--app-surface-3)', transition:'all .15s', lineHeight:1.5 }}>
+                          {opt[1]}<br/><span style={{ opacity:.6, fontSize:10 }}>{opt[0]}</span>
                         </button>
                       );
                     })}
                   </div>
-                </BrandSect>
+                </div>
               </div>
             )}
           </div>
 
-          {saveErr && (
-            <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:8, fontSize:12,
-              background:'rgba(239,68,68,.06)', border:'1px solid rgba(239,68,68,.2)', color:'#ef4444' }}>
-              {saveErr}
-            </div>
-          )}
-          {saveMsg && (
-            <div style={{ marginBottom:14, padding:'12px 16px', borderRadius:8, fontSize:13, lineHeight:1.5,
-              background:'rgba(34,197,94,.07)', border:'1px solid rgba(34,197,94,.2)', color:'#16a34a' }}>
-              {saveMsg}
-            </div>
-          )}
-
-          <div style={{ height:8 }}/>
         </div>
 
-        {/* Colonne droite : apercu live */}
-        <div style={{ position:'sticky', top:80, display:'flex', flexDirection:'column',
-          alignItems:'center', gap:12 }}>
-          <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2,
-            color:'var(--app-fg-4)', alignSelf:'flex-start' }}>
-            Apercu live
-          </div>
-          <BrandPostPreview
-            name={name}
-            primaryColor={primaryColor}
-            accentColor={accentColor}
-            fontPrimary={fontPrimary}
-            mood={mood}
-            logoUrl={logoUrl}
-            graphicStyle={graphicStyle}
-          />
-          <div style={{ fontSize:11, color:'var(--app-fg-4)', textAlign:'center', lineHeight:1.5 }}>
-            Mise a jour en temps reel<br/>
-            <span style={{ opacity:.6 }}>a chaque changement</span>
-          </div>
+        {/* ── Live Preview (sticky right col) ── */}
+        <div style={{ position:'sticky', top:80, display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
+          <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2, color:'var(--app-fg-4)', alignSelf:'flex-start' }}>Apercu live</div>
+          <BrandPostPreview name={name} primaryColor={primaryColor} accentColor={accentColor} fontPrimary={fontPrimary} fontSecondary={fontSecondary} mood={mood} logoUrl={logoUrl} graphicStyle={graphicStyle} badgeVisible={badgeVisible} barVisible={barVisible}/>
+          <div style={{ fontSize:11, color:'var(--app-fg-4)', textAlign:'center', lineHeight:1.5 }}>Mise a jour en temps reel<br/><span style={{ opacity:.6 }}>a chaque changement</span></div>
         </div>
 
       </div>
+
+      {saveErr && (
+        <div style={{ marginTop:14, padding:'10px 14px', borderRadius:8, fontSize:12, background:'rgba(239,68,68,.06)', border:'1px solid rgba(239,68,68,.2)', color:'#ef4444' }}>{saveErr}</div>
+      )}
+      {saveMsg && (
+        <div style={{ marginTop:14, padding:'12px 16px', borderRadius:8, fontSize:13, lineHeight:1.5, background:'rgba(34,197,94,.07)', border:'1px solid rgba(34,197,94,.2)', color:'#16a34a' }}>{saveMsg}</div>
+      )}
+
     </div>
   );
 };
