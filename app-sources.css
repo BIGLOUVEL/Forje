@@ -560,6 +560,118 @@
 }
 .action-cta { display: flex; gap: 8px; }
 
+/* ═══ RECAP PANEL ════════════════════════════════════════════════════ */
+.recap-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-line);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 320px;
+  position: sticky;
+  top: 16px;
+}
+
+.recap-score-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.recap-source {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--app-fg-4);
+  text-transform: uppercase;
+}
+.recap-when {
+  font-size: 11px;
+  color: var(--app-fg-4);
+  flex: 1;
+}
+.recap-score {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.recap-titre {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--app-fg);
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.recap-body {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--app-fg-2);
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
+  border-top: 1px solid var(--app-line);
+  border-bottom: 1px solid var(--app-line);
+  padding: 10px 0;
+}
+.recap-body::-webkit-scrollbar { width: 3px; }
+.recap-body::-webkit-scrollbar-thumb { background: var(--app-line-2, var(--app-line)); border-radius: 2px; }
+
+.recap-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+}
+.recap-analysis-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--app-fg-2);
+  line-height: 1.45;
+}
+.recap-analysis-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-fg-4);
+  min-width: 56px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.recap-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -4px;
+}
+.recap-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--app-fg-4);
+  background: var(--app-bg);
+  border: 1px solid var(--app-line);
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+.recap-meta-link {
+  text-decoration: none;
+  transition: color 120ms, border-color 120ms;
+}
+.recap-meta-link:hover { color: var(--app-fg-2); border-color: var(--app-fg-4); }
+/* ══════════════════════════════════════════════════════════════════════ */
+
 .action-panel--weak {
   background: var(--app-surface);
   border: 1px dashed var(--app-line-2);

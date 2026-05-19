@@ -38,6 +38,7 @@ const CLIENTS = [
   {
     logo: <><span style={{width:12,height:12,background:'#fff',display:'inline-block',transform:'rotate(45deg)',marginRight:8}} /> RAPLUME</>,
     name: 'Raplume',
+    accent: 'rgba(80,60,200,0.14)',
     desc: 'Média football & culture · 2.4M followers',
     stats: [['+34%','engagement'], ['4.2min','setup/post'], ['92','score viral moy.']],
     posts: [
@@ -49,6 +50,7 @@ const CLIENTS = [
   {
     logo: <><span style={{width:10,height:10,background:'#fff',borderRadius:'50%',display:'inline-block',marginRight:10}} /><span style={{fontStyle:'italic'}}>footmercato</span></>,
     name: 'Footmercato',
+    accent: 'rgba(20,80,200,0.14)',
     desc: 'Transferts & marché · 3.1M followers',
     stats: [['90s','post → publication'], ['+52%','reach vs. 2025'], ['84','score viral moy.']],
     posts: [
@@ -60,12 +62,26 @@ const CLIENTS = [
   {
     logo: <span style={{letterSpacing:'-0.06em',fontSize:44}}>SO/FOOT</span>,
     name: 'So Foot',
+    accent: 'rgba(80,80,80,0.18)',
     desc: 'Magazine football premium · 1.1M followers',
     stats: [['6 formats','génération native'], ['+41%','saves/post'], ['88','score viral moy.']],
     posts: [
       { bg: 'linear-gradient(160deg,#1a1a22,#444450)', hd: 'SO FOOT', title: 'Portrait : le dernier romantique du foot', meta: ['COULISSES', '420K'] },
       { bg: 'linear-gradient(160deg,#221a1a,#6b4040)', hd: 'SO FOOT', title: '« Le ballon doit rester un jeu »', meta: ['CITATION', '712K'] },
       { bg: 'linear-gradient(160deg,#1a2228,#407080)', hd: 'SO FOOT', title: 'Top 10 des buts de la décennie', meta: ['CAROUSEL · 10p', '890K'] },
+    ],
+  },
+  {
+    logo: <><span style={{display:'inline-block',width:13,height:13,border:'1.5px solid #C8943A',marginRight:9,flexShrink:0,verticalAlign:'middle'}} /><span style={{letterSpacing:'0.16em',fontWeight:700}}>FRAME</span></>,
+    name: 'FRAME',
+    accent: 'rgba(200,148,58,0.15)',
+    line: 'rgba(200,148,58,0.65)',
+    desc: 'Média culture visuelle & cinéma · 180K followers',
+    stats: [['+48%','engagement'], ['2.6min','setup/post'], ['94','score viral moy.']],
+    posts: [
+      { bg: 'linear-gradient(160deg,#0d0b09,#3a2408)', hd: 'FRAME', title: 'Le plan séquence qui a tout changé', meta: ['CINÉMA · 11:00', '84K'] },
+      { bg: 'linear-gradient(160deg,#0a0a0a,#1e1208)', hd: 'FRAME', title: '« La lumière, c\'est la vérité »', meta: ['CITATION', '62K'] },
+      { bg: 'linear-gradient(160deg,#080c0e,#0e2420)', hd: 'FRAME', title: 'Les 7 photographes de 2025', meta: ['CAROUSEL · 7p', '118K'] },
     ],
   },
   {
@@ -82,7 +98,7 @@ const CLIENTS = [
 ];
 
 const ClientCard = ({ c }) => (
-  <div className="client-card">
+  <div className="client-card" style={{...(c.accent && {'--card-accent': c.accent}), ...(c.line && {'--card-line': c.line})}}>
     <div className="client-left">
       <div>
         <div className="client-logo-slot">

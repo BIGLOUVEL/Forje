@@ -829,7 +829,7 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand }
     const user = window.__currentUser;
     if (!sb || !user) return;
     sb.from('generated_posts')
-      .select('id, preset_id, title, subtitle, caption, image, category, pack_id, created_at, meta')
+      .select('id, preset_id, title, subtitle, caption, category, pack_id, created_at, meta')
       .eq('user_id', user.id)
       .eq('preset_id', preset.id)
       .order('created_at', { ascending: true })
@@ -837,17 +837,22 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand }
       .then(({ data }) => {
         if (!isMountedRef.current) return;
         if (data && data.length) {
-          setResults(data.map(r => ({
+          const dbItems = data.map(r => ({
             ...r.meta,
             id: r.id,
             preset_id: r.preset_id,
             title: r.title,
             subtitle: r.subtitle,
             caption: r.caption,
-            image: r.image,
             category: r.category,
             packId: r.pack_id,
-          })));
+          }));
+          // Preserve in-flight loading items and freshly-generated posts not yet saved to DB
+          setResults(prev => {
+            const dbIds = new Set(dbItems.map(r => r.id));
+            const inFlight = prev.filter(r => r.loading || !dbIds.has(r.id));
+            return [...dbItems, ...inFlight];
+          });
         }
         // Si une génération est toujours en vol, restaure le placeholder de chargement
         if (_genActive === preset.id) {
@@ -1137,10 +1142,20 @@ function downloadImage(dataUrl) {
 }
 
 const GenFeedCard = ({ item, onExpand }) => {
-  const src = item.preset_id === 'deepdive' ? item.images?.[0] : item.image;
+  const src0 = item.preset_id === 'deepdive' ? item.images?.[0] : item.image;
+  const [src,     setSrc]     = useState(src0 || null);
   const [caption, setCaption] = useState(item.caption || '');
   const [copied,  setCopied]  = useState(false);
   const taRef = useRef(null);
+
+  // Lazy-load image for historical posts (excluded from initial SELECT for perf)
+  useEffect(() => {
+    if (src || !item.id || typeof item.id === 'number') return;
+    const sb = window.__supabase;
+    if (!sb) return;
+    sb.from('generated_posts').select('image').eq('id', item.id).single()
+      .then(({ data }) => { if (data?.image) setSrc(data.image); });
+  }, [item.id]);
 
   const copy = () => navigator.clipboard.writeText(caption).then(() => {
     setCopied(true); setTimeout(() => setCopied(false), 2000);
@@ -1148,7 +1163,7 @@ const GenFeedCard = ({ item, onExpand }) => {
 
   return (
     <div className="gen-feed-card gen-result--entering">
-      <div className="gen-feed-thumb" onClick={() => onExpand(item)} title="Voir en grand">
+      <div className="gen-feed-thumb" onClick={() => onExpand({ ...item, image: src || item.image })} title="Voir en grand">
         {src ? <img src={src} alt=""/> : <div className="gen-feed-thumb-empty"/>}
         <div className="gen-feed-thumb-expand"><AppIcon name="image" size={13}/></div>
       </div>
@@ -2265,36 +2280,28 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
             </span>
           </div>
           {clientId && (
-            <button
+            <Btn
+              variant="ghost"
+              disabled={deleting}
               onClick={confirmingDelete ? handleDelete : () => setConfirmingDelete(true)}
               onBlur={() => setTimeout(() => setConfirmingDelete(false), 200)}
-              disabled={deleting}
-              style={{ all:'unset', cursor:'pointer', padding:'8px 14px', borderRadius:'var(--radius)',
-                fontSize:13, fontWeight:500, border:'1px solid',
-                borderColor: confirmingDelete ? 'var(--app-danger)' : 'var(--app-line-2)',
-                color: confirmingDelete ? 'var(--app-danger)' : 'var(--app-fg-3)',
-                background: confirmingDelete ? 'rgba(209,69,69,.07)' : 'transparent',
-                transition:'all .15s', whiteSpace:'nowrap' }}>
+              style={confirmingDelete ? { borderColor:'var(--app-danger)', color:'var(--app-danger)', background:'rgba(209,69,69,.07)' } : {}}>
               {deleting ? 'Suppression...' : confirmingDelete ? 'Confirmer ?' : 'Supprimer'}
-            </button>
+            </Btn>
           )}
-          <button onClick={handleSave} disabled={saving || !canSave}
-          style={{ all:'unset', flexShrink:0, marginTop:0, cursor: canSave && !saving ? 'pointer' : 'not-allowed',
-            padding:'9px 20px', borderRadius:'var(--radius)', fontSize:13, fontWeight:600,
-            background: canSave && !saving ? 'var(--app-accent)' : 'var(--app-surface-3)',
-            color: canSave && !saving ? '#fff' : 'var(--app-fg-4)',
-            display:'flex', alignItems:'center', gap:7, transition:'all .2s',
-            boxShadow: canSave && !saving ? '0 2px 8px rgba(99,102,241,.35)' : 'none' }}>
-          {saving
-            ? React.createElement('span', { style:{display:'flex',alignItems:'center',gap:6} },
-                React.createElement('span', { style:{width:12,height:12,border:'2px solid rgba(255,255,255,.3)',
-                  borderTopColor:'#fff',borderRadius:'50%',animation:'vb-spin .7s linear infinite'} }),
-                'Sauvegarde...')
-            : React.createElement('span', { style:{display:'flex',alignItems:'center',gap:6} },
-                React.createElement(AppIcon, { name:'check', size:13 }),
-                canSave ? 'Enregistrer' : 'Ajoute un nom')
-          }
-        </button>
+          <Btn
+            variant="primary"
+            disabled={saving || !canSave}
+            onClick={handleSave}
+            icon={saving ? null : 'check'}>
+            {saving
+              ? React.createElement('span', { style:{display:'flex',alignItems:'center',gap:6} },
+                  React.createElement('span', { style:{width:12,height:12,border:'2px solid rgba(255,255,255,.3)',
+                    borderTopColor:'#fff',borderRadius:'50%',animation:'vb-spin .7s linear infinite'} }),
+                  'Sauvegarde...')
+              : (canSave ? 'Enregistrer' : 'Ajoute un nom')
+            }
+          </Btn>
         </div>
       </div>
 
@@ -2330,11 +2337,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
                       borderRadius:8, padding:'7px 10px', color:'var(--app-fg)',
                       fontFamily:'DM Sans,sans-serif', fontSize:12.5, outline:'none' }}/>
                   <button onClick={analyzeInstagram} disabled={igAnalyzing || !igInput.trim()}
-                    style={{ all:'unset', cursor: igInput.trim() && !igAnalyzing ? 'pointer' : 'default',
-                      padding:'7px 13px', borderRadius:8, fontSize:12.5, fontWeight:600,
-                      background:'var(--app-accent)', color:'#fff', flexShrink:0,
-                      opacity: igInput.trim() && !igAnalyzing ? 1 : 0.45,
-                      display:'flex', alignItems:'center', gap:5 }}>
+                    className="btn btn-primary btn-sm" style={{ flexShrink:0 }}>
                     {igAnalyzing
                       ? <span style={{width:11,height:11,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'vb-spin .7s linear infinite',display:'inline-block'}}/>
                       : <AppIcon name="sparkle" size={12}/>
@@ -2356,10 +2359,8 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
                     {igResult.bio && <div style={{ fontSize:11, color:'var(--app-fg-4)', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{igResult.bio}</div>}
                   </div>
                   <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-                    <button onClick={applyIgSuggestions} style={{ all:'unset', cursor:'pointer', padding:'5px 12px', borderRadius:6, background:'var(--app-accent)', color:'#fff', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:5 }}>
-                      <AppIcon name="check" size={12}/>Appliquer
-                    </button>
-                    <button onClick={function(){ setIgResult(null); }} style={{ all:'unset', cursor:'pointer', padding:'5px 10px', borderRadius:6, border:'1px solid var(--app-line)', color:'var(--app-fg-4)', fontSize:12 }}>Ignorer</button>
+                    <Btn variant="primary" size="sm" icon="check" onClick={applyIgSuggestions}>Appliquer</Btn>
+                    <Btn variant="ghost" size="sm" onClick={function(){ setIgResult(null); }}>Ignorer</Btn>
                   </div>
                 </div>
                 <div style={{ fontSize:11, color:'var(--app-fg-4)', lineHeight:1.6 }}>
@@ -2382,11 +2383,11 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
                 </div>
                 <div style={{ display:'flex', gap:6 }}>
                   {brandKitUrl && (
-                    <button onClick={handleRelogo} disabled={relogoing} style={{ all:'unset', cursor: relogoing ? 'default' : 'pointer', flex:1, padding:'6px 8px', borderRadius:7, border:'1px solid var(--app-line)', color:'var(--app-accent)', fontSize:11, textAlign:'center', opacity: relogoing ? 0.6 : 1 }}>
+                    <Btn variant="ghost" size="sm" disabled={relogoing} onClick={handleRelogo} style={{ flex:1, justifyContent:'center' }}>
                       {relogoing ? '↻ ...' : '↻ Brand kit'}
-                    </button>
+                    </Btn>
                   )}
-                  <button onClick={function(){ setLogoUrl(''); }} style={{ all:'unset', cursor:'pointer', flex:1, padding:'6px 8px', borderRadius:7, border:'1px solid rgba(239,68,68,.35)', color:'#ef4444', fontSize:11, textAlign:'center' }}>Supprimer</button>
+                  <Btn variant="ghost" size="sm" onClick={function(){ setLogoUrl(''); }} style={{ flex:1, justifyContent:'center', color:'#ef4444', borderColor:'rgba(239,68,68,.35)' }}>Supprimer</Btn>
                 </div>
               </div>
             ) : (
@@ -2411,8 +2412,8 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
                   <div style={{ position:'absolute', bottom:8, left:10, fontSize:10, color:'rgba(255,255,255,.7)', fontWeight:500 }}>Ref active</div>
                 </div>
                 <div style={{ display:'flex', gap:6 }}>
-                  <button onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click(); }} style={{ all:'unset', flex:1, cursor:'pointer', padding:'6px 8px', borderRadius:7, border:'1px solid var(--app-accent)', color:'var(--app-accent)', fontSize:11, textAlign:'center' }}>Changer</button>
-                  <button onClick={function(){ setStyleRefUrl(''); }} style={{ all:'unset', cursor:'pointer', padding:'6px 12px', borderRadius:7, border:'1px solid rgba(239,68,68,.35)', color:'#ef4444', fontSize:11 }}>×</button>
+                  <Btn variant="ghost" size="sm" onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click(); }} style={{ flex:1, justifyContent:'center', color:'var(--app-accent)', borderColor:'rgba(99,102,241,.35)' }}>Changer</Btn>
+                  <Btn variant="ghost" size="sm" onClick={function(){ setStyleRefUrl(''); }} style={{ color:'#ef4444', borderColor:'rgba(239,68,68,.35)' }}>×</Btn>
                 </div>
               </div>
             ) : (
@@ -2633,13 +2634,19 @@ const SettingsRow = function({ label, sub, right, danger }) {
   );
 };
 
-const SettingsScreen = function() {
+const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   var [tab, setTab] = useState('compte');
-  var [notifEmail, setNotifEmail] = useState(true);
-  var [notifPush,  setNotifPush]  = useState(false);
-  var [autoScore,  setAutoScore]  = useState(true);
+  var [notifEmail, setNotifEmail] = useState(prefs.notifEmail !== undefined ? prefs.notifEmail : true);
+  var [notifPush,  setNotifPush]  = useState(prefs.notifPush  !== undefined ? prefs.notifPush  : false);
+  var [autoScore,  setAutoScore]  = useState(prefs.autoScore  !== undefined ? prefs.autoScore  : true);
+  var [pulseMode,  setPulseMode]  = useState(prefs.pulseMode  !== undefined ? prefs.pulseMode  : false);
+  var [defFormat,  setDefFormat]  = useState(prefs.defaultFormat || 'Actualité');
   var [confirmDel, setConfirmDel] = useState(false);
   var [profile, setProfile] = useState(null);
+
+  var savePref = function(key, val) {
+    if (onPrefsChange) onPrefsChange(Object.assign({}, prefs, { [key]: val }));
+  };
 
   var user = window.__currentUser;
   var sb   = window.__supabase;
@@ -2953,17 +2960,17 @@ const SettingsScreen = function() {
                 <SettingsRow
                   label="Résumé quotidien par email"
                   sub="Un brief des meilleures actus à 8h chaque matin."
-                  right={<SettingsToggle checked={notifEmail} onChange={setNotifEmail}/>}
+                  right={<SettingsToggle checked={notifEmail} onChange={function(v){ setNotifEmail(v); savePref('notifEmail', v); }}/>}
                 />
                 <SettingsRow
                   label="Notifications push"
                   sub="Alertes en temps réel sur les articles très scorés."
-                  right={<SettingsToggle checked={notifPush} onChange={setNotifPush}/>}
+                  right={<SettingsToggle checked={notifPush} onChange={function(v){ setNotifPush(v); savePref('notifPush', v); }}/>}
                 />
                 <SettingsRow
                   label="Score automatique des articles"
                   sub="Forje évalue chaque article entrant selon votre ligne éditoriale."
-                  right={<SettingsToggle checked={autoScore} onChange={setAutoScore}/>}
+                  right={<SettingsToggle checked={autoScore} onChange={function(v){ setAutoScore(v); savePref('autoScore', v); }}/>}
                 />
               </SettingsSection>
 
@@ -2985,14 +2992,22 @@ const SettingsScreen = function() {
                   label="Format de post par défaut"
                   sub="Affiché en premier sur l'écran Générer."
                   right={
-                    <select style={{ background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
-                      borderRadius:'var(--radius-sm)', padding:'5px 10px', color:'var(--app-fg)',
-                      fontSize:12, fontFamily:'inherit', cursor:'pointer', outline:'none' }}>
+                    <select
+                      value={defFormat}
+                      onChange={function(e){ setDefFormat(e.target.value); savePref('defaultFormat', e.target.value); }}
+                      style={{ background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
+                        borderRadius:'var(--radius-sm)', padding:'5px 10px', color:'var(--app-fg)',
+                        fontSize:12, fontFamily:'inherit', cursor:'pointer', outline:'none' }}>
                       <option>Actualité</option>
                       <option>Citation</option>
                       <option>Deep Dive</option>
                     </select>
                   }
+                />
+                <SettingsRow
+                  label="Mode Trader · Pulse"
+                  sub="Active un terminal veille style Bloomberg dans la navigation."
+                  right={<SettingsToggle checked={pulseMode} onChange={function(v){ setPulseMode(v); savePref('pulseMode', v); }}/>}
                 />
               </SettingsSection>
 

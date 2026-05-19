@@ -1,6 +1,7 @@
 const express = require('express');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const OpenAI  = require('openai');
+const OpenAI         = require('openai');
+const { toFile }     = require('openai');
 const https   = require('https');
 const http    = require('http');
 const { URL } = require('url');
@@ -26,7 +27,7 @@ async function gemini(prompt) {
 async function getClientBrand(userId, clientId) {
   if (!userId) return null;
   let q = supabase.from('clients').select(
-    'name,logo_url,brand_colors,font_primary,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
+    'name,logo_url,brand_colors,font_primary,font_body,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
   ).eq('user_id', userId);
   if (clientId) q = q.eq('id', clientId);
   const { data } = await q.order('created_at').limit(1).maybeSingle();
@@ -40,7 +41,8 @@ function buildBrandContext(client) {
   if (client.mood)          parts.push('Mood visuel : ' + client.mood);
   if (client.graphic_style) parts.push('Style graphique : ' + client.graphic_style);
   if (client.brand_colors?.length) parts.push('Palette : principale ' + client.brand_colors[0] + ', accent ' + client.brand_colors[1]);
-  if (client.font_primary)  parts.push('Police : ' + client.font_primary);
+  if (client.font_primary)  parts.push('Police de titre : ' + client.font_primary);
+  if (client.font_body)     parts.push('Police de texte : ' + client.font_body);
   if (client.tone_tags?.length)  parts.push('Ton editorial : ' + client.tone_tags.join(', '));
   if (client.topics?.length)     parts.push('Sujets couverts : ' + client.topics.join(', '));
   return parts.length ? '\n\nCONTEXTE DU MEDIA :\n' + parts.join('\n') : '';
@@ -169,6 +171,15 @@ async function tryDownloadFirst(urls) {
 let sharp;
 try { sharp = require('sharp'); } catch (_) { sharp = null; }
 
+// Supprime les pixels blancs/clairs d'un PNG (fond généré par GPT Image qui ignore "transparent")
+async function removeWhiteBackground(pngBuffer, tolerance = 235) {
+  const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] > tolerance && data[i+1] > tolerance && data[i+2] > tolerance) data[i+3] = 0;
+  }
+  return sharp(Buffer.from(data), { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
 // ─── Pack typographique → fallbacks systeme ───────────────────────────────────
 const FONT_PACKS_SRV = {
   'impact-news':    { headFont:'Impact,Arial Black,sans-serif',  bodyFont:'Arial,Helvetica,sans-serif', headStyle:'normal', headWeight:'400', headSpacing:'2',  transform:true  },
@@ -181,11 +192,19 @@ const STYLE_TO_PACK_SRV = {
   magazine:'edito-luxe', breaking:'impact-news', sport:'impact-news',
   lifestyle:'neo-retro', minimaliste:'minimal-power',
 };
-function getPackId(graphicStyle) {
+const FONT_TO_PACK_SRV = {
+  'Bebas Neue':'impact-news', 'Oswald':'impact-news', 'Anton':'impact-news', 'Barlow Condensed':'impact-news', 'Unbounded':'impact-news',
+  'Playfair Display':'edito-luxe', 'Fraunces':'edito-luxe',
+  'Space Grotesk':'digital-native',
+  'Syne':'minimal-power',
+  'DM Serif Display':'neo-retro',
+};
+function getPackId(graphicStyle, fontPrimary) {
+  if (fontPrimary && FONT_TO_PACK_SRV[fontPrimary]) return FONT_TO_PACK_SRV[fontPrimary];
   return STYLE_TO_PACK_SRV[graphicStyle] || graphicStyle || 'impact-news';
 }
-function getPack(graphicStyle) {
-  const id = getPackId(graphicStyle);
+function getPack(graphicStyle, fontPrimary) {
+  const id = getPackId(graphicStyle, fontPrimary);
   return FONT_PACKS_SRV[id] || FONT_PACKS_SRV['impact-news'];
 }
 
@@ -286,7 +305,6 @@ async function generateImageGPT(prompt, styleRefBuffer = null, referenceBuffers 
   // Passer les images Serper directement à images.edit pour la meilleure fidélité au sujet
   if (referenceBuffers.length > 0) {
     try {
-      const { toFile } = require('openai');
       const files = await Promise.all(
         referenceBuffers.slice(0, 4).map((buf, i) =>
           toFile(buf, `ref${i}.jpg`, { type: 'image/jpeg' })
@@ -378,7 +396,7 @@ router.post('/actu', async (req, res) => {
   try {
     const client       = await getClientBrand(userId, clientId);
     const brandCtx     = buildBrandContext(client);
-    const packId       = getPackId(client?.graphic_style);
+    const packId       = getPackId(client?.graphic_style, client?.font_primary);
     const primaryColor = client?.brand_colors?.[0] || null;
     const accentColor  = client?.brand_colors?.[1] || null;
 
@@ -492,10 +510,26 @@ router.post('/actu', async (req, res) => {
 
     if (client?.logo_url) {
       try {
-        const logoBuf     = await downloadBuffer(client.logo_url);
-        const logoResized = await sharp(logoBuf).resize(null, 52, { fit: 'inside' }).png().toBuffer();
-        const logoMeta    = await sharp(logoResized).metadata();
-        composites.push({ input: logoResized, top: 40, left: W - logoMeta.width - 40 });
+        const logoBuf = await downloadBuffer(client.logo_url);
+
+        const logoPng = await sharp(logoBuf)
+          .resize(null, 260, { fit: 'inside' })
+          .png()
+          .toBuffer()
+          .then(removeWhiteBackground);
+
+        const logoMeta = await sharp(logoPng).metadata();
+        const logoX = W - logoMeta.width - 40;
+        const logoY = 36;
+
+        // Ombre portée : copie noire floutée décalée
+        const shadow = await sharp(logoPng)
+          .modulate({ brightness: 0 })
+          .blur(20)
+          .toBuffer();
+
+        composites.push({ input: shadow, top: logoY + 12, left: logoX + 6 });
+        composites.push({ input: logoPng, top: logoY, left: logoX });
       } catch (_) { /* logo optionnel */ }
     }
 
@@ -532,8 +566,8 @@ router.post('/citation', async (req, res) => {
 
   try {
     const client  = await getClientBrand(userId);
-    const packId  = getPackId(client?.graphic_style);
-    const pack    = getPack(client?.graphic_style);
+    const packId  = getPackId(client?.graphic_style, client?.font_primary);
+    const pack    = getPack(client?.graphic_style, client?.font_primary);
     const fDefs   = fontDefs(packId);
     const fontFam = PACK_FONTS_GF[packId]?.name || pack.headFont;
     const W = 1080, H = 1080;
@@ -990,59 +1024,394 @@ router.post('/detect-format', async (req, res) => {
   }
 });
 
-// ─── Brand Identity Generation (onboarding Step 3B) ──────────────────────────
+// ─── Brand Identity — energy palette + mapping helpers ───────────────────────
+const ENERGY_PALETTE = {
+  brut:    { primary:'#FF3B30', accent:'#FFFFFF', bg:'#0A0A0A', text:'#FFFFFF', ref:'L\'Équipe, NY Post — rouge vif, noir dense, impact maximal' },
+  premium: { primary:'#C8A96E', accent:'#2A1F5C', bg:'#0D0D1A', text:'#F5F0E8', ref:'Monocle, The Atlantic — or chaud, marine profond, raffinement' },
+  vif:     { primary:'#00D4FF', accent:'#FF9ED3', bg:'#050D2E', text:'#EEF4FF', ref:'Wired, Vice — cyan électrique, rose, bleu nuit saturé' },
+  sobre:   { primary:'#0047FF', accent:'#111111', bg:'#F8F8F8', text:'#111111', ref:'Bloomberg, Le Monde — bleu intense, blanc pur, typographie forte' },
+};
+
+function biEnergyPalette(energy) {
+  return ENERGY_PALETTE[energy] || ENERGY_PALETTE.brut;
+}
+
+function biFont(typo, sw) {
+  const punchy = typo === 'punchy' || typo === 'dynamique';
+  if (punchy) {
+    if (sw.includes('Dynamique') || sw.includes('Énergique')) return 'Bebas Neue';
+    if (sw.includes('Percutant'))                              return 'Oswald';
+    return 'Anton';
+  }
+  if (sw.includes('Premium') || sw.includes('Élégant')) return 'Space Grotesk';
+  if (sw.includes('Moderne'))                            return 'DM Sans';
+  return 'Sora';
+}
+
+function biMood(sw) {
+  if (sw.includes('Dramatique'))                             return 'dramatique';
+  if (sw.includes('Énergique') || sw.includes('Dynamique')) return 'energique';
+  if (sw.includes('Premium')   || sw.includes('Élégant'))   return 'premium';
+  if (sw.includes('Percutant') || sw.includes('Audacieux')) return 'populaire';
+  return 'factuel';
+}
+
+function biGraphicStyle(sw, topics) {
+  const sport = ['Football','Sport','NBA','Tennis','Rugby','Basket','Foot'];
+  if ((topics || []).some(t => sport.includes(t))) return 'sport';
+  if (sw.includes('Premium') || sw.includes('Élégant')) return 'magazine';
+  if (sw.includes('Moderne') || sw.includes('Sobre'))   return 'minimaliste';
+  return 'breaking';
+}
+
+// ─── Vision extraction — lit la config réelle depuis le brand kit généré ──────
+async function extractBrandConfigFromImage(imageUrl, name) {
+  if (!openaiClient) return null;
+  try {
+    const resp = await openaiClient.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: imageUrl, detail: 'high' } },
+          { type: 'text', text: `This is a brand identity sheet for "${name}". Extract EXACTLY:
+1. All hex color codes from the palette section (read precisely as printed)
+2. The font used for headlines/titles — map it to the CLOSEST match from this exact list (return the exact string):
+   "Bebas Neue" | "Oswald" | "Anton" | "Barlow Condensed" | "Playfair Display" | "Fraunces" | "Space Grotesk" | "Syne" | "DM Serif Display" | "Unbounded" | "DM Sans" | "Inter" | "Montserrat" | "Lato"
+   If unsure, pick the visually closest. Never invent a name outside this list.
+3. The tagline text (read exactly as written)
+4. Graphic style as one word: "breaking", "magazine", "lifestyle", or "minimaliste"
+5. Three editorial tone keywords
+
+Return ONLY this JSON, no markdown:
+{"brand_colors":["#HEX1","#HEX2","#HEX3","#HEX4"],"font_primary":"Font Name","tagline":"exact tagline","graphic_style":"one word","tone_tags":["tag1","tag2","tag3"]}` }
+        ]
+      }]
+    });
+    const raw = resp.choices[0].message.content.trim();
+    return JSON.parse(raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
+  } catch(e) {
+    console.warn('[Vision extract]', e.message);
+    return null;
+  }
+}
+
+function buildBrandKitVariantPrompt({ name, topics, userPrompt, variant }) {
+  const handle = '@' + name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_.]/g, '').slice(0, 20);
+  const topic1 = (topics || ['actualité'])[0];
+  const topicsStr = (topics || []).slice(0, 3).join(' · ');
+
+  const executionAngle = userPrompt ? {
+    1: `CREATIVE CONCEPT (Concept A): Your first and most instinctive interpretation of the creative brief. Every design decision — palette, typography, atmosphere — must flow directly from it. Make it distinctive and coherent.`,
+    2: `CREATIVE CONCEPT (Concept B): A second, genuinely different interpretation of the same brief. Find a different angle or tension. Completely different visual world from Concept A — different palette, typography, mood — but still rooted in the brief.`,
+    3: `CREATIVE CONCEPT (Concept C): A third interpretation, maximally distinct from both A and B. Push the least obvious dimension of the brief. Surprise, but stay defensible from the brief.`,
+  }[variant] : {
+    1: `CONCEPT A: Derive the visual identity purely from the brand name "${name}" and its topics (${topicsStr}). Do not invent or assume any style — let the subject matter dictate everything. One coherent visual world.`,
+    2: `CONCEPT B: A second interpretation derived only from "${name}" and topics (${topicsStr}). Explore a different facet of the subject matter. Completely different palette, typography and mood from Concept A. Zero invented assumptions.`,
+    3: `CONCEPT C: A third interpretation derived only from "${name}" and topics (${topicsStr}). The most unexpected angle that the subject matter itself can justify. Fully distinct from A and B.`,
+  }[variant] || '';
+
+  const followerCount = Math.floor(Math.random() * 60 + 20) + 'K';
+  const pubCount = Math.floor(Math.random() * 200 + 100);
+
+  return `You are a senior brand identity designer at a top Paris creative agency. Create a COMPLETE, ULTRA-DETAILED brand identity guide for a digital media brand. Output must look like a real professional brand book — premium, dense, agency-grade. No lorem ipsum, no generic content.
+
+BRAND NAME: "${name}"
+TOPICS COVERED: ${topicsStr}
+${userPrompt ? `CREATIVE BRIEF — this is the primary source of truth. All design decisions must flow from this: "${userPrompt}"` : ''}
+${executionAngle}
+
+FORMAT: Portrait 1024×1536px. Full-bleed layout. Three major sections stacked vertically.
+
+══════════════════════════════════════
+SECTION 1 — TOP HERO  (top ~30% of image)
+══════════════════════════════════════
+Split horizontally into two halves with a subtle dividing line:
+
+LEFT HALF — LOGO & BRAND MARK:
+• Big custom logotype: "${name}" in a typeface that perfectly matches the brand personality
+• Below: brand icon/monogram — a custom geometric or letter-based mark
+• Tagline in small-caps under the mark: original, specific, punchy (French, max 6 words)
+• Section label "NOM & POSITIONNEMENT" in tiny uppercase at top
+
+RIGHT HALF — POSITIONING:
+• Large editorial statement (2–3 sentences in French) explaining what "${name}" stands for in the ${topic1} space — specific, passionate, professional
+• "NOTRE PROMESSE" subtitle with 3 brand promise bullets, each with a small inline icon:
+  e.g.: ⚡ [Core promise 1]   🎯 [Core promise 2]   🌍 [Core promise 3]
+• Background: dramatic visual — abstract 3D shape, flowing gradient, or atmospheric texture in brand accent color
+
+══════════════════════════════════════
+SECTION 2 — IDENTITY SPECS  (middle ~30% of image, 3 columns separated by thin lines)
+══════════════════════════════════════
+
+COLUMN A — COLOR & TYPE (~33%):
+• "PALETTE DE COULEURS" tiny-caps header
+• 5 rectangular color swatches in a row — each with its EXACT HEX CODE as legible printed text directly below (e.g. #FF3B30, #0F0F0F, #FFFFFF). HEX TEXT MUST BE READABLE — this is critical production data
+• ——— divider line ———
+• "TYPOGRAPHIES" tiny-caps header
+• Large "Aa" in the chosen display font
+• Font name clearly printed below
+• Three weight examples stacked:
+  "TITRE PRINCIPAL" in heavy/black weight
+  "Sous-titre accrocheur" in medium
+  "Texte courant et lisibilité" in regular
+
+COLUMN B — IDENTITY & TONE (~33%):
+• "IDENTITÉ VISUELLE" tiny-caps header
+• 4–5 editorial icon set with labels below each (relevant to ${topic1}):
+  e.g.: clock icon→RAPIDITÉ, target→PRÉCISION, etc.
+• ——— divider line ———
+• "TONALITÉ" tiny-caps header
+• 4 brand voice keywords — each in a small rounded pill/card:
+  [Keyword] — [one-line French description]
+  [Keyword] — [one-line French description]
+  [Keyword] — [one-line French description]
+  [Keyword] — [one-line French description]
+
+COLUMN C — CONTENT STYLE (~34%):
+• "STYLE DE CONTENU" tiny-caps header
+• 3 tall Instagram post mockups (4:5 portrait crops) displayed side by side:
+  Post 1: Real action photo of ${topic1} + bold "${name}"-branded headline overlay + category badge
+  Post 2: Stat card — big bold number (e.g. "2.4M", "68%") with short context text, brand color bg
+  Post 3: Typography-only editorial list "5 choses à savoir sur..." with brand colors
+• Each post shows "${name}" brand mark at the bottom
+
+══════════════════════════════════════
+SECTION 3 — SHOWCASE  (bottom ~40% of image)
+══════════════════════════════════════
+Split into two parts:
+
+LEFT SIDE (~42%):
+• "GRAPHISMES & IMAGERIE" tiny-caps header
+• 2 image thumbnails: the photographic/graphic aesthetic for ${topic1} content (action shots, atmosphere)
+• Caption: 1-line description of the visual style
+• ——— divider line ———
+• "STORIES & HIGHLIGHTS" tiny-caps header
+• 5 story highlight icons (circle with icon + French label below):
+  Categories relevant to "${name}" (e.g. ACTU · MERCATO · MATCHS · ANALYSES · COULISSES)
+
+RIGHT SIDE (~58%):
+• Realistic iPhone 15 mockup — dark mode — displayed slightly angled or flat
+• Screen shows actual Instagram profile for "${name}":
+  - Circular avatar = the brand MONOGRAM or LETTERMARK in brand colors on a solid color background — a flat abstract graphic shape, NOT a photograph, NOT a face, NOT a silhouette, NOT a realistic image of any kind
+  - Handle: ${handle}
+  - Stats bar: ${pubCount} Publications  ${followerCount} Abonnés  [small] Abonnements
+  - Bio: brand description (2 lines, French)
+  - Highlighted stories row (5 circles matching the categories above)
+  - 2×3 grid of 6 posts — mixing the 3 styles from Section 2 Column C
+• BELOW the phone, large bold text: brand slogan/tagline in display font (e.g. "L'INFO ${topic1.toUpperCase()}. SUR TA LIGNE.")
+• "EN RÉSUMÉ" section: 4–5 value pills in a row: e.g. ⚡ RAPIDE  ✓ CRÉDIBLE  🌍 INTERNATIONAL  ♥ PASSIONNÉ
+
+══════════════════════════════════════
+CRITICAL RULES:
+• All text in FRENCH — real editorial content, nothing generic or placeholder
+• "${name}" must appear at least 8 times across the layout
+• HEX codes under palette swatches MUST be exact, readable text (not decorative)
+• The phone mockup must look photorealistic — reflections, shadows, depth
+• Colors used in the mockups MUST match the palette swatches
+• Layout must be extremely dense, every zone used intentionally — like a real agency deliverable
+• This is ONE creative concept among three — it must look visually distinct from the other two while remaining rooted in the brand brief. ALL colors, typography and mood must come from interpreting the brief — never from generic presets
+• CRITICAL — Instagram profile avatar: the circle must contain ONLY a flat graphic monogram or abstract mark in brand colors. Absolutely NO human face, NO portrait photo, NO silhouette, NO stock photo. A flat logo on a solid background. This rule is non-negotiable.
+`.trim();
+}
+
+// ─── Brand Identity — génère 3 kits en parallèle (onboarding Step 3B) ─────────
 router.post('/brand-identity', async (req, res) => {
   try {
-    const { name, topics, styleWords, colorUniverse, typographyFeel } = req.body;
-    if (!name) return res.status(400).json({ error: 'name requis' });
+  const { clientId, name, topics, userPrompt, refImageB64 } = req.body;
+  if (!clientId || !name) return res.status(400).json({ error: 'clientId et name requis' });
 
-    const isDark  = colorUniverse !== 'light';
-    const isPunchy = typographyFeel === 'punchy';
-    const bgDesc  = isDark ? 'dark background (#080814) with white text' : 'light background (#F0F0EB) with dark text';
-    const typoDesc = isPunchy ? 'bold condensed display typography (Bebas Neue style, uppercase)' : 'clean modern sans-serif (DM Sans style, mixed case)';
+  // Auth — vérifie que le clientId appartient bien à l'utilisateur connecté
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+  const authResult = await supabase.auth.getUser(token);
+  const user = authResult.data?.user;
+  const authErr = authResult.error;
+  if (authErr || !user) return res.status(401).json({ error: 'Non autorisé' });
 
-    const prompt = `Create a complete brand identity style guide for a French digital media brand called "${name}".
+  const clientResult = await supabase.from('clients').select('id').eq('id', clientId).eq('user_id', user.id).maybeSingle();
+  const clientCheck = clientResult.data;
+  if (!clientCheck) return res.status(403).json({ error: 'Accès interdit' });
 
-Topics covered: ${(topics || []).join(', ') || 'general news'}
-Style keywords: ${(styleWords || []).join(', ') || 'modern, premium'}
-Color universe: ${bgDesc}
-Typography feel: ${typoDesc}
+  // Enrichit le prompt avec la description de l'image de référence si fournie
+  let enrichedPrompt = userPrompt || '';
+  if (refImageB64) {
+    try {
+      const desc = await extractStyleDescriptors(Buffer.from(refImageB64, 'base64'));
+      if (desc) enrichedPrompt = [enrichedPrompt, 'Visual reference style: ' + desc].filter(Boolean).join(' ');
+    } catch(_) {}
+  }
 
-The style guide must include:
-1. A bold logo mark — letter-based (first letter of "${name}" stylized) or a clean abstract symbol
-2. The brand name "${name}" set in the chosen typography
-3. A color palette of 4 colors with large visible hex codes (#XXXXXX format)
-4. Two example Instagram post mockups (1:1 square frames) showing the visual style in use
-5. Typography hierarchy: headline font name + body font name
+  // 3 GPT Image + 3 Claude configs en parallèle
+  let results;
+  try {
+    results = await Promise.all([1, 2, 3].flatMap(v => [
+      openaiClient.images.generate({
+        model: 'gpt-image-2', size: '1024x1536', quality: 'high', n: 1,
+        prompt: buildBrandKitVariantPrompt({ name, topics, userPrompt: enrichedPrompt, variant: v }),
+      }),
+      haiku.messages.create({
+        model: 'claude-sonnet-4-6', max_tokens: 400,
+        messages: [{ role: 'user', content: `Directeur artistique — config JSON pour "${name}", média ${(topics||[]).slice(0,3).join('/')}.
+${userPrompt ? 'Brief créatif: ' + userPrompt : ''}
+Retourne UNIQUEMENT ce JSON (pas de backticks, tagline varie selon variant ${v}/3):
+{"brand_colors":["#HEX1","#HEX2","#HEX3"],"font_primary":"Font Name","mood":"energique","graphic_style":"breaking","tone_tags":[],"topics":${JSON.stringify(topics||[])},"tagline":""}
+tone_tags: 3 parmi [Direct,Percutant,Informatif,Premium,Populaire,Sérieux,Expert,Accessible,Émotionnel,Factuel,Inspirant,Audacieux,Pédagogue].
+tagline: max 5 mots, SPECIFIQUE à "${name}". brand_colors: cohérents avec le brief. font_primary: adapté au média.` }]
+      }),
+    ]));
+  } catch(err) {
+    console.error('[brand-identity] generation failed:', err.message, err.status, err.error, err.code);
+    return res.status(500).json({ error: 'La génération a échoué. Réessaie dans quelques secondes.' });
+  }
 
-Visual requirements:
-- ${bgDesc}
-- The brand must look like a premium French editorial media brand
-- Aesthetic references: ${(styleWords || ['modern', 'premium']).join(' + ')}
-- Editorial, credible, contemporary — not corporate or generic
-- Include the brand name "${name}" on the posts, never lorem ipsum
+  // Traitement des 3 kits
+  const kits = [];
+  for (let i = 0; i < 3; i++) {
+    const imgResult    = results[i * 2];
+    const configResult = results[i * 2 + 1];
 
-Format: professional brand style guide sheet, ${isDark ? 'dark' : 'light'} background, all elements clearly separated.`;
+    let imgBuffer;
+    try {
+      if (imgResult.data[0].b64_json) {
+        imgBuffer = Buffer.from(imgResult.data[0].b64_json, 'base64');
+      } else {
+        const fetched = await fetch(imgResult.data[0].url);
+        imgBuffer = Buffer.from(await fetched.arrayBuffer());
+      }
+    } catch(e) { console.error(`[brand-identity] image ${i+1} failed:`, e.message); continue; }
 
-    const response = await openaiClient.images.generate({
-      model: 'gpt-image-1',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-    });
+    const fileName = `brand-kits/${clientId}/option-${i+1}-${Date.now()}.jpg`;
+    const { error: upErr } = await supabase.storage.from('brand-assets').upload(fileName, imgBuffer, { contentType: 'image/jpeg', upsert: true });
+    if (upErr) { console.error('upload failed', upErr.message); continue; }
+    const { data: { publicUrl: imageUrl } } = supabase.storage.from('brand-assets').getPublicUrl(fileName);
 
-    const imgData = response.data[0];
-    const imageUrl = imgData.url
-      ? imgData.url
-      : imgData.b64_json
-        ? 'data:image/png;base64,' + imgData.b64_json
-        : null;
+    let config;
+    try {
+      config = JSON.parse(configResult.content[0].text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim());
+    } catch(_) {
+      config = { brand_colors:['#111111','#FF3B30','#FFFFFF'], font_primary:'Bebas Neue',
+                 mood:'energique', graphic_style:'breaking', tone_tags:['Direct','Percutant','Informatif'],
+                 topics:topics||[], tagline:'' };
+    }
+    kits.push({ imageUrl, config });
+  }
 
-    if (!imageUrl) throw new Error('Aucune image retournée par GPT-Image');
-    res.json({ ok: true, imageUrl });
+  if (!kits.length) return res.status(500).json({ error: 'Aucun kit généré — réessaie' });
+  res.json({ ok: true, kits });
   } catch (err) {
-    console.error('[brand-identity]', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('[brand-identity] unhandled:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur — réessaie' });
+  }
+});
+
+// ─── Génère le logo standalone depuis le brand kit via GPT Image 1 edit ────────
+async function cropLogoFromBrandKit(imageUrl) {
+  if (!openaiClient) return null;
+  try {
+    const imgBuf = await downloadBuffer(imageUrl);
+    const file = await toFile(imgBuf, 'brand-kit.jpg', { type: 'image/jpeg' });
+
+    console.log('[crop logo] calling gpt-image-1 images.edit...');
+    const edited = await openaiClient.images.edit({
+      model: 'gpt-image-1',
+      size: '1024x1024',
+      quality: 'high',
+      image: file,
+      prompt: 'This image contains a brand logo or monogram, possibly inside a circular Instagram stories-style ring or frame. Your task is strictly conservative: (1) Remove the circular stories ring/border if present — keep everything inside untouched. (2) Remove any solid background color — output the logo on a fully transparent background. (3) Upscale and sharpen to maximum quality. (4) Recenter or straighten ONLY if visibly cropped, tilted, or off-center — otherwise leave as-is. Do NOT redesign, simplify, recolor, or alter the logo in any way. Output: the exact logo mark on a transparent background, PNG format, centered, high resolution.',
+    });
+    const b64 = edited.data?.[0]?.b64_json;
+    if (!b64) { console.error('[crop logo] no b64 in response'); return null; }
+    console.log('[crop logo] success — removing white background...');
+    const buf = await removeWhiteBackground(Buffer.from(b64, 'base64'));
+    return buf;
+  } catch(e) {
+    console.error('[crop logo] FAILED:', e.message, e.status || '', e.error || '');
+    return null;
+  }
+}
+
+// ─── Brand Identity Confirm — Vision extraction + logo + save DB ──────────────
+router.post('/brand-identity/confirm', async (req, res) => {
+  const { clientId, name, topics, energy, selectedKit } = req.body;
+  if (!clientId || !selectedKit) return res.status(400).json({ error: 'Données manquantes' });
+
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) return res.status(401).json({ error: 'Non autorisé' });
+  const { data: clientCheck } = await supabase.from('clients').select('id').eq('id', clientId).eq('user_id', user.id).single();
+  if (!clientCheck) return res.status(403).json({ error: 'Accès interdit' });
+
+  // Vision extraction + crop logo en parallèle
+  let extracted = null, logoBuffer = null;
+  try {
+    [extracted, logoBuffer] = await Promise.all([
+      extractBrandConfigFromImage(selectedKit.imageUrl, name),
+      cropLogoFromBrandKit(selectedKit.imageUrl),
+    ]);
+  } catch(e) { console.warn('[brand-identity/confirm]', e.message); }
+
+  // Config finale — préfère l'extraction Vision, fallback sur precomputed
+  const finalConfig = Object.assign({}, selectedKit.config, extracted || {});
+
+  // Upload logo
+  let logoUrl = null;
+  if (logoBuffer) {
+    const logoPath = `logos/${clientId}/logo-${Date.now()}.jpg`;
+    const { error: le } = await supabase.storage.from('brand-assets').upload(logoPath, logoBuffer, { contentType: 'image/jpeg', upsert: true });
+    if (!le) {
+      const { data: { publicUrl } } = supabase.storage.from('brand-assets').getPublicUrl(logoPath);
+      logoUrl = publicUrl;
+    }
+  }
+
+  // Save to DB
+  const { error: dbErr } = await supabase.from('clients').upsert({
+    id: clientId, user_id: user.id, name,
+    brand_colors:  finalConfig.brand_colors,
+    font_primary:  finalConfig.font_primary,
+    mood:          finalConfig.mood,
+    graphic_style: finalConfig.graphic_style,
+    tone_tags:     finalConfig.tone_tags,
+    topics:        finalConfig.topics || topics,
+    tagline:       finalConfig.tagline,
+    brand_kit_url: selectedKit.imageUrl,
+    logo_url:      logoUrl,
+    onboarding_step: 4,
+  });
+  if (dbErr) console.error('[brand-identity/confirm] db:', dbErr.message);
+
+  res.json({ ok: true, imageUrl: selectedKit.imageUrl, logoUrl, config: finalConfig });
+});
+
+// ─── Relogo — re-crop uniquement le logo depuis le brand kit ─────────────────
+router.post('/brand-identity/relogo', async (req, res) => {
+  const { clientId, imageUrl } = req.body;
+  if (!clientId || !imageUrl) return res.status(400).json({ error: 'clientId et imageUrl requis' });
+
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+  const authResult = await supabase.auth.getUser(token);
+  const user = authResult.data?.user;
+  if (!user) return res.status(401).json({ error: 'Non autorisé' });
+
+  try {
+    const logoBuffer = await cropLogoFromBrandKit(imageUrl);
+    if (!logoBuffer) return res.status(500).json({ error: 'Crop échoué' });
+
+    const logoPath = `logos/${clientId}/logo-${Date.now()}.png`;
+    const { error: le } = await supabase.storage.from('brand-assets').upload(logoPath, logoBuffer, { contentType: 'image/png', upsert: true });
+    if (le) return res.status(500).json({ error: 'Upload échoué' });
+
+    const { data: { publicUrl: logoUrl } } = supabase.storage.from('brand-assets').getPublicUrl(logoPath);
+    await supabase.from('clients').update({ logo_url: logoUrl }).eq('id', clientId);
+
+    res.json({ ok: true, logoUrl });
+  } catch(e) {
+    console.error('[relogo]', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 

@@ -57,6 +57,7 @@ const AuthScreen = ({ onAuth }) => {
       <div className="auth-page">
         <nav className="auth-nav">
           <button className="auth-brand" onClick={function() { window.__goToLanding?.(); }}>
+            <img src="assets/forje-logo.png" alt="" className="auth-brand-img" />
             <span className="auth-brand-wordmark">Forje</span>
             <span className="auth-brand-suffix">studio</span>
           </button>

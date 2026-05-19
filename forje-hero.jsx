@@ -13,7 +13,7 @@ const HeroObject = ({ variant = 'F' }) => {
 
       <div className="forge-mark-wrap">
         <div className="forge-assembly">
-          <img src="assets/forje-mark.png" alt="Forje" className="forge-mark-spin" />
+          <img src="assets/hero-landing-cinematic.png" alt="Forje" className="forge-mark-spin" />
         </div>
         <div className="forge-floor" />
       </div>
@@ -58,6 +58,12 @@ const Hero = ({ tweaks }) => {
           <span className="dot" />
           <span>50+ équipes éditoriales</span>
         </div>
+      </div>
+
+      <div className="hero-visual-col">
+        <video className="hero-motion-video" autoPlay loop muted playsInline>
+          <source src="assets/motion.mp4" type="video/mp4" />
+        </video>
       </div>
 
       {demoOpen && (

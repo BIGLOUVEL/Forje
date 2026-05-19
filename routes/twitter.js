@@ -431,6 +431,55 @@ router.get('/trends', async (req, res) => {
   }
 });
 
+// ─── POST /api/twitter/refresh — fetch manuel avec guard 30min + estimation coût
+const _refreshCooldown = new Map(); // compte_id → last fetch timestamp
+const REFRESH_COOLDOWN_MS = 30 * 60 * 1000; // 30 min entre deux fetches manuels
+
+router.post('/refresh', async (req, res) => {
+  const { compte_id } = req.body;
+  if (!compte_id) return res.status(400).json({ error: 'compte_id manquant' });
+  if (!TWITTER_KEY) return res.status(503).json({ error: 'Twitter API non configurée' });
+
+  const lastFetch = _refreshCooldown.get(compte_id) || 0;
+  const waitSec   = Math.ceil((REFRESH_COOLDOWN_MS - (Date.now() - lastFetch)) / 1000);
+  if (waitSec > 0) {
+    return res.status(429).json({
+      error: `Cooldown actif — attends encore ${Math.ceil(waitSec / 60)} min avant de relancer.`,
+      retry_after_seconds: waitSec,
+    });
+  }
+
+  try {
+    // Compte les sources actives pour estimer le coût AVANT de fetcher
+    const { data: sources } = await supabase
+      .from('twitter_sources').select('handle').eq('compte_id', compte_id).eq('actif', true);
+    const { data: compte }  = await supabase
+      .from('comptes').select('twitter_accounts').eq('id', compte_id).single();
+
+    const nSources = (sources?.length || 0) + (compte?.twitter_accounts?.length || 0);
+    const estCredits = nSources * 20; // ~20 tweets max par handle
+
+    _refreshCooldown.set(compte_id, Date.now());
+
+    // Fetch en parallèle avec cap de 10 sources max pour limiter le coût
+    const handles = [
+      ...(sources || []).map(s => s.handle).slice(0, 8),
+      ...(compte?.twitter_accounts || []).slice(0, 2),
+    ];
+
+    let inserted = 0;
+    for (const handle of handles) {
+      const r = await fetchTweetsForHandle(handle);
+      inserted += r.inserted || 0;
+    }
+
+    res.json({ ok: true, inserted, sources_fetched: handles.length, credits_used_est: handles.length * 20 });
+  } catch (err) {
+    console.error('[Twitter/refresh]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/twitter/trends/log — log un clic sur une tendance ─────────────
 router.post('/trends/log', async (req, res) => {
   const { compte_id, trend_name, tweet_volume, geo } = req.body;
@@ -454,4 +503,4 @@ function levenshteinClose(a, b) {
   return true;
 }
 
-module.exports = { router, fetchAllTwitterAccounts, fetchTwitterSources, evaluateTwitterSources, isBreakingTweet };
+module.exports = { router, fetchTweetsForHandle, isBreakingTweet };

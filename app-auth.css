@@ -152,10 +152,16 @@
   padding: 28px 48px;
 }
 .auth-brand {
-  display: inline-flex; align-items: baseline; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px;
   font-family: 'DM Sans', sans-serif; line-height: 1;
   text-decoration: none;
   background: none; border: none; padding: 0; cursor: pointer;
+}
+.auth-brand-img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .auth-brand-wordmark {
   font-size: 20px; font-weight: 700; color: var(--fg);
@@ -269,7 +275,7 @@
   background: radial-gradient(420px 200px at 0% 0%, rgba(106,91,255,0.12), transparent 65%);
 }
 .auth-quote-mark {
-  font-family: 'Fraunces', 'DM Sans', serif;
+  font-family: 'DM Sans', sans-serif;
   font-size: 56px; line-height: 0.6;
   background: var(--chromatic-line);
   -webkit-background-clip: text; background-clip: text; color: transparent;
@@ -438,7 +444,7 @@
 .auth-field label {
   display: block;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--muted); font-weight: 500;
   margin-bottom: 8px;
 }
@@ -523,7 +529,7 @@
   margin-top: 8px;
   display: flex; align-items: center; justify-content: center; gap: 10px;
   padding: 15px 22px;
-  border-radius: 14px;
+  border-radius: 999px;
   background: #F5F7FF; color: #07122F;
   font-weight: 600; font-size: 14.5px;
   font-family: 'DM Sans', system-ui, sans-serif;

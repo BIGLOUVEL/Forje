@@ -47,6 +47,7 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
     bolt:     <><path d="M9 2L3.5 9H8l-1 5 5.5-7H8l1-5z"/></>,
     logout:   <><path d="M6 3H3.5C3.2 3 3 3.2 3 3.5v9c0 .3.2.5.5.5H6M10 5l3 3-3 3M13 8H6"/></>,
     refresh:  <><path d="M13 4.5A6 6 0 108 14M13 2v3h-3"/></>,
+    x:        <><path d="M4 4l8 8M12 4l-8 8"/></>,
   };
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none"
@@ -60,6 +61,7 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
 const CMD_ITEMS = [
   { label: 'Générer un post',       icon: 'sparkle',  nav: 'generate' },
   { label: 'Calendrier',            icon: 'calendar', nav: 'calendar'  },
+  { label: 'Pulse — Veille live',    icon: 'flame',    nav: 'pulse'     },
   { label: 'Sources & veille',      icon: 'news',     nav: 'sources'   },
   { label: 'Identité de marque',    icon: 'palette',  nav: 'brand'     },
   { label: 'Paramètres',            icon: 'settings', nav: 'settings'  },
@@ -100,7 +102,7 @@ const CommandPalette = ({ onNav, onClose }) => {
 };
 
 // ═══ SIDEBAR ═══════════════════════════════════════════════════════════════
-const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null, clients = [], activeClientId = null, brandScore = 0, onSelectClient, onNewClient }) => {
+const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null, clients = [], activeClientId = null, brandScore = 0, onSelectClient, onNewClient, prefs = {} }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const menuRef = useRef(null);
@@ -136,6 +138,7 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
 
   const mainItems = [
     { key: 'generate', icon: 'sparkle',  label: 'Générer' },
+    ...(prefs.pulseMode ? [{ key: 'pulse', icon: 'flame', label: 'Pulse', badge: true, count: counts.pulse || null }] : []),
     { key: 'calendar', icon: 'calendar', label: 'Calendrier' },
   ];
   const bottomItems = [
@@ -146,6 +149,7 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
   return (<>
     <aside className="sidebar">
       <div className="sidebar-brand">
+        <img src="assets/forje-logo.png" alt="" className="sidebar-brand-mark" />
         Forje <span className="brand-suffix">Studio</span>
       </div>
 
@@ -293,8 +297,14 @@ const Topbar = ({ breadcrumb = [], actions = null }) => (
 );
 
 // ═══ BUTTONS (helpers) ═════════════════════════════════════════════════════
-const Btn = ({ variant = 'ghost', size, icon, children, onClick, style }) => (
-  <button className={`btn btn-${variant} ${size ? 'btn-' + size : ''}`} onClick={onClick} style={style}>
+const Btn = ({ variant = 'ghost', size, icon, children, onClick, onBlur, style, disabled, className }) => (
+  <button
+    className={`btn btn-${variant}${size ? ' btn-' + size : ''}${className ? ' ' + className : ''}`}
+    onClick={onClick}
+    onBlur={onBlur}
+    disabled={disabled}
+    style={style}
+  >
     {icon && <AppIcon name={icon} size={13}/>}
     {children}
   </button>

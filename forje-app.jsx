@@ -67,6 +67,7 @@ const App = () => {
       <div className="page">
         <nav className="nav" data-screen-label="nav">
           <div className="brand-mark">
+            <img src="assets/forje-logo.png" alt="" className="brand-mark-img" />
             <span className="brand-wordmark">Forje</span>
             <span className="brand-suffix">Studio</span>
           </div>

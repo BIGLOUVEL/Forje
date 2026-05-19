@@ -193,8 +193,8 @@ async function scoreForCompte(compteId, batchSize = 10) {
     .from('comptes').select('*').eq('id', compteId).single();
   if (e1) throw e1;
 
-  // News non encore scorées pour ce compte (dernières 24h)
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // News non encore scorées pour ce compte (dernières 48h)
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const { data: scored, error: e2 } = await supabase
     .from('news_scored').select('news_raw_id').eq('compte_id', compteId);
   if (e2) throw e2;

@@ -2,7 +2,7 @@
 var { useState, useEffect } = React;
 
 const LANDING_CSS = ['css-l1', 'css-l2', 'css-l3'];
-const APP_CSS     = ['css-a1', 'css-a2', 'css-a3', 'css-a4'];
+const APP_CSS     = ['css-a1', 'css-a2', 'css-a3', 'css-a4', 'css-a5', 'css-a6'];
 
 const applyCss = (view) => {
   LANDING_CSS.forEach(id => {

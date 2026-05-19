@@ -1,4 +1,4 @@
-/* global React, ReactDOM, AppIcon, Sidebar, Topbar, Btn, DashboardScreen, GenerateScreen, QueueScreen, BrandScreen, SourcesScreen, OnboardingShell, OnboardingBanner */
+/* global React, ReactDOM, AppIcon, Sidebar, Topbar, Btn, GenerateScreen, QueueScreen, BrandScreen, SourcesScreen, OnboardingShell, PulseScreen */
 var { useState, useEffect, useRef } = React;
 
 const TWEAKS = /*EDITMODE-BEGIN*/{
@@ -11,7 +11,8 @@ const App = () => {
   // Read ?screen= on mount
   const initial = (() => {
     const p = new URLSearchParams(location.search).get('screen');
-    return p || localStorage.getItem('forje_app_screen') || 'home';
+    const saved = localStorage.getItem('forje_app_screen');
+    return p || (saved && saved !== 'home' ? saved : 'generate');
   })();
 
   const [screen, setScreen] = useState(initial);
@@ -22,6 +23,7 @@ const App = () => {
   const [clients, setClients] = useState([]);
   const [activeClientId, setActiveClientId] = useState(null);
   const [brandScore, setBrandScore] = useState(0);
+  const [prefs, setPrefs] = useState({});
   const [genToast, setGenToast] = useState(null); // { status:'generating'|'ready', label, presetId }
   const presetRef = useRef(null); // keeps last active preset alive across screen changes
 
@@ -30,7 +32,6 @@ const App = () => {
   const [obStep,              setObStep]              = useState(1);
   const [obProfileType,       setObProfileType]       = useState(null);
   const [obClientId,          setObClientId]          = useState(null);
-  const [showOnboardingBanner, setShowOnboardingBanner] = useState(false);
 
   const computeBrandScore = (c) => {
     if (!c) return 0;
@@ -42,7 +43,7 @@ const App = () => {
     const sb = window.__supabase;
     const user = window.__currentUser;
     if (!sb || !user) return;
-    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, graphic_style, tone_tags, mood, topics, onboarding_completed, onboarding_step, profile_type')
+    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, graphic_style, tone_tags, mood, topics, onboarding_completed, onboarding_step, profile_type, preferences')
       .eq('user_id', user.id).order('created_at')
       .then(({ data }) => {
         const list = data || [];
@@ -62,6 +63,7 @@ const App = () => {
       setActiveClientId(active);
       window.__activeClientId = active;
       setBrandScore(computeBrandScore(activeClient));
+      setPrefs(activeClient?.preferences || {});
 
       // Onboarding check — new user or incomplete onboarding
       const firstClient = list[0] || null;
@@ -70,9 +72,8 @@ const App = () => {
         setObProfileType(firstClient?.profile_type || null);
         setObClientId(firstClient?.id || null);
         setShowOnboarding(true);
-        return; // don't set screen state while onboarding is active
+        return;
       }
-      setShowOnboardingBanner(true);
     });
 
     // Prefill venant du board (clic "Générer post" sur une news)
@@ -87,22 +88,33 @@ const App = () => {
     }
 
     window.__goToGenerate = (article) => {
-      const title = article.title || article.titre || '';
-      const caption = article.caption || '';
-      const newsText = caption ? `${title}\n\n${caption}` : title;
+      const title   = article.title || article.titre || '';
+      const recap   = article.text || article.caption || '';
+      const newsText = recap ? recap : title;
       setPreset({ id:'actu', label:'Actualité', icon:'news', visual:'actu', img:'assets/actu.webp', prefill: { newsText }, fromBoard: true });
       setScreen('generate');
     };
     window.__setGenToast = (toast) => setGenToast(toast);
-    window.__goToScreen  = (s) => { setScreen(s); setPreset(null); };
+    window.__goToScreen  = (s) => { setScreen(s === 'home' ? 'generate' : s); setPreset(null); };
   }, []);
 
   const handleSelectClient = (id) => {
+    const c = clients.find(cc => cc.id === id);
     setActiveClientId(id);
     window.__activeClientId = id;
     const user = window.__currentUser;
     if (user) localStorage.setItem('forje_active_client_' + user.id, id);
-    setBrandScore(computeBrandScore(clients.find(c => c.id === id)));
+    setBrandScore(computeBrandScore(c));
+    setPrefs(c?.preferences || {});
+  };
+
+  const handlePrefsChange = async (newPrefs) => {
+    setPrefs(newPrefs);
+    const sb = window.__supabase;
+    const clientId = window.__activeClientId;
+    if (!sb || !clientId) return;
+    await sb.from('clients').update({ preferences: newPrefs }).eq('id', clientId);
+    setClients(prev => prev.map(c => c.id === clientId ? { ...c, preferences: newPrefs } : c));
   };
 
   const handleNewClient = () => {
@@ -120,9 +132,29 @@ const App = () => {
     loadClients();
   };
 
+  const handleClientDeleted = () => {
+    const user = window.__currentUser;
+    loadClients((list) => {
+      if (!list.length) {
+        setShowOnboarding(true);
+        setObStep(1);
+        setObProfileType(null);
+        setObClientId(null);
+        return;
+      }
+      const newActive = list[0]?.id || null;
+      setActiveClientId(newActive);
+      window.__activeClientId = newActive;
+      if (user && newActive) localStorage.setItem('forje_active_client_' + user.id, newActive);
+      else if (user) localStorage.removeItem('forje_active_client_' + user.id);
+      setBrandScore(computeBrandScore(list[0] || null));
+      if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits });
+      setScreen('generate');
+    });
+  };
+
   const handleOnboardingComplete = (clientId) => {
     setShowOnboarding(false);
-    setShowOnboardingBanner(true);
     setObClientId(clientId);
     setActiveClientId(clientId);
     window.__activeClientId = clientId;
@@ -133,10 +165,15 @@ const App = () => {
       setBrandScore(computeBrandScore(c));
       if (c) setProfile({ plan: c.plan, credits: c.credits });
     });
-    setScreen('home');
+    setScreen('generate');
   };
 
   useEffect(() => { if (preset) presetRef.current = preset; }, [preset]);
+
+  // Redirect away from Pulse if trader mode is disabled
+  useEffect(() => {
+    if (screen === 'pulse' && !prefs.pulseMode) setScreen('generate');
+  }, [prefs.pulseMode]);
 
   useEffect(() => {
     localStorage.setItem('forje_app_screen', screen);
@@ -164,7 +201,6 @@ const App = () => {
 
   // Breadcrumb & actions per screen
   const crumbs = {
-    home:      ['Studio', 'Accueil'],
     generate:  preset ? ['Studio', 'Générer', preset.label] : ['Studio', 'Générer'],
     queue:     ['Studio', 'File de validation'],
     calendar:  ['Studio', 'Calendrier'],
@@ -175,7 +211,6 @@ const App = () => {
   }[screen] || ['Studio'];
 
   const handleCreateFromSource = (source) => {
-    // source peut être un id string (legacy) ou un objet { title, url, text }
     var newsText = '';
     if (source && typeof source === 'object') {
       newsText = [source.title, source.text].filter(Boolean).join('\n\n');
@@ -209,16 +244,11 @@ const App = () => {
                  clients={clients}
                  activeClientId={activeClientId}
                  brandScore={brandScore}
+                 prefs={prefs}
                  onSelectClient={handleSelectClient}
                  onNewClient={handleNewClient}/>
         <main className="app-main">
           <Topbar breadcrumb={crumbs}/>
-          {screen === 'home' && (
-            <>
-              {showOnboardingBanner && <OnboardingBanner clientId={activeClientId || obClientId}/>}
-              <DashboardScreen onNav={setScreen} onCreateFromSource={handleCreateFromSource} authUser={window.__currentUser}/>
-            </>
-          )}
           {screen === 'generate' && (
             <GenerateScreen
               layoutVariant={tweaks.genLayout}
@@ -232,9 +262,10 @@ const App = () => {
           {screen === 'queue' && <QueueScreen defaultView={tweaks.defaultQueueView}/>}
           {screen === 'calendar' && <QueueScreen defaultView="calendar"/>}
           {screen === 'published' && <QueueScreen defaultView="grid"/>}
-          {screen === 'brand' && <BrandScreen clientId={activeClientId} onSaved={handleClientSaved}/>}
+          {screen === 'brand' && <BrandScreen clientId={activeClientId} onSaved={handleClientSaved} onDeleted={handleClientDeleted}/>}
           {screen === 'sources' && <SourcesScreen authUser={window.__currentUser}/>}
-          {screen === 'settings' && <SettingsScreen/>}
+          {screen === 'pulse'   && <PulseScreen onCreateFromSource={(a) => { window.__goToGenerate?.(a); }}/>}
+          {screen === 'settings' && <SettingsScreen prefs={prefs} onPrefsChange={handlePrefsChange}/>}
         </main>
       </div>
 
@@ -291,7 +322,7 @@ const App = () => {
             </TweakGroup>
             <TweakGroup label="Navigation de test">
               <div className="tweak-quick-nav">
-                {['home','generate','queue','brand'].map(s => (
+                {['generate','queue','brand','sources'].map(s => (
                   <button key={s} className={`tweak-nav-btn ${screen===s?'active':''}`}
                           onClick={() => { setScreen(s); setPreset(null); }}>{s}</button>
                 ))}
@@ -303,20 +334,6 @@ const App = () => {
     </>
   );
 };
-
-const PlaceholderScreen = ({ title, desc }) => (
-  <div className="page-body">
-    <div className="page-header">
-      <div>
-        <h1 className="page-title">{title}</h1>
-        <p className="page-subtitle">{desc}</p>
-      </div>
-    </div>
-    <div className="card card-pad" style={{padding:64, textAlign:'center', color:'var(--app-fg-4)'}}>
-      Écran à designer dans une prochaine itération.
-    </div>
-  </div>
-);
 
 const TweakGroup = ({ label, children }) => (
   <div className="tweak-group">

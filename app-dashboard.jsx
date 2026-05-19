@@ -1,5 +1,5 @@
 /* global React, AppIcon, Btn */
-var { useState, useEffect } = React;
+var { useState, useEffect, useRef, useCallback } = React;
 
 // ─── Time helper ───────────────────────────────────────────────────────────
 function timeAgo(dateStr) {
@@ -44,25 +44,7 @@ const DashboardScreen = ({ onNav, onCreateFromSource, authUser }) => {
     ? `Bonjour ${firstName.charAt(0).toUpperCase() + firstName.slice(1)}.`
     : 'Bonjour.';
 
-  const [news, setNews]               = useState([]);
-  const [newsLoading, setNewsLoading] = useState(true);
-
-  useEffect(() => {
-    var clientId = window.__activeClientId;
-    if (!clientId) {
-      setNewsLoading(false);
-      return;
-    }
-    apiFetch('/scoring/board?compte_id=' + clientId + '&limit=5')
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        // board = scored news (non-breaking), breaking = alertes
-        var items = [].concat(data.breaking || [], data.board || []);
-        setNews(items.slice(0, 5));
-        setNewsLoading(false);
-      })
-      .catch(function() { setNewsLoading(false); });
-  }, []);
+  // news state now managed by HotFeedWidget via SSE
 
   return (
     <div className="page-body">
@@ -82,6 +64,8 @@ const DashboardScreen = ({ onNav, onCreateFromSource, authUser }) => {
         </div>
       </div>
 
+      <HotFeedWidget onCreateFromSource={onCreateFromSource}/>
+
       {/* KPI strip */}
       <div className="dash-kpis">
         <KpiCard label="Publiés ce mois" value="18" delta="+4" kind="positive" sub="vs. septembre"/>
@@ -93,51 +77,7 @@ const DashboardScreen = ({ onNav, onCreateFromSource, authUser }) => {
       <div className="dash-grid">
         {/* LEFT — main column */}
         <div className="dash-main">
-          {/* Actus → Post */}
-          <section className="card">
-            <div className="card-header">
-              <div>
-                <div className="card-title">Dans ton univers, aujourd'hui</div>
-                <div className="card-subtitle">3 actus que ta veille a repérées — clique pour transformer en post</div>
-              </div>
-              <Btn variant="ghost" size="sm" icon="settings">Sources</Btn>
-            </div>
-            <div className="news-list">
-              {newsLoading && (
-                <>
-                  <SkeletonNewsRow/>
-                  <SkeletonNewsRow/>
-                  <SkeletonNewsRow/>
-                </>
-              )}
-              {!newsLoading && news.length === 0 && (
-                <div style={{ padding:'32px 20px', textAlign:'center', color:'var(--app-fg-4)', fontSize:13 }}>
-                  Aucune actu aujourd'hui — tes sources sont en cours de veille.
-                </div>
-              )}
-              {!newsLoading && news.map(function(item, i) {
-                var raw = item.news_raw || {};
-                var titre    = raw.titre || raw.title || '';
-                var desc     = raw.description || '';
-                var blurb    = desc ? desc.slice(0, 150) + (desc.length > 150 ? '…' : '') : titre.slice(0, 120) + '…';
-                var source   = raw.source || 'Veille';
-                var dateStr  = raw.published_at || item.created_at || '';
-                var angle    = item.angle || '';
-                return (
-                  <NewsRow
-                    key={item.id || i}
-                    source={source}
-                    time={timeAgo(dateStr)}
-                    topic={item.flag === 'urgent' ? 'Urgent' : item.format_suggere || 'Actu'}
-                    headline={titre}
-                    blurb={blurb}
-                    angle={angle}
-                    onCreate={() => onCreateFromSource({ title: titre, url: raw.url || '', text: desc })}
-                  />
-                );
-              })}
-            </div>
-          </section>
+          {/* Queue preview placeholder — hot feed moved to top banner */}
 
           {/* Queue preview */}
           <section className="card">
@@ -208,22 +148,6 @@ const DashboardScreen = ({ onNav, onCreateFromSource, authUser }) => {
             </div>
           </section>
 
-          {/* Best performing */}
-          <section className="card">
-            <div className="card-header" style={{padding:'14px 18px'}}>
-              <div className="card-title" style={{fontSize:13}}>Meilleur post — 14 derniers jours</div>
-            </div>
-            <div className="best-post">
-              <div className="best-post-visual best-post-visual--camel">
-                <div className="best-post-visual-label">“Trois générations de cuir.”</div>
-              </div>
-              <div className="best-post-stats">
-                <div className="best-stat"><AppIcon name="heart" size={12}/><b>1 284</b> likes</div>
-                <div className="best-stat"><AppIcon name="eye" size={12}/><b>18.2k</b> vues</div>
-                <div className="best-stat"><AppIcon name="trend" size={12}/><b>+312%</b> vs moyenne</div>
-              </div>
-            </div>
-          </section>
 
           {/* Brand health */}
           <section className="card card-pad">
@@ -243,6 +167,195 @@ const DashboardScreen = ({ onNav, onCreateFromSource, authUser }) => {
     </div>
   );
 };
+
+// ═══ HOT FEED WIDGET — Trading-style live news ═════════════════════════════
+
+const HotFeedWidget = ({ onCreateFromSource }) => {
+  var [items, setItems]           = useState([]);
+  var [trending, setTrending]     = useState([]);
+  var [loading, setLoading]       = useState(true);
+  var [countdown, setCountdown]   = useState(180);
+  var [animKey, setAnimKey]       = useState(0);
+  var [connected, setConnected]   = useState(false);
+  var timerRef = useRef(null);
+
+  useEffect(function() {
+    var clientId = window.__activeClientId;
+    if (!clientId) { setLoading(false); return; }
+
+    var es = new EventSource('/api/hot/stream?compte_id=' + clientId);
+
+    es.onopen = function() { setConnected(true); };
+
+    es.onmessage = function(e) {
+      try {
+        var data = JSON.parse(e.data);
+        if (data.error || !data.items) return;
+        setItems(data.items);
+        setTrending(data.trending || []);
+        setLoading(false);
+        setCountdown(180);
+        setAnimKey(function(k) { return k + 1; });
+      } catch {}
+    };
+
+    es.onerror = function() {
+      setConnected(false);
+      setLoading(false);
+    };
+
+    timerRef.current = setInterval(function() {
+      setCountdown(function(c) { return c > 0 ? c - 1 : 0; });
+    }, 1000);
+
+    return function() { es.close(); clearInterval(timerRef.current); };
+  }, []);
+
+  var mins = String(Math.floor(countdown / 60)).padStart(2, '0');
+  var secs = String(countdown % 60).padStart(2, '0');
+
+  return (
+    <div className="hot-feed">
+      {/* ── Status bar ── */}
+      <div className="hot-status-bar">
+        <div className="hot-live-dot">
+          <span className={`hot-dot ${connected ? 'hot-dot--live' : 'hot-dot--off'}`}/>
+          <span className="hot-live-label">{connected ? 'LIVE' : 'CONNECTING'}</span>
+        </div>
+
+        <div className="hot-ticker-wrap">
+          {trending.length > 0 && (
+            <div className="hot-ticker-track">
+              {[...trending, ...trending].map(function(t, i) {
+                return (
+                  <span key={i} className="hot-ticker-kw">
+                    <span className="hot-ticker-hash">#</span>{t.kw}
+                    <span className="hot-ticker-count">{t.count}</span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="hot-countdown">
+          <span className="hot-countdown-icon">↺</span>
+          <span className="hot-countdown-val">{mins}:{secs}</span>
+        </div>
+      </div>
+
+      {/* ── Cards ── */}
+      <div className="hot-cards" key={animKey}>
+        {loading && [0,1,2,3,4].map(function(i) { return <HotCardSkeleton key={i} rank={i}/>; })}
+
+        {!loading && items.length === 0 && (
+          <div className="hot-empty">
+            Veille en cours — les actus chaudes apparaîtront ici automatiquement.
+          </div>
+        )}
+
+        {!loading && items.map(function(item, i) {
+          var raw    = item.news_raw || {};
+          var titre  = raw.titre || raw.title || '';
+          var desc   = raw.description || '';
+          var source = raw.source || 'Veille';
+          var buzz   = item.buzz_score || item.score_total || 0;
+          var ageMin = item.age_min || 0;
+          var flag   = item.flag || 'faible_priorite';
+          var fenetre = item.fenetre_code_couleur || '⚫';
+          var isUrgent = flag === 'urgent' || (item.alerte_breaking);
+          var isWarm   = flag === 'a_traiter';
+          var angle  = item.angle || item.pourquoi_ce_score || '';
+
+          return (
+            <HotCard
+              key={item.id || i}
+              rank={i}
+              buzz={buzz}
+              flag={flag}
+              source={source}
+              titre={titre}
+              blurb={desc ? desc.slice(0, 100) + (desc.length > 100 ? '…' : '') : ''}
+              ageMin={ageMin}
+              fenetre={fenetre}
+              angle={angle}
+              isUrgent={isUrgent}
+              isWarm={isWarm}
+              alerte={item.alerte_breaking}
+              format={item.format_suggere}
+              onCreate={function() {
+                onCreateFromSource({ title: titre, url: raw.url || '', text: desc });
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const HotCard = ({ rank, buzz, flag, source, titre, blurb, ageMin, fenetre, angle, isUrgent, isWarm, alerte, format, onCreate }) => {
+  var pct = Math.min(100, Math.round((buzz / 10) * 100));
+  var ageLabel = ageMin < 60 ? ageMin + ' min' : Math.floor(ageMin / 60) + 'h' + (ageMin % 60 > 0 ? String(ageMin % 60).padStart(2,'0') : '');
+
+  var cardClass = 'hot-card'
+    + (isUrgent ? ' hot-card--urgent' : '')
+    + (isWarm   ? ' hot-card--warm'   : '');
+
+  return (
+    <div className={cardClass} style={{ '--anim-delay': (rank * 60) + 'ms' }}>
+      <div className="hot-card-rank">
+        {isUrgent && <span className="hot-rank-pulse"/>}
+        <span className="hot-rank-num">#{rank + 1}</span>
+      </div>
+
+      <div className="hot-card-body">
+        <div className="hot-card-meta">
+          <span className="hot-card-source">{source}</span>
+          <span className={`hot-card-flag hot-flag--${flag}`}>
+            {flag === 'urgent' ? 'URGENT' : flag === 'a_traiter' ? 'À TRAITER' : 'VEILLE'}
+          </span>
+          {format && <span className="hot-card-format">{format}</span>}
+        </div>
+
+        <div className="hot-card-titre">{titre}</div>
+
+        {angle && (
+          <div className="hot-card-angle">→ {angle}</div>
+        )}
+
+        <div className="hot-card-score-row">
+          <div className="hot-score-bar-wrap">
+            <div className="hot-score-bar" style={{ '--pct': pct + '%' }}/>
+          </div>
+          <span className="hot-score-val">{buzz.toFixed(1)}</span>
+          <span className="hot-card-age">{fenetre} {ageLabel}</span>
+        </div>
+      </div>
+
+      <button className="hot-card-cta" onClick={onCreate}>
+        Transformer →
+      </button>
+    </div>
+  );
+};
+
+const HotCardSkeleton = ({ rank }) => (
+  <div className="hot-card hot-card--skeleton" style={{ '--anim-delay': (rank * 60) + 'ms' }}>
+    <div className="hot-card-rank">
+      <span className="hot-rank-num">#{rank + 1}</span>
+    </div>
+    <div className="hot-card-body">
+      <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+        <div className="skeleton" style={{ width:70, height:11, borderRadius:3 }}/>
+        <div className="skeleton" style={{ width:55, height:11, borderRadius:3 }}/>
+      </div>
+      <div className="skeleton" style={{ width:'75%', height:14, borderRadius:4, marginBottom:6 }}/>
+      <div className="skeleton" style={{ width:'50%', height:11, borderRadius:3, marginBottom:10 }}/>
+      <div className="skeleton" style={{ width:'100%', height:4, borderRadius:2 }}/>
+    </div>
+  </div>
+);
 
 // ─── Subcomponents ─────────────────────────────────────────────────────────
 const KpiCard = ({ label, value, delta, kind, sub, accent, chromatic }) => (

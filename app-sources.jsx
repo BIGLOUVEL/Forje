@@ -756,56 +756,72 @@ const NewsRow = ({ item, active, onClick, onHover3s, onDismiss }) => {
   );
 };
 
-const ActionPanel = ({ news, onCopy, onGenerate }) => {
-  const [copied, setCopied] = useState(false);
-
-  if (!news) return <div className="action-empty">Sélectionne une news</div>;
-  if (!news.format) return (
-    <div className="action-panel action-panel--weak">
-      <div className="action-weak-icon">◇</div>
-      <div className="action-weak-title">Pas pertinent pour ton univers</div>
-      <div className="action-weak-desc">{news.why}.</div>
-      <button className="btn btn-ghost btn-sm" style={{marginTop:14}}
-        onClick={() => onGenerate?.(news.id, null)}
-      ><AppIcon name="bolt" size={12}/>Forger quand même</button>
+const RecapPanel = ({ news, onGenerate }) => {
+  if (!news) return (
+    <div className="action-empty">
+      <div style={{ fontSize:28, marginBottom:8, opacity:.3 }}>◈</div>
+      <div style={{ fontSize:13, color:'var(--app-fg-4)' }}>Sélectionne une actu</div>
     </div>
   );
 
-  const handleCopy = () => {
-    navigator.clipboard?.writeText(news.caption);
-    onCopy?.(news.id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const scoreColor = news.score >= 8.5 ? '#ef4444' : news.score >= 7 ? '#f59e0b' : 'var(--app-fg-4)';
+
+  const buildRecap = () => {
+    const parts = [];
+    parts.push(`**${news.title}**`);
+    parts.push(`Source : ${news.source} · ${news.when}`);
+    if (news.description) parts.push(`\n${news.description}`);
+    if (news.why)   parts.push(`\nContexte : ${news.why}`);
+    if (news.angle) parts.push(`Angle : ${news.angle}`);
+    return parts.join('\n');
   };
 
   return (
-    <div className="action-panel">
-      <div className="action-head"><span className="action-kicker">FORJE TE SUGGÈRE</span><span className="action-match">◆ {Math.round(news.match*100)}% pertinent</span></div>
-      <div className="action-why"><AppIcon name="target" size={12}/><span>{news.why}</span></div>
-      <div className="action-recs">
-        <div className="action-rec"><div className="action-rec-label">Format recommandé</div><div className="action-rec-value"><AppIcon name="layers" size={14}/>{news.format}</div></div>
-        <div className="action-rec"><div className="action-rec-label">Fenêtre de publication</div><div className="action-rec-value"><AppIcon name="clock" size={14}/>{news.timing || '—'}</div></div>
+    <div className="recap-panel">
+      {/* ── Score badge ── */}
+      <div className="recap-score-row">
+        <span className="recap-source">{news.source}</span>
+        <span className="recap-when">{news.when}</span>
+        <span className="recap-score" style={{ color: scoreColor }}>{news.score.toFixed(1)}<span style={{ fontSize:9, opacity:.6 }}>/10</span></span>
       </div>
-      {news.caption && (
-        <div className="action-caption-block">
-          <div className="action-caption-head">
-            <span>Caption prête à copier</span>
-            <div className="action-caption-actions">
-              <button className="action-mini-btn"><AppIcon name="sparkle" size={11}/>Régénérer</button>
-              <button className="action-mini-btn" onClick={handleCopy} style={{ color: copied ? '#22C55E' : undefined }}>
-                <AppIcon name="copy" size={11}/>{copied ? 'Copié !' : 'Copier'}
-              </button>
-            </div>
-          </div>
-          <div className="action-caption-body">{news.caption}</div>
-          <div className="action-caption-foot"><span>{news.caption.length} caractères</span><span className="tag tag-dot tag-success">Score {Math.round(news.match * 10)}/10</span></div>
+
+      {/* ── Titre ── */}
+      <div className="recap-titre">{news.title}</div>
+
+      {/* ── Corps de l'article ── */}
+      {news.description && (
+        <div className="recap-body">{news.description}</div>
+      )}
+
+      {/* ── Analyse Forje (compact) ── */}
+      {(news.why || news.angle) && (
+        <div className="recap-analysis">
+          {news.why   && <div className="recap-analysis-row"><span className="recap-analysis-label">Pourquoi</span><span>{news.why}</span></div>}
+          {news.angle && <div className="recap-analysis-row"><span className="recap-analysis-label">Angle</span><span>{news.angle}</span></div>}
         </div>
       )}
-      <div className="action-cta">
-        <button className="btn btn-primary btn-sm" style={{flex:1}}
-          onClick={() => onGenerate?.(news.id, news.format)}
-        ><AppIcon name="bolt" size={12}/>Forger ce post</button>
-      </div>
+
+      {/* ── Format + Timing (secondaire) ── */}
+      {(news.format || news.timing) && (
+        <div className="recap-meta-row">
+          {news.format && <span className="recap-meta-chip"><AppIcon name="layers" size={11}/>{news.format}</span>}
+          {news.timing && <span className="recap-meta-chip"><AppIcon name="clock" size={11}/>{news.timing}</span>}
+          {news.url && (
+            <a className="recap-meta-chip recap-meta-link" href={news.url} target="_blank" rel="noopener noreferrer">
+              <AppIcon name="globe" size={11}/>Source originale ↗
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* ── CTA ── */}
+      <button
+        className="btn btn-primary"
+        style={{ width:'100%', marginTop:'auto', justifyContent:'center' }}
+        onClick={() => onGenerate?.(news.id, news.format)}
+      >
+        <AppIcon name="bolt" size={13}/>Forger ce post
+      </button>
     </div>
   );
 };
@@ -1073,41 +1089,61 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
   const runRefresh = async () => {
     setRefreshing(true);
     try {
+      // RSS uniquement — Twitter est manuel séparé (voir bouton X)
       await veilleFetch(`/rss/refresh?compte_id=${compteId}`);
     } catch (err) { console.error('[Refresh]', err.message); }
     finally { setRefreshing(false); }
-    // Scoring en background — poll toutes les 4s pendant 3 min
     setScoring(true);
     await loadBoard();
     const pollStart = Date.now();
     const pollIv = setInterval(async () => {
       await loadBoard();
-      if (Date.now() - pollStart > 3 * 60 * 1000) {
-        clearInterval(pollIv);
-        setScoring(false);
-      }
+      if (Date.now() - pollStart > 3 * 60 * 1000) { clearInterval(pollIv); setScoring(false); }
     }, 4000);
     setTimeout(() => { clearInterval(pollIv); setScoring(false); }, 3 * 60 * 1000);
+  };
+
+  const [twitterRefreshing, setTwitterRefreshing] = useState(false);
+  const [twitterMsg, setTwitterMsg]               = useState(null);
+
+  const runTwitterRefresh = async () => {
+    if (!window.confirm('Fetch Twitter maintenant ?\n\nEstimation : ~160–200 crédits twitterapi.io (sur 25 000 au total).\n\nCooldown de 30 min ensuite.')) return;
+    setTwitterRefreshing(true);
+    setTwitterMsg(null);
+    try {
+      const res  = await veilleFetch('/twitter/refresh', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ compte_id: compteId }) });
+      const json = await res.json();
+      if (!res.ok) {
+        setTwitterMsg({ type:'warn', text: json.error || 'Erreur' });
+      } else {
+        setTwitterMsg({ type:'ok', text: `✓ +${json.inserted} tweets · ~${json.credits_used_est} crédits · cooldown 30 min` });
+        await loadBoard();
+      }
+    } catch (err) {
+      setTwitterMsg({ type:'err', text: err.message });
+    } finally { setTwitterRefreshing(false); }
   };
 
   const feed = (boardData.board || []).filter(item => !dismissed.has(item.id)).map(item => {
     const raw = item.news_raw || {};
     return {
-      id:        item.id,
-      createdAt: raw.published_at || raw.created_at,
-      when:      fmtAge(raw.published_at || raw.created_at),
-      heat:      item.flag === 'urgent' ? 'hot' : item.flag === 'a_traiter' ? 'warm' : 'cool',
-      source:    raw.source || '—',
-      cat:       item.format_suggere || null,
-      match:     Math.min(1, (item.score_total || 0) / 10),
-      score:     item.score_total || 0,
-      why:       item.pourquoi_ce_score || '',
-      format:    item.format_suggere,
-      timing:    item.timing_optimal,
-      caption:   item.caption,
-      title:     raw.titre || '(sans titre)',
-      url:       raw.url,
-      hashtags:  item.hashtags || [],
+      id:          item.id,
+      createdAt:   raw.published_at || raw.created_at,
+      when:        fmtAge(raw.published_at || raw.created_at),
+      heat:        item.flag === 'urgent' ? 'hot' : item.flag === 'a_traiter' ? 'warm' : 'cool',
+      source:      raw.source || '—',
+      cat:         item.format_suggere || null,
+      match:       Math.min(1, (item.score_total || 0) / 10),
+      score:       item.score_total || 0,
+      why:         item.pourquoi_ce_score || '',
+      format:      item.format_suggere,
+      timing:      item.timing_optimal,
+      caption:     item.caption,
+      title:       raw.titre || '(sans titre)',
+      description: raw.description || '',
+      url:         raw.url,
+      hashtags:    item.hashtags || [],
+      angle:       item.angle || '',
     };
   });
 
@@ -1186,7 +1222,25 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
         </div>
         <div className="view-tabs-actions">
           {learning && <span style={{ fontSize:12, color:'var(--app-accent)', fontWeight:600 }}>⚡ Apprentissage…</span>}
-          <button className="feed-filter-icon" title={refreshing ? 'En cours…' : 'Rafraîchir RSS + scorer'} onClick={runRefresh} disabled={refreshing || scoring} style={{ opacity: (refreshing||scoring)?0.5:1 }}>
+          {twitterMsg && (
+            <span style={{ fontSize:11, color: twitterMsg.type==='ok'?'var(--app-success)':twitterMsg.type==='warn'?'#f59e0b':'var(--app-danger)', maxWidth:240 }}>
+              {twitterMsg.text}
+            </span>
+          )}
+          {/* Bouton X/Twitter — manuel, coût estimé affiché avant fetch */}
+          <button
+            className="feed-filter-icon"
+            title={twitterRefreshing ? 'Fetch Twitter…' : 'Fetch Twitter manuellement (~160 crédits)'}
+            onClick={runTwitterRefresh}
+            disabled={twitterRefreshing || refreshing}
+            style={{ opacity: twitterRefreshing ? 0.5 : 1 }}
+          >
+            {twitterRefreshing
+              ? <span style={{fontSize:10,color:'#1d9bf0',fontWeight:700}}>…</span>
+              : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{color:'var(--app-fg-3)'}}><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            }
+          </button>
+          <button className="feed-filter-icon" title={refreshing ? 'En cours…' : 'Rafraîchir RSS'} onClick={runRefresh} disabled={refreshing || scoring} style={{ opacity: (refreshing||scoring)?0.5:1 }}>
             {refreshing ? <span style={{fontSize:10,color:'var(--app-accent)',fontWeight:700}}>…</span> : <AppIcon name="refresh" size={12}/>}
           </button>
           <button className="feed-filter-icon" title={scoring ? 'Scoring…' : 'Rescorer'} onClick={runScoring} disabled={scoring||refreshing} style={{ opacity:(scoring||refreshing)?0.5:1 }}>
@@ -1555,13 +1609,20 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
             )}
           </section>
           <aside className="sources-action">
-            <ActionPanel
+            <RecapPanel
               news={active}
-              onCopy={(id) => track(id, 'copy')}
               onGenerate={(id, format) => {
                 track(id, 'generate', { format_utilise: format });
                 if (window.__goToGenerate && active) {
-                  window.__goToGenerate({ title: active.title, caption: active.caption, url: active.url, source: active.source });
+                  const recap = [
+                    active.title,
+                    `Source : ${active.source} · ${active.when}`,
+                    active.description || '',
+                    active.why   ? `Contexte : ${active.why}` : '',
+                    active.angle ? `Angle : ${active.angle}`   : '',
+                    active.caption ? `\nCaption suggérée :\n${active.caption}` : '',
+                  ].filter(Boolean).join('\n');
+                  window.__goToGenerate({ title: active.title, text: recap, url: active.url, source: active.source });
                 }
               }}
             />

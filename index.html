@@ -6,7 +6,7 @@
 <title>Forje Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 
 <!-- Auth CSS — toujours actif -->
 <link rel="stylesheet" href="app-auth.css"/>
@@ -17,11 +17,12 @@
 <link id="css-l3" rel="stylesheet" href="forje-mark.css" media="none"/>
 
 <!-- App CSS — désactivé par défaut -->
-<link id="css-a1" rel="stylesheet" href="app.css" media="none"/>
-<link id="css-a2" rel="stylesheet" href="app-dashboard.css" media="none"/>
-<link id="css-a3" rel="stylesheet" href="app-screens.css" media="none"/>
-<link id="css-a4" rel="stylesheet" href="app-sources.css" media="none"/>
-<link id="css-a5" rel="stylesheet" href="app-onboarding.css" media="none"/>
+<link id="css-a1" rel="stylesheet" href="app.css?v=7" media="none"/>
+<link id="css-a2" rel="stylesheet" href="app-dashboard.css?v=7" media="none"/>
+<link id="css-a3" rel="stylesheet" href="app-screens.css?v=7" media="none"/>
+<link id="css-a4" rel="stylesheet" href="app-sources.css?v=7" media="none"/>
+<link id="css-a5" rel="stylesheet" href="app-onboarding.css?v=7" media="none"/>
+<link id="css-a6" rel="stylesheet" href="app-pulse.css?v=2" media="none"/>
 
 <style>
   body { margin:0; background:#000004; }
@@ -40,7 +41,7 @@
     try {
       var raw = localStorage.getItem('sb-tmsbtjczvjdwzfkoprwq-auth-token');
       if (raw && JSON.parse(raw).access_token) {
-        ['css-a1','css-a2','css-a3','css-a4','css-a5'].forEach(function(id) {
+        ['css-a1','css-a2','css-a3','css-a4','css-a5','css-a6'].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) el.media = '';
         });
@@ -92,15 +93,17 @@
     'app-dashboard.jsx',
     'app-screens.jsx',
     'app-sources.jsx',
+    'app-pulse.jsx',
     'app-onboarding.jsx',
     'app-main.jsx',
     'app-auth.jsx',
     'root.jsx',
   ];
 
+  const V = '?v=7';
   for (const src of files) {
     try {
-      const res  = await fetch(src);
+      const res  = await fetch(src + V);
       const jsx  = await res.text();
       const { code } = Babel.transform(jsx, { presets: ['react'] });
       const el = document.createElement('script');

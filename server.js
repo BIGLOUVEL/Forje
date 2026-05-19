@@ -12,7 +12,7 @@ const ROOT = __dirname;
 const NM   = path.join(__dirname, 'node_modules');
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 
 // Fonts pour le Canvas côté client
 app.use('/fonts/bebas-neue',       express.static(path.join(NM, '@fontsource/bebas-neue/files')));
@@ -34,14 +34,15 @@ app.use('/api/agent',        require('./routes/agent'));
 
 const { router: rssRouter,     fetchAllFeeds }                              = require('./routes/rss');
 const { router: scoringRouter, scoreForCompte }                             = require('./routes/scoring');
-const { router: twitterRouter, fetchAllTwitterAccounts, fetchTwitterSources, evaluateTwitterSources } = require('./routes/twitter');
-const { router: learningRouter }                                            = require('./routes/learning');
+const { router: twitterRouter }  = require('./routes/twitter');
+const { router: learningRouter } = require('./routes/learning');
 
 app.use('/api/rss',      rssRouter);
 app.use('/api/resumes',  require('./routes/resumes'));
 app.use('/api/scoring',  scoringRouter);
 app.use('/api/twitter',  twitterRouter);
 app.use('/api/learning', learningRouter);
+app.use('/api/hot',      require('./routes/hot'));
 
 // ─── Polling RSS toutes les 5 minutes — SANS Twitter (appels API gratuits) ───
 const RSS_INTERVAL_MS = 5 * 60 * 1000;
@@ -53,46 +54,22 @@ async function rssLoop() {
       .then(r => ({ count: r.reduce((s, x) => s + (x.inserted ?? 0), 0) }))
       .catch(err => { console.error('[RSS] erreur:', err.message); return { count: 0 }; });
     console.log(`[RSS] +${count} articles`);
+
+    // Auto-score pour tous les comptes actifs après chaque fetch
+    if (count > 0) {
+      const { data: comptes } = await supabase.from('comptes').select('id, nom');
+      for (const c of (comptes || [])) {
+        scoreForCompte(c.id).catch(err => console.error(`[AutoScore] ${c.nom}: ${err.message}`));
+      }
+    }
   } catch (err) {
     console.error('[RSS] crash inattendu:', err.message);
   }
 }
 
-// ─── Polling Twitter séparé — TWITTER_INTERVAL_MIN env var (défaut 60 min) ──
-// Calcul : N sources × (60 / intervalle_min) appels/heure
-// Exemples : 34 sources à 60 min = 34 appels/h | à 120 min = 17 appels/h
-const TWITTER_INTERVAL_MS = parseInt(process.env.TWITTER_INTERVAL_MIN || '60') * 60 * 1000;
-
-async function twitterLoop() {
-  try {
-    if (!process.env.TWITTERAPI_IO_KEY) return;
-    console.log('[Twitter] Fetch sources…');
-    const { data: comptes } = await supabase.from('comptes').select('id, nom');
-    const compteIds = (comptes || []).map(c => c.id);
-
-    const [twManual, ...twSources] = await Promise.all([
-      fetchAllTwitterAccounts(),
-      ...compteIds.map(id => fetchTwitterSources(id)),
-    ]);
-
-    const all      = [twManual, ...twSources].flat();
-    const inserted = all.reduce((s, r) => s + (r.inserted ?? 0), 0);
-    const errors   = all.filter(r => r.error).map(r => r.error);
-    if (errors.length) console.warn(`[Twitter] ${errors.length} erreur(s):`, errors[0]);
-    console.log(`[Twitter] +${inserted} tweets`);
-  } catch (err) {
-    console.error('[Twitter] crash inattendu:', err.message);
-  }
-}
-
-// Évaluation quotidienne des sources Twitter
-async function dailyTwitterEval() {
-  const { data: comptes } = await supabase.from('comptes').select('id, nom');
-  for (const c of (comptes || [])) {
-    evaluateTwitterSources(c.id).catch(err => console.error(`[TwitterEval] ${c.nom}: ${err.message}`));
-  }
-}
-setInterval(dailyTwitterEval, 24 * 60 * 60 * 1000);
+// ─── Twitter : loop automatique DÉSACTIVÉ — manuel uniquement via UI ─────────
+// Raison : 34 sources × 20 tweets = 680 crédits/loop → 25k crédits cramés en 4h
+// Le fetch Twitter se déclenche uniquement via POST /api/twitter/refresh depuis l'UI
 
 // Purge quotidienne — garde 7 jours dans news_raw et news_scored
 async function dailyPurge() {
@@ -108,9 +85,6 @@ dailyPurge();
 
 rssLoop();
 setInterval(rssLoop, RSS_INTERVAL_MS);
-
-twitterLoop();
-setInterval(twitterLoop, TWITTER_INTERVAL_MS);
 
 // ─── Admin (caché, pas indexé dans le SPA) ───────────────────────────────────
 app.get('/admin', (_req, res) => res.sendFile(path.join(ROOT, 'admin.html')));

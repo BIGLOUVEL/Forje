@@ -181,10 +181,25 @@ body { min-width: 1440px; }
   max-width: none;
   padding: 0;
   overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
 }
 .hero-text-col {
   padding: 120px 48px 120px 72px;
   display: flex; flex-direction: column; align-items: flex-start;
+}
+.hero-visual-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 48px 40px 0;
+}
+.hero-motion-video {
+  width: 100%;
+  max-width: 580px;
+  border-radius: 24px;
+  display: block;
 }
 
 .eyebrow {
@@ -417,11 +432,11 @@ body { min-width: 1440px; }
 .client-card::before {
   /* luminous top 1px */
   content: ""; position: absolute; left: 18px; right: 18px; top: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(200,220,255,0.55), transparent);
+  background: linear-gradient(90deg, transparent, var(--card-line, rgba(200,220,255,0.55)), transparent);
 }
 .client-card::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(600px 300px at 10% 0%, rgba(80,120,255,0.12), transparent 70%);
+  background: radial-gradient(600px 300px at 10% 0%, var(--card-accent, rgba(80,120,255,0.12)), transparent 70%);
 }
 
 .client-left {
