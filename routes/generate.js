@@ -180,6 +180,25 @@ async function removeWhiteBackground(pngBuffer, tolerance = 235) {
   return sharp(Buffer.from(data), { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
 }
 
+// Détecte la couleur de fond via les coins et la supprime (fonctionne fond blanc OU sombre)
+async function removeBackground(pngBuffer, tolerance = 40) {
+  const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height, S = 4;
+  // Échantillonne les 4 coins pour déterminer la couleur de fond
+  const corners = [
+    [data[0], data[1], data[2]],
+    [data[(W-1)*S], data[(W-1)*S+1], data[(W-1)*S+2]],
+    [data[(H-1)*W*S], data[(H-1)*W*S+1], data[(H-1)*W*S+2]],
+    [data[((H-1)*W+(W-1))*S], data[((H-1)*W+(W-1))*S+1], data[((H-1)*W+(W-1))*S+2]],
+  ];
+  const bg = corners.reduce((a, c) => [a[0]+c[0], a[1]+c[1], a[2]+c[2]], [0,0,0]).map(v => Math.round(v/4));
+  for (let i = 0; i < data.length; i += S) {
+    const dr = Math.abs(data[i]-bg[0]), dg = Math.abs(data[i+1]-bg[1]), db = Math.abs(data[i+2]-bg[2]);
+    if (dr < tolerance && dg < tolerance && db < tolerance) data[i+3] = 0;
+  }
+  return sharp(Buffer.from(data), { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
+}
+
 // ─── Pack typographique → fallbacks systeme ───────────────────────────────────
 const FONT_PACKS_SRV = {
   'impact-news':    { headFont:'Impact,Arial Black,sans-serif',  bodyFont:'Arial,Helvetica,sans-serif', headStyle:'normal', headWeight:'400', headSpacing:'2',  transform:true  },
@@ -1306,28 +1325,80 @@ tagline: max 5 mots, SPECIFIQUE à "${name}". brand_colors: cohérents avec le b
   }
 });
 
-// ─── Génère le logo standalone depuis le brand kit via GPT Image 1 edit ────────
+// ─── Crop logo depuis le brand kit — Vision pour les coordonnées, Sharp pour tout le reste ──
+// Aucun modèle génératif : le logo n'est jamais redessiné.
 async function cropLogoFromBrandKit(imageUrl) {
   if (!openaiClient) return null;
   try {
     const imgBuf = await downloadBuffer(imageUrl);
-    const file = await toFile(imgBuf, 'brand-kit.jpg', { type: 'image/jpeg' });
+    const meta   = await sharp(imgBuf).metadata();
+    const imgW   = meta.width, imgH = meta.height;
 
-    console.log('[crop logo] calling gpt-image-1 images.edit...');
-    const edited = await openaiClient.images.edit({
-      model: 'gpt-image-1',
-      size: '1024x1024',
-      quality: 'high',
-      image: file,
-      prompt: 'This image contains a brand logo or monogram, possibly inside a circular Instagram stories-style ring or frame. Your task is strictly conservative: (1) Remove the circular stories ring/border if present — keep everything inside untouched. (2) Remove any solid background color — output the logo on a fully transparent background. (3) Upscale and sharpen to maximum quality. (4) Recenter or straighten ONLY if visibly cropped, tilted, or off-center — otherwise leave as-is. Do NOT redesign, simplify, recolor, or alter the logo in any way. Output: the exact logo mark on a transparent background, PNG format, centered, high resolution.',
+    // Étape 1 : Claude Vision → coordonnées pixel du logo mark
+    // On envoie uniquement le top 40% de l'image pour éliminer le bruit (typo, posts, couleurs)
+    const fmtMap = { png:'image/png', webp:'image/webp', gif:'image/gif' };
+    const mime   = fmtMap[meta.format] || 'image/jpeg';
+    const cropH  = Math.round(imgH * 0.40);
+    const topBuf = await sharp(imgBuf).extract({ left: 0, top: 0, width: imgW, height: cropH }).jpeg({ quality: 85 }).toBuffer();
+    const b64Kit = topBuf.toString('base64');
+    const resp   = await haiku.messages.create({
+      model:      'claude-sonnet-4-6',
+      max_tokens: 100,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64Kit } },
+          { type: 'text',  text:  `This is the top portion (${imgW}x${cropH}px) of a brand identity sheet. There is an Instagram-style profile avatar — a CIRCLE or rounded badge containing initials/monogram on a solid background. It sits BELOW the large text brand name. Find it and return ONLY valid JSON: {"x":N,"y":N,"w":N,"h":N} in pixels (top-left origin, integers). No markdown, no text.` }
+        ]
+      }]
     });
-    const b64 = edited.data?.[0]?.b64_json;
-    if (!b64) { console.error('[crop logo] no b64 in response'); return null; }
-    console.log('[crop logo] success — removing white background...');
-    const buf = await removeWhiteBackground(Buffer.from(b64, 'base64'));
-    return buf;
+
+    let coords;
+    try {
+      const raw = resp.content[0].text.trim();
+      // Extrait le premier objet JSON trouvé dans la réponse (Claude peut ajouter du texte autour)
+      const match = raw.match(/\{[^{}]*\}/);
+      if (!match) throw new Error('Pas de JSON trouvé dans : ' + raw.slice(0, 120));
+      coords = JSON.parse(match[0]);
+    } catch(e) {
+      console.error('[crop logo] Claude Vision coord parse failed:', e.message);
+      return null;
+    }
+
+    const x = Math.max(0, Math.round(Number(coords.x) || 0));
+    const y = Math.max(0, Math.round(Number(coords.y) || 0));
+    const w = Math.min(Math.round(Number(coords.w) || 0), imgW - x);
+    const h = Math.min(Math.round(Number(coords.h) || 0), imgH - y);
+    if (w < 20 || h < 20) { console.error('[crop logo] bbox trop petit ou invalide', {x,y,w,h,imgW,imgH}); return null; }
+    console.log('[crop logo] bbox trouvé →', {x,y,w,h});
+
+    // Étape 2 : Crop avec padding généreux (20 %) pour ne pas couper l'anneau extérieur
+    const pad = Math.round(Math.min(w, h) * 0.20);
+    const cx  = Math.max(0, x - pad);
+    const cy  = Math.max(0, y - pad);
+    const cw  = Math.min(w + pad * 2, imgW - cx);
+    const ch  = Math.min(h + pad * 2, imgH - cy);
+
+    let logoBuf = await sharp(imgBuf).extract({ left: cx, top: cy, width: cw, height: ch }).png().toBuffer();
+
+    // Étape 3 : Suppression du fond (détection automatique par les coins — fonctionne fond blanc ou sombre)
+    logoBuf = await removeBackground(logoBuf);
+
+    // Étape 4 : Trim des bords transparents (avec fallback si ça plante) + upscale 512×512 centré
+    try {
+      logoBuf = await sharp(logoBuf).trim({ threshold: 10 }).png().toBuffer();
+    } catch(_) { /* trim peut planter si l'image est entièrement transparente — on garde le crop brut */ }
+
+    logoBuf = await sharp(logoBuf)
+      .resize(480, 480, { fit: 'contain', background: { r:0, g:0, b:0, alpha:0 }, kernel: 'lanczos3' })
+      .extend({ top:16, bottom:16, left:16, right:16, background: { r:0, g:0, b:0, alpha:0 } })
+      .png()
+      .toBuffer();
+
+    console.log('[crop logo] succès — aucun modèle génératif utilisé');
+    return logoBuf;
   } catch(e) {
-    console.error('[crop logo] FAILED:', e.message, e.status || '', e.error || '');
+    console.error('[crop logo] FAILED:', e.message);
     return null;
   }
 }
@@ -1341,34 +1412,18 @@ router.post('/brand-identity/confirm', async (req, res) => {
   if (!token) return res.status(401).json({ error: 'Non autorisé' });
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
   if (authErr || !user) return res.status(401).json({ error: 'Non autorisé' });
-  const { data: clientCheck } = await supabase.from('clients').select('id').eq('id', clientId).eq('user_id', user.id).single();
+  // Fetch existing client to preserve the user-uploaded logo
+  const { data: clientCheck } = await supabase.from('clients').select('id, logo_url').eq('id', clientId).eq('user_id', user.id).single();
   if (!clientCheck) return res.status(403).json({ error: 'Accès interdit' });
 
-  // Vision extraction + crop logo en parallèle
-  let extracted = null, logoBuffer = null;
-  try {
-    [extracted, logoBuffer] = await Promise.all([
-      extractBrandConfigFromImage(selectedKit.imageUrl, name),
-      cropLogoFromBrandKit(selectedKit.imageUrl),
-    ]);
-  } catch(e) { console.warn('[brand-identity/confirm]', e.message); }
+  // Config directement depuis le kit sélectionné — déjà calculée lors de la génération
+  const finalConfig = selectedKit.config || {};
 
-  // Config finale — préfère l'extraction Vision, fallback sur precomputed
-  const finalConfig = Object.assign({}, selectedKit.config, extracted || {});
-
-  // Upload logo
-  let logoUrl = null;
-  if (logoBuffer) {
-    const logoPath = `logos/${clientId}/logo-${Date.now()}.jpg`;
-    const { error: le } = await supabase.storage.from('brand-assets').upload(logoPath, logoBuffer, { contentType: 'image/jpeg', upsert: true });
-    if (!le) {
-      const { data: { publicUrl } } = supabase.storage.from('brand-assets').getPublicUrl(logoPath);
-      logoUrl = publicUrl;
-    }
-  }
+  // Preserve the logo the user uploaded — never overwrite it
+  const logoUrl = clientCheck.logo_url || null;
 
   // Save to DB
-  const { error: dbErr } = await supabase.from('clients').upsert({
+  const updatePayload = {
     id: clientId, user_id: user.id, name,
     brand_colors:  finalConfig.brand_colors,
     font_primary:  finalConfig.font_primary,
@@ -1378,9 +1433,12 @@ router.post('/brand-identity/confirm', async (req, res) => {
     topics:        finalConfig.topics || topics,
     tagline:       finalConfig.tagline,
     brand_kit_url: selectedKit.imageUrl,
-    logo_url:      logoUrl,
     onboarding_step: 4,
-  });
+  };
+  // Only set logo_url if the user actually uploaded one (don't null-out an existing logo)
+  if (logoUrl) updatePayload.logo_url = logoUrl;
+
+  const { error: dbErr } = await supabase.from('clients').upsert(updatePayload);
   if (dbErr) console.error('[brand-identity/confirm] db:', dbErr.message);
 
   res.json({ ok: true, imageUrl: selectedKit.imageUrl, logoUrl, config: finalConfig });

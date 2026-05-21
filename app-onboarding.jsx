@@ -84,7 +84,9 @@ const ObProgress = ({ step, total }) => {
 // ═══ STEP 1 — Welcome ═════════════════════════════════════════════════════════
 const StepWelcome = ({ onNext }) => (
   <div className="ob-step ob-step-enter">
-    <div className="ob-logo-mark">F</div>
+    <div className="ob-logo-mark">
+      <img src="assets/forje-mark.png" alt="Forje" style={{ width: 36, height: 36, objectFit: 'contain' }} />
+    </div>
     <div className="ob-text-block">
       <h1 className="ob-title">Bienvenue dans<br/><span className="accent">Forje Studio</span></h1>
       <p className="ob-subtitle">Le studio Instagram qui apprend ton style<br/>et publie à l'infini.</p>
