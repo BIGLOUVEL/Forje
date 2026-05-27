@@ -85,7 +85,7 @@ const ObProgress = ({ step, total }) => {
 const StepWelcome = ({ onNext }) => (
   <div className="ob-step ob-step-enter">
     <div className="ob-logo-mark">
-      <img src="assets/forje-mark.png" alt="Forje" style={{ width: 36, height: 36, objectFit: 'contain' }} />
+      <img src="assets/forje-logo.png" alt="Forje" style={{ width: 52, height: 52, objectFit: 'contain' }} />
     </div>
     <div className="ob-text-block">
       <h1 className="ob-title">Bienvenue dans<br/><span className="accent">Forje Studio</span></h1>
