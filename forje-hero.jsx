@@ -60,15 +60,7 @@ const Hero = ({ tweaks }) => {
         </div>
       </div>
 
-      <div className="hero-visual-col">
-        <img
-          className="hero-motion-video"
-          src="assets/hero-landing-cinematic.png"
-          alt="Forje Studio"
-          loading="eager"
-          decoding="async"
-        />
-      </div>
+      <div className="hero-visual-col" />
 
       {demoOpen && (
         <div onClick={() => setDemoOpen(false)} style={{
