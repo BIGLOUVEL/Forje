@@ -24,6 +24,29 @@ app.use('/fonts/dm-serif-display', express.static(path.join(NM, '@fontsource/dm-
 // SaaS principal (fichiers statiques à la racine)
 app.use(express.static(ROOT));
 
+// ─── Health check (debug) ─────────────────────────────────────────────────────
+app.get('/api/health', async (req, res) => {
+  const { supabase } = require('./lib/supabase');
+  let sbOk = false;
+  let sbErr = null;
+  try {
+    const { error } = await supabase.from('clients').select('id').limit(1);
+    sbOk = !error;
+    sbErr = error?.message;
+  } catch(e) { sbErr = e.message; }
+  res.json({
+    ok: true,
+    env: {
+      SUPABASE_URL:         !!process.env.SUPABASE_URL,
+      SUPABASE_SERVICE_KEY: !!process.env.SUPABASE_SERVICE_KEY,
+      ANTHROPIC_API_KEY:    !!process.env.ANTHROPIC_API_KEY,
+      OPENAI_API_KEY:       !!process.env.OPENAI_API_KEY,
+      GOOGLE_API_KEY:       !!process.env.GOOGLE_API_KEY,
+    },
+    supabase: { ok: sbOk, error: sbErr }
+  });
+});
+
 // ─── Routes API ───────────────────────────────────────────────────────────────
 app.use('/api/admin',        require('./routes/admin'));
 app.use('/api/onboarding',   require('./routes/onboarding'));
