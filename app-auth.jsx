@@ -38,7 +38,12 @@ const AuthScreen = ({ onAuth }) => {
     if (err) {
       setError(err.message);
     } else if (mode === 'signup' && !data.session) {
-      setSuccess('Vérifie ta boîte mail pour confirmer ton compte.');
+      // Supabase renvoie identities:[] quand l'email est déjà enregistré
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        setError('__EXISTING_ACCOUNT__');
+      } else {
+        setSuccess('Vérifie ta boîte mail pour confirmer ton compte.');
+      }
     } else if (data.user) {
       onAuth(data.user);
     }
@@ -193,7 +198,26 @@ const AuthScreen = ({ onAuth }) => {
                   </div>
                 )}
 
-                {error   && <div className="auth-error">{error}</div>}
+                {error && error !== '__EXISTING_ACCOUNT__' && (
+                  <div className="auth-error">{error}</div>
+                )}
+                {error === '__EXISTING_ACCOUNT__' && (
+                  <div className="auth-error" style={{display:'flex', flexDirection:'column', gap:8}}>
+                    <span>Cet email a déjà un compte Forje.</span>
+                    <button
+                      type="button"
+                      onClick={function(){ switchMode('login'); }}
+                      style={{
+                        alignSelf:'flex-start', background:'rgba(110,160,255,0.15)',
+                        border:'1px solid rgba(110,160,255,0.4)', borderRadius:6,
+                        color:'#a0c4ff', padding:'4px 12px', fontSize:12,
+                        cursor:'pointer', fontFamily:'inherit'
+                      }}
+                    >
+                      → Se connecter
+                    </button>
+                  </div>
+                )}
                 {success && <div className="auth-success">{success}</div>}
 
                 <button type="submit" className="auth-submit" disabled={loading}>
