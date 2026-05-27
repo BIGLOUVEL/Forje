@@ -692,20 +692,25 @@
 /* ─── Brand Kit Result Layout (image + config panel) ────────────────────── */
 .ob-kit-layout {
   width: 100%;
-  max-width: 900px;
-  padding: 0 24px;
+  max-width: 860px;
+  padding: 0 20px;
   display: flex;
-  gap: 24px;
+  gap: 20px;
   align-items: flex-start;
+  overflow-x: hidden;
   animation: ob-enter 250ms ease-out both;
 }
 .ob-kit-img-col {
-  flex: 1.4;
+  flex: 1.2;
   min-width: 0;
+  max-width: 420px;
 }
 .ob-kit-panel {
   flex: 1;
-  min-width: 220px;
+  min-width: 200px;
+  max-width: 340px;
+  overflow-y: auto;
+  max-height: calc(100vh - 120px);
   display: flex;
   flex-direction: column;
   gap: 14px;

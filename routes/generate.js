@@ -1247,8 +1247,7 @@ router.post('/brand-identity', async (req, res) => {
   const authResult = await supabase.auth.getUser(token);
   const user = authResult.data?.user;
   const authErr = authResult.error;
-  console.log('[brand-identity] auth:', { hasToken: !!token, hasUser: !!user, errMsg: authErr?.message, sbUrl: !!process.env.SUPABASE_URL, sbKey: !!process.env.SUPABASE_SERVICE_KEY });
-  if (authErr || !user) return res.status(401).json({ error: 'Non autorisé', debug: authErr?.message || 'no_user' });
+  if (authErr || !user) return res.status(401).json({ error: 'Non autorisé' });
 
   const clientResult = await supabase.from('clients').select('id').eq('id', clientId).eq('user_id', user.id).maybeSingle();
   const clientCheck = clientResult.data;
@@ -1263,35 +1262,22 @@ router.post('/brand-identity', async (req, res) => {
     } catch(_) {}
   }
 
-  // 3 GPT Image + 3 Claude configs en parallèle
-  let results;
+  // Étape 1 — 3 images GPT Image 2 en parallèle
+  let imageResults;
   try {
-    results = await Promise.all([1, 2, 3].flatMap(v => [
+    imageResults = await Promise.all([1, 2, 3].map(v =>
       openaiClient.images.generate({
         model: 'gpt-image-2', size: '1024x1536', quality: 'high', n: 1,
         prompt: buildBrandKitVariantPrompt({ name, topics, userPrompt: enrichedPrompt, variant: v }),
-      }),
-      haiku.messages.create({
-        model: 'claude-sonnet-4-6', max_tokens: 400,
-        messages: [{ role: 'user', content: `Directeur artistique — config JSON pour "${name}", média ${(topics||[]).slice(0,3).join('/')}.
-${userPrompt ? 'Brief créatif: ' + userPrompt : ''}
-Retourne UNIQUEMENT ce JSON (pas de backticks, tagline varie selon variant ${v}/3):
-{"brand_colors":["#HEX1","#HEX2","#HEX3"],"font_primary":"Font Name","mood":"energique","graphic_style":"breaking","tone_tags":[],"topics":${JSON.stringify(topics||[])},"tagline":""}
-tone_tags: 3 parmi [Direct,Percutant,Informatif,Premium,Populaire,Sérieux,Expert,Accessible,Émotionnel,Factuel,Inspirant,Audacieux,Pédagogue].
-tagline: max 5 mots, SPECIFIQUE à "${name}". brand_colors: cohérents avec le brief. font_primary: adapté au média.` }]
-      }),
-    ]));
+      })
+    ));
   } catch(err) {
-    console.error('[brand-identity] generation failed:', err.message, err.status, err.error, err.code);
+    console.error('[brand-identity] generation failed:', err.message);
     return res.status(500).json({ error: 'La génération a échoué. Réessaie dans quelques secondes.' });
   }
 
-  // Traitement des 3 kits
-  const kits = [];
-  for (let i = 0; i < 3; i++) {
-    const imgResult    = results[i * 2];
-    const configResult = results[i * 2 + 1];
-
+  // Étape 2 — Upload + extraction config depuis image (Vision GPT-4o) en parallèle
+  const kits = (await Promise.all(imageResults.map(async (imgResult, i) => {
     let imgBuffer;
     try {
       if (imgResult.data[0].b64_json) {
@@ -1300,23 +1286,26 @@ tagline: max 5 mots, SPECIFIQUE à "${name}". brand_colors: cohérents avec le b
         const fetched = await fetch(imgResult.data[0].url);
         imgBuffer = Buffer.from(await fetched.arrayBuffer());
       }
-    } catch(e) { console.error(`[brand-identity] image ${i+1} failed:`, e.message); continue; }
+    } catch(e) { console.error(`[brand-identity] image ${i+1} failed:`, e.message); return null; }
 
     const fileName = `brand-kits/${clientId}/option-${i+1}-${Date.now()}.jpg`;
     const { error: upErr } = await supabase.storage.from('brand-assets').upload(fileName, imgBuffer, { contentType: 'image/jpeg', upsert: true });
-    if (upErr) { console.error('upload failed', upErr.message); continue; }
+    if (upErr) { console.error('upload failed', upErr.message); return null; }
     const { data: { publicUrl: imageUrl } } = supabase.storage.from('brand-assets').getPublicUrl(fileName);
 
-    let config;
-    try {
-      config = JSON.parse(configResult.content[0].text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim());
-    } catch(_) {
-      config = { brand_colors:['#111111','#FF3B30','#FFFFFF'], font_primary:'Bebas Neue',
-                 mood:'energique', graphic_style:'breaking', tone_tags:['Direct','Percutant','Informatif'],
-                 topics:topics||[], tagline:'' };
+    // Extraire palette/fonts/tagline DEPUIS l image générée — garantit la cohérence
+    let config = await extractBrandConfigFromImage(imageUrl, name);
+    if (!config) {
+      config = { brand_colors: ['#111111','#FF3B30','#FFFFFF'], font_primary: 'Bebas Neue',
+                 mood: 'energique', graphic_style: 'breaking', tone_tags: ['Direct','Percutant','Informatif'],
+                 topics: topics||[], tagline: '' };
+    } else {
+      config.topics = topics || [];
+      config.mood = config.mood || 'energique';
+      config.graphic_style = config.graphic_style || 'breaking';
     }
-    kits.push({ imageUrl, config });
-  }
+    return { imageUrl, config };
+  }))).filter(Boolean);
 
   if (!kits.length) return res.status(500).json({ error: 'Aucun kit généré — réessaie' });
   res.json({ ok: true, kits });
