@@ -1,0 +1,7 @@
+node_modules
+veille/node_modules
+.claude
+.git
+*.mp4
+assets/hero-video-loop.mp4
+assets/motion.mp4
