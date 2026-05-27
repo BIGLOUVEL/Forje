@@ -1,4 +1,12 @@
 require('dotenv').config();
+
+// Strip BOM (U+FEFF) injecté par PowerShell/Windows sur toutes les env vars
+Object.keys(process.env).forEach(k => {
+  if (typeof process.env[k] === 'string') {
+    process.env[k] = process.env[k].replace(/^﻿/, '').trim();
+  }
+});
+
 const express  = require('express');
 const cors     = require('cors');
 const path     = require('path');
