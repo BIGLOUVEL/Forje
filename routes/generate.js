@@ -1243,11 +1243,12 @@ router.post('/brand-identity', async (req, res) => {
 
   // Auth — vérifie que le clientId appartient bien à l'utilisateur connecté
   const token = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+  if (!token) return res.status(401).json({ error: 'Non autorisé', debug: 'no_token' });
   const authResult = await supabase.auth.getUser(token);
   const user = authResult.data?.user;
   const authErr = authResult.error;
-  if (authErr || !user) return res.status(401).json({ error: 'Non autorisé' });
+  console.log('[brand-identity] auth:', { hasToken: !!token, hasUser: !!user, errMsg: authErr?.message, sbUrl: !!process.env.SUPABASE_URL, sbKey: !!process.env.SUPABASE_SERVICE_KEY });
+  if (authErr || !user) return res.status(401).json({ error: 'Non autorisé', debug: authErr?.message || 'no_user' });
 
   const clientResult = await supabase.from('clients').select('id').eq('id', clientId).eq('user_id', user.id).maybeSingle();
   const clientCheck = clientResult.data;
