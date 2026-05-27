@@ -61,9 +61,13 @@ const Hero = ({ tweaks }) => {
       </div>
 
       <div className="hero-visual-col">
-        <video className="hero-motion-video" autoPlay loop muted playsInline>
-          <source src="assets/motion.mp4" type="video/mp4" />
-        </video>
+        <img
+          className="hero-motion-video"
+          src="assets/hero-landing-cinematic.png"
+          alt="Forje Studio"
+          loading="eager"
+          decoding="async"
+        />
       </div>
 
       {demoOpen && (
