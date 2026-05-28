@@ -905,8 +905,8 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
         if (loadingItem) {
           return prev.map(r => r.loading ? { ...entry, id: loadingItem.id } : r);
         }
-        // Pas encore de placeholder (race Supabase load) — on append, Supabase dédupliquera au prochain mount
-        return [...prev, entry];
+        // Pas encore de placeholder (race) — prepend, Supabase dédupliquera au prochain mount
+        return [entry, ...prev];
       });
       setGenerating(false);
       setGenPhase('exiting');
@@ -944,7 +944,7 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
       setGenPhase('generating');
       setError(null);
       setActiveSlide(0);
-      setResults(prev => [...prev, { id: lId, loading: true, preset_id: preset.id }]);
+      setResults(prev => [{ id: lId, loading: true, preset_id: preset.id }, ...prev]);
     }
     try { sessionStorage.setItem(INPUTS_KEY, JSON.stringify({ newsText, quoteText, topic, authorName })); } catch(_){}
     window.__setGenToast?.({ status: 'generating', label: preset.label, presetId: preset.id, preset });
