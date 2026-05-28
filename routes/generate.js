@@ -118,8 +118,13 @@ async function downloadBuffer(url) {
   });
 }
 
-async function serperImages(query) {
-  const body = JSON.stringify({ q: query, num: 5 });
+const WATERMARK_DOMAINS = ['shutterstock.com', 'gettyimages.', 'istockphoto.com', 'alamy.com', 'dreamstime.com', 'depositphotos.com', '123rf.com', 'bigstockphoto.com'];
+
+async function serperImages(query, { hq = false } = {}) {
+  const payload = hq
+    ? { q: query + ' -watermark -shutterstock -getty', num: 12, imageSize: 'large', imageType: 'photo' }
+    : { q: query, num: 5 };
+  const body = JSON.stringify(payload);
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: 'google.serper.dev',
@@ -134,8 +139,11 @@ async function serperImages(query) {
       let raw = '';
       res.on('data', c => raw += c);
       res.on('end', () => {
-        try { resolve(JSON.parse(raw).images || []); }
-        catch (e) { reject(e); }
+        try {
+          let imgs = JSON.parse(raw).images || [];
+          if (hq) imgs = imgs.filter(img => !WATERMARK_DOMAINS.some(d => (img.imageUrl || '').includes(d)));
+          resolve(imgs);
+        } catch (e) { reject(e); }
       });
     });
     req.on('error', reject);
@@ -456,10 +464,13 @@ router.post('/actu', async (req, res) => {
       try { serperBuffers.push(await downloadBuffer(photoUrl)); } catch (_) {}
     }
     if (serperBuffers.length === 0 && search_query && process.env.SERPER_API_KEY) {
-      const images  = await serperImages(search_query);
-      const urls    = images.map(img => img.imageUrl).filter(Boolean).slice(0, 3);
+      const isGooglePhoto = imageMode !== 'ai';
+      const images = await serperImages(search_query, { hq: isGooglePhoto });
+      const urls   = images.map(img => img.imageUrl).filter(Boolean).slice(0, isGooglePhoto ? 8 : 3);
       const results = await Promise.all(urls.map(u => downloadBuffer(u).catch(() => null)));
-      serperBuffers = results.filter(b => b && b.length > 5000 && isImageBuffer(b));
+      serperBuffers = results
+        .filter(b => b && b.length > 5000 && isImageBuffer(b))
+        .sort((a, b) => isGooglePhoto ? b.length - a.length : 0);
     }
     // 3. Style ref : one-shot (request) > persistent (brand)
     let styleRefBuffer = null;
