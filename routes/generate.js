@@ -1398,10 +1398,13 @@ async function cropLogoFromBrandKit(imageUrl) {
 
     const b64 = edited.data?.[0]?.b64_json;
     if (!b64) { console.error('[crop logo] no b64 in GPT Image response'); return null; }
-    console.log('[crop logo] GPT Image 1 succes — purge fond blanc residuel...');
+    console.log('[crop logo] GPT Image 1 succes — nettoyage fond par detection coins...');
 
-    // ── Etape 4 : Suppression des pixels blancs residuels ──────────────────────
-    const buf = await removeWhiteBackground(Buffer.from(b64, 'base64'));
+    // ── Etape 4 : removeBackground (détection coins) — PAS removeWhiteBackground ──
+    // removeWhiteBackground(tolerance=235) efface tous les pixels blancs y compris
+    // les lettres blanches du logo. removeBackground détecte la couleur des coins
+    // (le fond résiduel GPT) et ne supprime que ça → les blancs du logo sont préservés.
+    const buf = await removeBackground(Buffer.from(b64, 'base64'), 30);
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
