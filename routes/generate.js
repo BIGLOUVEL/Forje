@@ -1324,21 +1324,28 @@ async function cropLogoFromBrandKit(imageUrl) {
     const meta   = await sharp(imgBuf).metadata();
     const imgW   = meta.width, imgH = meta.height;
 
-    // Étape 1 : Claude Vision → coordonnées pixel du logo mark
-    // On envoie uniquement le top 40% de l'image pour éliminer le bruit (typo, posts, couleurs)
-    const fmtMap = { png:'image/png', webp:'image/webp', gif:'image/gif' };
-    const mime   = fmtMap[meta.format] || 'image/jpeg';
-    const cropH  = Math.round(imgH * 0.40);
-    const topBuf = await sharp(imgBuf).extract({ left: 0, top: 0, width: imgW, height: cropH }).jpeg({ quality: 85 }).toBuffer();
-    const b64Kit = topBuf.toString('base64');
-    const resp   = await haiku.messages.create({
+    // Étape 1 : Claude Vision → coordonnées pixel de la PP Instagram
+    // On isole le quart bas-droit de l'image : c'est là que se trouve le proto téléphone
+    // avec la photo de profil Instagram (cercle de la PP).
+    const rLeft = Math.round(imgW * 0.35);   // 35% depuis la gauche → moitié droite
+    const rTop  = Math.round(imgH * 0.38);   // 38% depuis le haut  → moitié basse
+    const rW    = imgW - rLeft;
+    const rH    = imgH - rTop;
+
+    const regionBuf = await sharp(imgBuf)
+      .extract({ left: rLeft, top: rTop, width: rW, height: rH })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    const b64Kit = regionBuf.toString('base64');
+
+    const resp = await haiku.messages.create({
       model:      'claude-sonnet-4-6',
       max_tokens: 100,
       messages: [{
         role: 'user',
         content: [
           { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64Kit } },
-          { type: 'text',  text:  `This is the top portion (${imgW}x${cropH}px) of a brand identity sheet. There is an Instagram-style profile avatar — a CIRCLE or rounded badge containing initials/monogram on a solid background. It sits BELOW the large text brand name. Find it and return ONLY valid JSON: {"x":N,"y":N,"w":N,"h":N} in pixels (top-left origin, integers). No markdown, no text.` }
+          { type: 'text',  text:  `This is the bottom-right portion (${rW}x${rH}px) of a brand identity sheet. Inside a phone mockup showing an Instagram profile page, there is a CIRCULAR profile picture (PP) — a small filled circle at the top of the phone screen. Locate that circle and return ONLY valid JSON: {"x":N,"y":N,"w":N,"h":N} in pixels relative to THIS image (top-left origin, integers). No markdown, no text.` }
         ]
       }]
     });
@@ -1355,8 +1362,9 @@ async function cropLogoFromBrandKit(imageUrl) {
       return null;
     }
 
-    const x = Math.max(0, Math.round(Number(coords.x) || 0));
-    const y = Math.max(0, Math.round(Number(coords.y) || 0));
+    // Les coords sont relatives à la région extraite → on les remet dans le référentiel de l'image complète
+    const x = Math.max(0, Math.round(Number(coords.x) || 0) + rLeft);
+    const y = Math.max(0, Math.round(Number(coords.y) || 0) + rTop);
     const w = Math.min(Math.round(Number(coords.w) || 0), imgW - x);
     const h = Math.min(Math.round(Number(coords.h) || 0), imgH - y);
     if (w < 20 || h < 20) { console.error('[crop logo] bbox trop petit ou invalide', {x,y,w,h,imgW,imgH}); return null; }
