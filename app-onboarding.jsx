@@ -704,60 +704,87 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
       : BODY_FONTS;
 
     return (
-      <div key="result" className="ob-kit-layout ob-step-enter">
-        <div className="ob-kit-img-col">
-          {brandImg && <div className="ob-brand-img-wrap"><img src={brandImg} alt="Identité de marque"/></div>}
-          {brandImg && (
-            <button className="ob-relogo-main-btn" onClick={relogo} disabled={relogoing}>
-              {relogoing ? 'Extraction...' : '↻ Extraire le logo'}
-            </button>
-          )}
-        </div>
-        <div className="ob-kit-panel">
-          <h2 className="ob-kit-panel-title">Identité générée ✓</h2>
-          {logoUrl && (
-            <div className="ob-kit-section">
-              <span className="ob-kit-section-label">Logo</span>
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                <img src={logoUrl} className="ob-kit-logo-preview" alt="Logo"/>
-                <button className="ob-relogo-btn" onClick={relogo} disabled={relogoing} title="Recadrer depuis l'image">
+      <div key="result" className="ob-kit-result ob-step-enter">
+        <div className="ob-bento">
+
+          {/* Image tile — spans 2 rows */}
+          <div className="ob-bt ob-bt--img">
+            {brandImg && <img src={brandImg} alt="Identité de marque" className="ob-bt-kit-img"/>}
+            {brandImg && (
+              <button className="ob-bt-relogo" onClick={relogo} disabled={relogoing}>
+                {relogoing ? 'Extraction...' : '↻ Extraire le logo'}
+              </button>
+            )}
+          </div>
+
+          {/* Logo tile */}
+          <div className="ob-bt ob-bt--logo">
+            <span className="ob-bt__label">Logo</span>
+            {logoUrl ? (
+              <div style={{ display:'flex', alignItems:'center', gap:10, flex:1 }}>
+                <img src={logoUrl} className="ob-kit-logo-preview" alt="Logo" style={{ maxHeight:60 }}/>
+                <button className="ob-relogo-btn" onClick={relogo} disabled={relogoing} title="Recadrer">
                   {relogoing ? '…' : '↻'}
                 </button>
               </div>
-            </div>
-          )}
-          {config && (
-            <>
-              <div className="ob-kit-section">
-                <span className="ob-kit-section-label">Palette</span>
-                <div className="ob-kit-swatches">
-                  {(config.brand_colors || []).map((hex, i) => (
-                    <div key={i} className="ob-kit-swatch" style={{ background:hex }}>
-                      <span className="ob-kit-hex">{hex}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {config.tone_tags?.length > 0 && (
-                <div className="ob-kit-section">
-                  <span className="ob-kit-section-label">Ton éditorial</span>
-                  <div className="ob-kit-tags">{config.tone_tags.map(t => <span key={t} className="ob-kit-tag">{t}</span>)}</div>
-                </div>
-              )}
-              {config.tagline && (
-                <div className="ob-kit-section">
-                  <span className="ob-kit-section-label">Tagline</span>
-                  <span className="ob-kit-tagline">"{config.tagline}"</span>
-                </div>
-              )}
-            </>
-          )}
-          <div className="ob-kit-fonts">
-            <ObFontPicker label="Police de titre" fonts={titleFontsKit} value={fontTitle} onChange={setFontTitle}/>
-            <ObFontPicker label="Police de texte" fonts={bodyFontsKit}  value={fontBody}  onChange={setFontBody}/>
+            ) : (
+              <span style={{ fontSize:11, color:'rgba(150,180,255,.35)', fontStyle:'italic', flex:1, display:'flex', alignItems:'center' }}>
+                En attente d'extraction
+              </span>
+            )}
           </div>
-          {error && <p className="ob-error">{error}</p>}
-          <div className="ob-kit-actions">
+
+          {/* Palette tile */}
+          <div className="ob-bt ob-bt--palette">
+            <span className="ob-bt__label">Palette</span>
+            {config ? (
+              <div className="ob-kit-swatches" style={{ paddingBottom:22 }}>
+                {(config.brand_colors || []).map((hex, i) => (
+                  <div key={i} className="ob-kit-swatch" style={{ background:hex }}>
+                    <span className="ob-kit-hex">{hex}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span style={{ fontSize:11, color:'rgba(150,180,255,.35)', fontStyle:'italic' }}>—</span>
+            )}
+          </div>
+
+          {/* Ton éditorial tile */}
+          <div className="ob-bt ob-bt--tone">
+            <span className="ob-bt__label">Ton éditorial</span>
+            {config?.tone_tags?.length > 0 ? (
+              <div className="ob-kit-tags">
+                {config.tone_tags.map(t => <span key={t} className="ob-kit-tag">{t}</span>)}
+              </div>
+            ) : (
+              <span style={{ fontSize:11, color:'rgba(150,180,255,.35)', fontStyle:'italic' }}>—</span>
+            )}
+          </div>
+
+          {/* Tagline tile */}
+          <div className="ob-bt ob-bt--tagline">
+            <span className="ob-bt__label">Tagline</span>
+            {config?.tagline ? (
+              <span className="ob-kit-tagline">"{config.tagline}"</span>
+            ) : (
+              <span style={{ fontSize:11, color:'rgba(150,180,255,.35)', fontStyle:'italic' }}>—</span>
+            )}
+          </div>
+
+          {/* Police de titre tile */}
+          <div className="ob-bt ob-bt--fh">
+            <ObFontPicker label="Police de titre" fonts={titleFontsKit} value={fontTitle} onChange={setFontTitle}/>
+          </div>
+
+          {/* Police de texte tile */}
+          <div className="ob-bt ob-bt--fb">
+            <ObFontPicker label="Police de texte" fonts={bodyFontsKit} value={fontBody} onChange={setFontBody}/>
+          </div>
+
+          {/* Actions tile */}
+          <div className="ob-bt ob-bt--act">
+            {error && <p className="ob-error" style={{ margin:0, flex:1, fontSize:12 }}>{error}</p>}
             <button className="ob-btn-secondary" onClick={() => { setSelected(null); setSub(5); }}>← Changer</button>
             <button className="ob-btn-primary" disabled={!fontTitle || !fontBody} onClick={async () => {
               var sb = window.__supabase;
@@ -767,6 +794,7 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
               onNext(clientId);
             }}>Entrer dans le studio →</button>
           </div>
+
         </div>
       </div>
     );
@@ -792,7 +820,7 @@ const StepWow = ({ clientId, onComplete, onBack }) => {
       var userId = window.__currentUser?.id;
       var res = await obFetch('/generate/actu', {
         method: 'POST',
-        body: JSON.stringify({ newsText: text, userId: userId, clientId: clientId, imageMode: 'classic' })
+        body: JSON.stringify({ newsText: text, userId: userId, clientId: clientId, imageMode: 'ai' })
       });
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur génération');

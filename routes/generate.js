@@ -531,11 +531,13 @@ router.post('/actu', async (req, res) => {
       try {
         const logoBuf = await downloadBuffer(client.logo_url);
 
+        // removeBackground (coins) et non removeWhiteBackground (global) :
+        // le logo peut avoir des lettres blanches — on supprime uniquement la couleur de fond détectée aux coins
         const logoPng = await sharp(logoBuf)
           .resize(null, 260, { fit: 'inside' })
           .png()
           .toBuffer()
-          .then(removeWhiteBackground);
+          .then(buf => removeBackground(buf, 30));
 
         const logoMeta = await sharp(logoPng).metadata();
         const logoX = W - logoMeta.width - 40;
