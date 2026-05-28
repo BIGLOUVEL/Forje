@@ -856,7 +856,7 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
       .select('id, preset_id, title, subtitle, caption, category, pack_id, created_at, meta')
       .eq('user_id', user.id)
       .eq('preset_id', preset.id)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(20)
       .then(({ data }) => {
         if (!isMountedRef.current) return;
