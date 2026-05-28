@@ -1664,37 +1664,20 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
           <aside className="sources-action">
             <RecapPanel
               news={active}
-              onGenerate={async (id, format) => {
-                if (!active) return;
+              onGenerate={(id, format) => {
+                if (!active || !window.__goToGenerate) return;
                 track(id, 'generate', { format_utilise: format });
-                if (!window.__goToGenerate) return;
 
-                // Build full context for Claude Haiku reformulation
-                const fullContext = [
+                // Contexte complet : tout ce qu'on a sur l'article
+                const brief = [
                   active.title,
                   active.description || '',
                   active.why   ? 'Contexte : ' + active.why   : '',
-                  active.angle ? 'Angle : ' + active.angle     : '',
-                  active.caption ? 'Caption : ' + active.caption : '',
+                  active.angle ? 'Angle : '    + active.angle  : '',
+                  active.caption ? 'Caption suggérée : ' + active.caption : '',
                 ].filter(Boolean).join('\n');
 
-                let newsText = active.title;
-                try {
-                  const sb = window.__supabase;
-                  let token = '';
-                  if (sb) { const sess = await sb.auth.getSession(); token = sess.data?.session?.access_token || ''; }
-                  const dfRes = await fetch('/api/generate/detect-format', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                    body: JSON.stringify({ text: fullContext }),
-                  });
-                  const dfData = await dfRes.json();
-                  if (dfRes.ok && dfData.newsText) newsText = dfData.newsText;
-                } catch(e) {
-                  console.warn('[Board forge] detect-format failed', e);
-                }
-
-                window.__goToGenerate({ title: active.title, text: newsText, url: active.url, source: active.source });
+                window.__goToGenerate({ title: active.title, text: brief, url: active.url, source: active.source });
               }}
             />
           </aside>

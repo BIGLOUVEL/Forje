@@ -194,39 +194,21 @@ var PulseScreen = function({ onCreateFromSource }) {
           {activeItem && (
             <PulseDetail
               item={activeItem}
-              onForge={async function() {
+              onForge={function() {
                 var raw = activeItem.news_raw || {};
 
-                // Build full context for Claude Haiku reformulation
-                var fullContext = [
+                // Contexte complet : titre + description + scoring IA + angle + caption
+                // C'est ce texte multi-lignes qui sert de "prompt optimisé" au modèle de génération
+                var brief = [
                   raw.titre || '',
                   raw.description || '',
                   activeItem.pourquoi_ce_score ? 'Contexte : ' + activeItem.pourquoi_ce_score : '',
-                  activeItem.angle ? 'Angle : ' + activeItem.angle : '',
-                  activeItem.caption ? 'Caption suggérée : ' + activeItem.caption : '',
+                  activeItem.angle ? 'Angle : '    + activeItem.angle                         : '',
+                  activeItem.caption ? 'Caption suggérée : ' + activeItem.caption             : '',
                 ].filter(Boolean).join('\n');
 
-                // Default fallback
-                var newsText = raw.titre || '';
-
-                // Ask Claude Haiku to reformulate into a clean 120-char brief
-                try {
-                  var sb = window.__supabase;
-                  var token = '';
-                  if (sb) { var sess = await sb.auth.getSession(); token = sess.data?.session?.access_token || ''; }
-                  var dfRes = await fetch('/api/generate/detect-format', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                    body: JSON.stringify({ text: fullContext }),
-                  });
-                  var dfData = await dfRes.json();
-                  if (dfRes.ok && dfData.newsText) newsText = dfData.newsText;
-                } catch(e) {
-                  console.warn('[Forge] detect-format failed, fallback to title', e);
-                }
-
                 if (window.__goToGenerate) {
-                  window.__goToGenerate({ title: raw.titre || '', text: newsText, url: raw.url || '', source: raw.source || '' });
+                  window.__goToGenerate({ title: raw.titre || '', text: brief, url: raw.url || '', source: raw.source || '' });
                 } else if (onCreateFromSource) {
                   onCreateFromSource({ title: raw.titre || '', url: raw.url || '', text: raw.description || '' });
                 }
