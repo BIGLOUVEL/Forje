@@ -840,6 +840,12 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
     const newPreset = PRESETS.find(p => p.id === newId);
     if (!newPreset) return;
     const currentText = newsText || quoteText || topic || '';
+    // Appliquer directement dans le state destination : le composant ne remonte pas
+    // donc les useState initializers ne re-tournent pas avec le prefill
+    if (newId === 'actu')     setNewsText(currentText);
+    if (newId === 'citation') setQuoteText(currentText);
+    if (newId === 'deepdive') setTopic(currentText);
+    // Prefill en backup si le composant remontait pour une autre raison
     const prefill =
       newId === 'actu'     ? { newsText: currentText } :
       newId === 'citation' ? { quoteText: currentText, authorName: authorName || '' } :
