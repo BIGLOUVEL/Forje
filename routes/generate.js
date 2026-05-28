@@ -1374,18 +1374,19 @@ async function cropLogoFromBrandKit(imageUrl) {
     // Étape 3 : Suppression du fond (détection automatique par les coins — fonctionne fond blanc ou sombre)
     logoBuf = await removeBackground(logoBuf);
 
-    // Étape 4 : Trim des bords transparents (avec fallback si ça plante) + upscale 512×512 centré
+    // Étape 4 : Trim des bords transparents (avec fallback si ça plante) + upscale 1024×1024 centré
     try {
       logoBuf = await sharp(logoBuf).trim({ threshold: 10 }).png().toBuffer();
     } catch(_) { /* trim peut planter si l'image est entièrement transparente — on garde le crop brut */ }
 
+    // Upscale haute résolution — Sharp uniquement, zero modèle génératif, logo pixel-perfect
     logoBuf = await sharp(logoBuf)
-      .resize(480, 480, { fit: 'contain', background: { r:0, g:0, b:0, alpha:0 }, kernel: 'lanczos3' })
-      .extend({ top:16, bottom:16, left:16, right:16, background: { r:0, g:0, b:0, alpha:0 } })
+      .resize(960, 960, { fit: 'contain', background: { r:0, g:0, b:0, alpha:0 }, kernel: 'lanczos3' })
+      .extend({ top:32, bottom:32, left:32, right:32, background: { r:0, g:0, b:0, alpha:0 } })
       .png()
       .toBuffer();
 
-    console.log('[crop logo] succès — aucun modèle génératif utilisé');
+    console.log('[crop logo] succès 1024×1024 — aucun modèle génératif utilisé');
     return logoBuf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);

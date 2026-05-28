@@ -614,7 +614,13 @@
   border: 1px solid var(--ob-border);
   box-shadow: 0 24px 64px rgba(0,0,24,0.55);
 }
-.ob-brand-img-wrap img { width: 100%; display: block; }
+.ob-brand-img-wrap img {
+  width: 100%;
+  display: block;
+  max-height: calc(100svh - 190px);
+  object-fit: cover;
+  object-position: top;
+}
 
 /* ─── WOW step ───────────────────────────────────────────────────────────── */
 .ob-wow-root {
@@ -692,71 +698,99 @@
 /* ─── Brand Kit Result Layout (image + config panel) ────────────────────── */
 .ob-kit-layout {
   width: 100%;
-  max-width: 860px;
-  padding: 0 20px;
+  max-width: 1080px;
+  padding: 0 28px 56px;
   display: flex;
-  gap: 20px;
+  gap: 32px;
   align-items: flex-start;
-  overflow-x: hidden;
   animation: ob-enter 250ms ease-out both;
 }
+
+/* Image column — sticky so it stays visible while panel content scrolls */
 .ob-kit-img-col {
-  flex: 1.2;
-  min-width: 0;
-  max-width: 420px;
-}
-.ob-kit-panel {
-  flex: 1;
-  min-width: 200px;
-  max-width: 340px;
-  overflow-y: auto;
-  max-height: calc(100vh - 120px);
+  flex: 0 0 330px;
+  width: 330px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  position: sticky;
+  top: 28px;
 }
+
+/* Config panel — glass card, no internal scroll, page scrolls naturally */
+.ob-kit-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 26px 28px 28px;
+  background: rgba(8, 16, 55, 0.52);
+  border: 1px solid rgba(80, 130, 255, 0.13);
+  border-radius: 20px;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow: 0 4px 40px rgba(0, 0, 20, 0.35), inset 0 1px 0 rgba(120, 160, 255, 0.08);
+}
+
 .ob-kit-panel-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   color: #EEF4FF;
   letter-spacing: -0.02em;
-  margin: 0;
+  margin: 0 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.ob-kit-panel-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(80,130,255,0.18), transparent);
+}
+
 .ob-kit-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .ob-kit-section-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(150, 190, 255, 0.5);
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(120, 170, 255, 0.45);
+  letter-spacing: 0.11em;
   text-transform: uppercase;
 }
+
+/* Swatches with bottom padding for hex labels */
 .ob-kit-swatches {
   display: flex;
-  gap: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 20px;
 }
 .ob-kit-swatch {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.10);
   position: relative;
   flex-shrink: 0;
   cursor: default;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
 }
 .ob-kit-hex {
   position: absolute;
-  bottom: -18px;
+  bottom: -17px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 9px;
-  color: rgba(150, 190, 255, 0.5);
+  font-size: 8.5px;
+  color: rgba(150, 190, 255, 0.48);
   white-space: nowrap;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
 }
+
 .ob-kit-font-name {
   font-size: 16px;
   font-weight: 600;
@@ -768,24 +802,29 @@
   gap: 6px;
 }
 .ob-kit-tag {
-  background: rgba(79, 91, 213, 0.22);
-  border: 1px solid rgba(79, 91, 213, 0.4);
+  background: rgba(79, 91, 213, 0.18);
+  border: 1px solid rgba(79, 91, 213, 0.35);
   border-radius: 6px;
   padding: 4px 10px;
-  font-size: 12px;
-  color: rgba(180, 200, 255, 0.9);
+  font-size: 11.5px;
+  color: rgba(180, 200, 255, 0.85);
+  letter-spacing: 0.01em;
 }
 .ob-kit-tagline {
-  font-size: 14px;
-  color: rgba(150, 190, 255, 0.7);
+  font-size: 13.5px;
+  color: rgba(150, 190, 255, 0.65);
   font-style: italic;
-  line-height: 1.4;
+  line-height: 1.5;
+  border-left: 2px solid rgba(106, 91, 255, 0.35);
+  padding-left: 12px;
 }
 .ob-kit-actions {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(80, 130, 255, 0.10);
 }
 .ob-kit-actions .ob-btn-primary,
 .ob-kit-actions .ob-btn-secondary {
@@ -793,12 +832,21 @@
   justify-content: center;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 780px) {
   .ob-kit-layout {
     flex-direction: column;
-    max-width: 480px;
+    max-width: 500px;
+    padding: 0 20px 40px;
+    gap: 20px;
   }
-  .ob-kit-panel { min-width: 0; }
+  .ob-kit-img-col {
+    flex: none;
+    width: 100%;
+    position: static;
+  }
+  .ob-kit-panel {
+    padding: 20px;
+  }
 }
 
 /* ─── Vision libre ───────────────────────────────────────────────────────── */
@@ -1074,10 +1122,9 @@
 .ob-kit-fonts {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 4px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ob-border);
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(80, 130, 255, 0.10);
 }
 
 /* ─── Lightbox ───────────────────────────────────────────────────────────── */
