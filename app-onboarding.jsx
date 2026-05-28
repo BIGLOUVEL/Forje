@@ -718,18 +718,18 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
           </div>
 
           {/* Logo tile */}
-          <div className="ob-bt ob-bt--logo">
+          <div className="ob-bt ob-bt--logo" style={{ justifyContent:'center' }}>
             <span className="ob-bt__label">Logo</span>
             {logoUrl ? (
-              <div style={{ display:'flex', alignItems:'center', gap:10, flex:1 }}>
-                <img src={logoUrl} className="ob-kit-logo-preview" alt="Logo" style={{ maxHeight:60 }}/>
-                <button className="ob-relogo-btn" onClick={relogo} disabled={relogoing} title="Recadrer">
+              <div style={{ display:'flex', alignItems:'center', gap:8, flex:1, minHeight:0 }}>
+                <img src={logoUrl} alt="Logo" style={{ maxHeight:52, maxWidth:'100%', objectFit:'contain', borderRadius:6, background:'rgba(255,255,255,.05)', padding:4 }}/>
+                <button className="ob-relogo-btn" onClick={relogo} disabled={relogoing} title="Recadrer" style={{ flexShrink:0 }}>
                   {relogoing ? '…' : '↻'}
                 </button>
               </div>
             ) : (
-              <span style={{ fontSize:11, color:'rgba(150,180,255,.35)', fontStyle:'italic', flex:1, display:'flex', alignItems:'center' }}>
-                En attente d'extraction
+              <span style={{ fontSize:11, color:'rgba(150,180,255,.35)', fontStyle:'italic', flex:1 }}>
+                En attente
               </span>
             )}
           </div>
@@ -738,10 +738,11 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
           <div className="ob-bt ob-bt--palette">
             <span className="ob-bt__label">Palette</span>
             {config ? (
-              <div className="ob-kit-swatches" style={{ paddingBottom:22 }}>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
                 {(config.brand_colors || []).map((hex, i) => (
-                  <div key={i} className="ob-kit-swatch" style={{ background:hex }}>
-                    <span className="ob-kit-hex">{hex}</span>
+                  <div key={i} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                    <div style={{ width:32, height:32, borderRadius:8, background:hex, border:'1px solid rgba(255,255,255,.1)', boxShadow:'0 2px 8px rgba(0,0,0,.25)', flexShrink:0 }}/>
+                    <span style={{ fontSize:8, color:'rgba(150,190,255,.5)', fontFamily:'JetBrains Mono,monospace', letterSpacing:'-.02em' }}>{hex}</span>
                   </div>
                 ))}
               </div>

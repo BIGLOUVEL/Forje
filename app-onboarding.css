@@ -695,66 +695,134 @@
   font-weight: 500;
 }
 
-/* ─── Brand Kit Result Layout (image + config panel) ────────────────────── */
-.ob-kit-layout {
+/* ─── Brand Kit Result — Bento Grid ─────────────────────────────────────── */
+.ob-kit-result {
   width: 100%;
-  max-width: 1080px;
-  padding: 0 28px 56px;
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
+  max-width: 1100px;
+  padding: 0 24px 56px;
   animation: ob-enter 250ms ease-out both;
 }
 
-/* Image column — sticky so it stays visible while panel content scrolls */
-.ob-kit-img-col {
-  flex: 0 0 330px;
-  width: 330px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  position: sticky;
-  top: 28px;
-}
-
-/* Config panel — glass card, no internal scroll, page scrolls naturally */
-.ob-kit-panel {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 26px 28px 28px;
-  background: rgba(8, 16, 55, 0.52);
-  border: 1px solid rgba(80, 130, 255, 0.13);
-  border-radius: 20px;
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
-  box-shadow: 0 4px 40px rgba(0, 0, 20, 0.35), inset 0 1px 0 rgba(120, 160, 255, 0.08);
-}
-
-.ob-kit-panel-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #EEF4FF;
-  letter-spacing: -0.02em;
-  margin: 0 0 2px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.ob-kit-panel-title::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(80,130,255,0.18), transparent);
-}
-
-.ob-kit-section {
-  display: flex;
-  flex-direction: column;
+.ob-bento {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr;
+  grid-template-rows: 128px 128px auto auto;
+  grid-template-areas:
+    "img  logo    palette"
+    "img  tone    tagline"
+    "fh   fh      fb"
+    "act  act     act";
   gap: 10px;
 }
+
+/* Base tile */
+.ob-bt {
+  background: rgba(8, 16, 55, 0.52);
+  border: 1px solid rgba(80, 130, 255, 0.13);
+  border-radius: 14px;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 20px rgba(0, 0, 20, 0.22), inset 0 1px 0 rgba(120, 160, 255, 0.06);
+}
+
+/* Image tile — height = 128 + 10 + 128 = 266px */
+.ob-bt--img {
+  grid-area: img;
+  padding: 0;
+  position: relative;
+  border-radius: 14px;
+}
+.ob-bt-kit-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 16px;
+}
+.ob-bt-relogo {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(4, 8, 30, 0.78);
+  border: 1px solid rgba(80, 130, 255, 0.28);
+  color: rgba(180, 210, 255, 0.85);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 6px 18px;
+  border-radius: 20px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.ob-bt-relogo:hover   { background: rgba(12, 26, 90, 0.9); color: #fff; border-color: rgba(100, 160, 255, 0.5); }
+.ob-bt-relogo:disabled{ opacity: 0.5; cursor: default; }
+
+/* Individual tiles */
+.ob-bt--logo    { grid-area: logo; }
+.ob-bt--palette { grid-area: palette; }
+.ob-bt--tone    { grid-area: tone; }
+.ob-bt--tagline { grid-area: tagline; }
+.ob-bt--fh      { grid-area: fh; min-height: unset; overflow: hidden; }
+.ob-bt--fb      { grid-area: fb; min-height: unset; overflow: hidden; }
+.ob-bt--act {
+  grid-area: act;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  min-height: unset;
+}
+
+/* Tile label */
+.ob-bt__label {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(120, 170, 255, 0.45);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* Font pickers inside tiles: no top border needed */
+.ob-bt--fh .ob-font-picker,
+.ob-bt--fb .ob-font-picker { width: 100%; }
+
+@media (max-width: 860px) {
+  .ob-bento {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto;
+    grid-template-areas:
+      "img     img"
+      "logo    palette"
+      "tone    tagline"
+      "fh      fh"
+      "fb      fb"
+      "act     act";
+  }
+  .ob-bt--img { min-height: 220px; }
+}
+
+@media (max-width: 520px) {
+  .ob-bento {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "img" "logo" "palette" "tone" "tagline" "fh" "fb" "act";
+  }
+  .ob-bt--act { flex-direction: column; }
+  .ob-bt--act .ob-btn-primary,
+  .ob-bt--act .ob-btn-secondary { width: 100%; justify-content: center; }
+}
+
+/* ── Legacy section label (kept for swatches/tags/tagline reuse) ─────────── */
 .ob-kit-section-label {
   font-size: 10px;
   font-weight: 700;
@@ -817,36 +885,6 @@
   line-height: 1.5;
   border-left: 2px solid rgba(106, 91, 255, 0.35);
   padding-left: 12px;
-}
-.ob-kit-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 6px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(80, 130, 255, 0.10);
-}
-.ob-kit-actions .ob-btn-primary,
-.ob-kit-actions .ob-btn-secondary {
-  width: 100%;
-  justify-content: center;
-}
-
-@media (max-width: 780px) {
-  .ob-kit-layout {
-    flex-direction: column;
-    max-width: 500px;
-    padding: 0 20px 40px;
-    gap: 20px;
-  }
-  .ob-kit-img-col {
-    flex: none;
-    width: 100%;
-    position: static;
-  }
-  .ob-kit-panel {
-    padding: 20px;
-  }
 }
 
 /* ─── Vision libre ───────────────────────────────────────────────────────── */
@@ -1118,14 +1156,6 @@
   line-height: 1;
 }
 
-/* Kit result — font pickers inline */
-.ob-kit-fonts {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(80, 130, 255, 0.10);
-}
 
 /* ─── Lightbox ───────────────────────────────────────────────────────────── */
 .ob-lightbox {
