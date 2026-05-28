@@ -177,7 +177,7 @@ const SetupInput = ({ onAnalyze, error }) => {
     <div className="page-body">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Sources & Veille ⚡</h1>
+          <h1 className="page-title">Sources & Veille</h1>
           <p className="page-subtitle">Configure ton compte Instagram pour activer la veille temps réel.</p>
         </div>
       </div>
