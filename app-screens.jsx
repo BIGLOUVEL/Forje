@@ -875,7 +875,7 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
           setResults(prev => {
             const dbIds = new Set(dbItems.map(r => r.id));
             const inFlight = prev.filter(r => r.loading || !dbIds.has(r.id));
-            return [...dbItems, ...inFlight];
+            return [...inFlight, ...dbItems];
           });
         }
         // Si une génération est toujours en vol, restaure le placeholder de chargement
@@ -1123,7 +1123,7 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
             </div>
           )}
           <div className="gen-feed-panel">
-            {[...results].filter(r => !r.loading).reverse().map(item =>
+            {results.filter(r => !r.loading).map(item =>
               <GenFeedCard key={item.id} item={item} onExpand={setExpandedItem}/>
             )}
           </div>
