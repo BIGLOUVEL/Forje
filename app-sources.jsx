@@ -710,7 +710,7 @@ const BreakingBar = ({ data, onGenerate }) => {
 };
 
 const NewsRow = ({ item, active, onClick, onHover3s, onDismiss }) => {
-  const heatDot    = item.heat === 'hot' ? 'dot-hot' : item.heat === 'warm' ? 'dot-warm' : 'dot-cool';
+  const heatDot    = item.heat === 'hot' ? 'dot-hot' : item.heat === 'warm' ? 'dot-warm' : item.heat === 'unscored' ? 'dot-unscored' : 'dot-cool';
   const hoverTimer = useRef(null);
 
   const handleMouseEnter = () => {
@@ -720,7 +720,7 @@ const NewsRow = ({ item, active, onClick, onHover3s, onDismiss }) => {
 
   return (
     <div
-      className={`news-row ${active ? 'active' : ''}`}
+      className={`news-row ${active ? 'active' : ''} ${item.scored === false ? 'news-row--unscored' : ''}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       style={{ position: 'relative' }}
@@ -739,9 +739,10 @@ const NewsRow = ({ item, active, onClick, onHover3s, onDismiss }) => {
               <span className="news-source">{item.source}</span>
             )}
             {item.cat && <><span className="news-sep">·</span><span className="news-cat">{item.cat}</span></>}
-            {item.match >= 0.7 && <span className="match-badge match-badge--strong">◆ {Math.round(item.match*100)}% pertinent</span>}
-            {item.match >= 0.5 && item.match < 0.7 && <span className="match-badge">{Math.round(item.match*100)}%</span>}
-            {item.match < 0.5 && <span className="match-badge match-badge--weak">hors univers</span>}
+            {item.match != null && item.match >= 0.7 && <span className="match-badge match-badge--strong">◆ {Math.round(item.match*100)}% pertinent</span>}
+            {item.match != null && item.match >= 0.5 && item.match < 0.7 && <span className="match-badge">{Math.round(item.match*100)}%</span>}
+            {item.match != null && item.match < 0.5 && <span className="match-badge match-badge--weak">hors univers</span>}
+            {item.match == null && <span className="match-badge match-badge--weak" style={{opacity:0.5}}>non scoré</span>}
           </div>
           <div className="news-row-title">{item.title}</div>
         </div>
@@ -764,7 +765,7 @@ const RecapPanel = ({ news, onGenerate }) => {
     </div>
   );
 
-  const scoreColor = news.score >= 8.5 ? '#ef4444' : news.score >= 7 ? '#f59e0b' : 'var(--app-fg-4)';
+  const scoreColor = news.score == null ? 'var(--app-fg-4)' : news.score >= 8.5 ? '#ef4444' : news.score >= 7 ? '#f59e0b' : 'var(--app-fg-4)';
 
   const buildRecap = () => {
     const parts = [];
@@ -782,7 +783,10 @@ const RecapPanel = ({ news, onGenerate }) => {
       <div className="recap-score-row">
         <span className="recap-source">{news.source}</span>
         <span className="recap-when">{news.when}</span>
-        <span className="recap-score" style={{ color: scoreColor }}>{news.score.toFixed(1)}<span style={{ fontSize:9, opacity:.6 }}>/10</span></span>
+        <span className="recap-score" style={{ color: scoreColor }}>
+        {news.score != null ? news.score.toFixed(1) : <span style={{fontSize:10,letterSpacing:'0.04em'}}>NON SCORÉ</span>}
+        {news.score != null && <span style={{ fontSize:9, opacity:.6 }}>/10</span>}
+      </span>
       </div>
 
       {/* ── Titre ── */}
@@ -1034,7 +1038,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
       const data = await loadBoard();
       // Si le board est vide au premier chargement, on déclenche refresh+score en background
       const total = (data?.board?.length || 0) + (data?.breaking?.length || 0);
-      if (total === 0) {
+      if (total < 5) {
         setRefreshing(true);
         try {
           await veilleFetch(`/rss/refresh?compte_id=${compteId}`);
@@ -1124,28 +1128,68 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     } finally { setTwitterRefreshing(false); }
   };
 
-  const feed = (boardData.board || []).filter(item => !dismissed.has(item.id)).map(item => {
-    const raw = item.news_raw || {};
-    return {
-      id:          item.id,
-      createdAt:   raw.published_at || raw.created_at,
-      when:        fmtAge(raw.published_at || raw.created_at),
-      heat:        item.flag === 'urgent' ? 'hot' : item.flag === 'a_traiter' ? 'warm' : 'cool',
-      source:      raw.source || '—',
-      cat:         item.format_suggere || null,
-      match:       Math.min(1, (item.score_total || 0) / 10),
-      score:       item.score_total || 0,
-      why:         item.pourquoi_ce_score || '',
-      format:      item.format_suggere,
-      timing:      item.timing_optimal,
-      caption:     item.caption,
-      title:       raw.titre || '(sans titre)',
-      description: raw.description || '',
-      url:         raw.url,
-      hashtags:    item.hashtags || [],
-      angle:       item.angle || '',
-    };
-  });
+  // Build enriched feed: scored items first (rich metadata), then unscored latestRaw
+  const feed = (() => {
+    const seen = new Set();
+    const items = [];
+
+    // 1. Scored articles — priority, with full AI metadata
+    for (const item of (boardData.board || [])) {
+      const raw = item.news_raw || {};
+      if (dismissed.has(item.id)) continue;
+      seen.add(raw.id);
+      items.push({
+        id:          item.id,
+        rawId:       raw.id,
+        createdAt:   raw.published_at || raw.created_at,
+        when:        fmtAge(raw.published_at || raw.created_at),
+        heat:        item.flag === 'urgent' ? 'hot' : item.flag === 'a_traiter' ? 'warm' : 'cool',
+        source:      raw.source || '—',
+        cat:         item.format_suggere || null,
+        match:       Math.min(1, (item.score_total || 0) / 10),
+        score:       item.score_total || 0,
+        why:         item.pourquoi_ce_score || '',
+        format:      item.format_suggere,
+        timing:      item.timing_optimal,
+        caption:     item.caption,
+        title:       raw.titre || '(sans titre)',
+        description: raw.description || '',
+        url:         raw.url,
+        hashtags:    item.hashtags || [],
+        angle:       item.angle || '',
+        scored:      true,
+      });
+    }
+
+    // 2. Unscored raw articles — fill the feed so it's never empty
+    for (const raw of latestRaw) {
+      if (dismissed.has(raw.id) || seen.has(raw.id)) continue;
+      items.push({
+        id:          raw.id,
+        rawId:       raw.id,
+        createdAt:   raw.published_at || raw.created_at,
+        when:        fmtAge(raw.published_at || raw.created_at),
+        heat:        'unscored',
+        source:      raw.source || '—',
+        cat:         null,
+        match:       null,
+        score:       null,
+        why:         '',
+        format:      null,
+        timing:      null,
+        caption:     null,
+        title:       raw.titre || '(sans titre)',
+        description: raw.description || raw.summary || '',
+        url:         raw.url,
+        hashtags:    [],
+        angle:       '',
+        scored:      false,
+      });
+    }
+
+    // Sort by date desc
+    return items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  })();
 
   const breaking = (boardData.breaking || []).slice(0, 1).map(item => {
     const raw = item.news_raw || {};
@@ -1163,8 +1207,8 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
   const activeId = selected ?? feed[0]?.id ?? null;
   const active   = feed.find(n => n.id === activeId);
   const filtered = feed.filter(n =>
-    filter === 'hot'      ? n.heat === 'hot'  :
-    filter === 'relevant' ? n.match >= 0.7    : true
+    filter === 'hot'      ? n.heat === 'hot'       :
+    filter === 'relevant' ? (n.match != null && n.match >= 0.7) : true
   );
 
   const refreshLabel = refreshedAt
@@ -1205,8 +1249,8 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
         <div className="view-tabs-inner">
           <button className={`view-tab ${view==='board'?'active':''}`} onClick={() => setView('board')}>
             <AppIcon name="bolt" size={12}/> Board
-            {feed.filter(n=>n.heat==='hot').length > 0 && (
-              <span className="view-tab-hot">{feed.filter(n=>n.heat==='hot').length}</span>
+            {feed.filter(n=>n.scored && n.heat==='hot').length > 0 && (
+              <span className="view-tab-hot">{feed.filter(n=>n.scored && n.heat==='hot').length}</span>
             )}
           </button>
           <button className={`view-tab ${view==='latest'?'active':''}`} onClick={() => { setView('latest'); loadLatestRaw(); }}>
@@ -1220,6 +1264,16 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
         </div>
         </div>
         <div className="view-tabs-actions">
+          {window.__goToScreen && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => window.__goToScreen('pulse')}
+              title="Ouvrir le Pulse Terminal (vue trader)"
+              style={{ fontFamily:'JetBrains Mono, monospace', fontSize:11, letterSpacing:'0.05em', display:'flex', alignItems:'center', gap:5 }}
+            >
+              <span style={{ color:'#FF6B4A', fontSize:10 }}>●</span> PULSE TERMINAL
+            </button>
+          )}
           {learning && <span style={{ fontSize:12, color:'var(--app-accent)', fontWeight:600 }}>⚡ Apprentissage…</span>}
           {twitterMsg && (
             <span style={{ fontSize:11, color: twitterMsg.type==='ok'?'var(--app-success)':twitterMsg.type==='warn'?'#f59e0b':'var(--app-danger)', maxWidth:240 }}>
@@ -1569,7 +1623,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
               <div className="feed-filters">
                 <button className={`feed-filter ${filter==='all'?'active':''}`} onClick={()=>setFilter('all')}>Tout <span className="count-inline">{feed.length}</span></button>
                 <button className={`feed-filter ${filter==='hot'?'active':''}`} onClick={()=>setFilter('hot')}><span className="dot dot-hot"/>Hot <span className="count-inline">{feed.filter(n=>n.heat==='hot').length}</span></button>
-                <button className={`feed-filter ${filter==='relevant'?'active':''}`} onClick={()=>setFilter('relevant')}>Pertinents <span className="count-inline">{feed.filter(n=>n.match>=0.7).length}</span></button>
+                <button className={`feed-filter ${filter==='relevant'?'active':''}`} onClick={()=>setFilter('relevant')}>Scorés <span className="count-inline">{feed.filter(n=>n.scored).length}</span></button>
               </div>
             </div>
             {feed.length === 0 ? (
@@ -1610,19 +1664,37 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
           <aside className="sources-action">
             <RecapPanel
               news={active}
-              onGenerate={(id, format) => {
+              onGenerate={async (id, format) => {
+                if (!active) return;
                 track(id, 'generate', { format_utilise: format });
-                if (window.__goToGenerate && active) {
-                  const recap = [
-                    active.title,
-                    `Source : ${active.source} · ${active.when}`,
-                    active.description || '',
-                    active.why   ? `Contexte : ${active.why}` : '',
-                    active.angle ? `Angle : ${active.angle}`   : '',
-                    active.caption ? `\nCaption suggérée :\n${active.caption}` : '',
-                  ].filter(Boolean).join('\n');
-                  window.__goToGenerate({ title: active.title, text: recap, url: active.url, source: active.source });
+                if (!window.__goToGenerate) return;
+
+                // Build full context for Claude Haiku reformulation
+                const fullContext = [
+                  active.title,
+                  active.description || '',
+                  active.why   ? 'Contexte : ' + active.why   : '',
+                  active.angle ? 'Angle : ' + active.angle     : '',
+                  active.caption ? 'Caption : ' + active.caption : '',
+                ].filter(Boolean).join('\n');
+
+                let newsText = active.title;
+                try {
+                  const sb = window.__supabase;
+                  let token = '';
+                  if (sb) { const sess = await sb.auth.getSession(); token = sess.data?.session?.access_token || ''; }
+                  const dfRes = await fetch('/api/generate/detect-format', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ text: fullContext }),
+                  });
+                  const dfData = await dfRes.json();
+                  if (dfRes.ok && dfData.newsText) newsText = dfData.newsText;
+                } catch(e) {
+                  console.warn('[Board forge] detect-format failed', e);
                 }
+
+                window.__goToGenerate({ title: active.title, text: newsText, url: active.url, source: active.source });
               }}
             />
           </aside>

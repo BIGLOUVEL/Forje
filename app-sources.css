@@ -354,6 +354,8 @@
 }
 .news-row:hover { background: var(--app-surface); }
 .news-row.active { background: var(--app-surface-2); }
+.news-row--unscored { opacity: 0.65; }
+.news-row--unscored:hover { opacity: 1; }
 .news-row-dismiss {
   all: unset;
   position: absolute; top: 8px; right: 8px;
@@ -389,7 +391,8 @@
 }
 .dot-hot   { background: #FF6B4A; box-shadow: 0 0 0 2px var(--app-bg), 0 0 6px rgba(255,107,74,0.6); animation: heatPulse 2s ease-in-out infinite; }
 .dot-warm  { background: #FFB061; box-shadow: 0 0 0 2px var(--app-bg), 0 0 4px rgba(255,176,97,0.4); }
-.dot-cool  { background: #4A6AFF; }
+.dot-cool     { background: #4A6AFF; }
+.dot-unscored { background: var(--app-line); }
 @keyframes heatPulse {
   0%,100% { opacity: 0.7; }
   50%     { opacity: 1; }
