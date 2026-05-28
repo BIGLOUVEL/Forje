@@ -797,3 +797,18 @@
   .heat-flames { font-size: 9px; letter-spacing: -2px; }
   .heat-cell { padding: 10px 9px; }
 }
+
+/* ── Blob spinner ─────────────────────────────────────────────────────────── */
+.forje-blob-spin {
+  width: 38px; height: 38px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--app-accent) 0%, var(--app-accent-2) 100%);
+  animation: forje-blob 3s ease-in-out infinite;
+  opacity: 0.9;
+}
+@keyframes forje-blob {
+  0%   { border-radius: 60% 40% 55% 45% / 50% 60% 40% 50%; transform: rotate(0deg)   scale(1);    }
+  25%  { border-radius: 40% 60% 45% 55% / 60% 40% 60% 40%; transform: rotate(90deg)  scale(1.05); }
+  50%  { border-radius: 55% 45% 60% 40% / 40% 55% 45% 60%; transform: rotate(180deg) scale(1);    }
+  75%  { border-radius: 45% 55% 40% 60% / 55% 45% 55% 45%; transform: rotate(270deg) scale(0.97); }
+  100% { border-radius: 60% 40% 55% 45% / 50% 60% 40% 50%; transform: rotate(360deg) scale(1);    }
+}

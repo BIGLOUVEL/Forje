@@ -1577,10 +1577,10 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
               <div style={{ padding:'48px 24px', textAlign:'center', display:'flex', flexDirection:'column', gap:12, alignItems:'center' }}>
                 {scoring || refreshing ? (
                   <>
-                    <div style={{ width:28, height:28, border:'2px solid var(--app-line)', borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .8s linear infinite' }}/>
-                    <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)' }}>Analyse en cours…</div>
+                    <div className="forje-blob-spin"/>
+                    <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)', marginTop:4 }}>Analyse en cours…</div>
                     <div style={{ fontSize:13, color:'var(--app-fg-3)', maxWidth:300 }}>
-                      {refreshing ? 'Récupération des flux RSS…' : 'Claude score les actus pour ton profil — 30 à 60 sec.'}
+                      {refreshing ? 'Récupération des flux RSS…' : 'Scoring des actus pour ton profil — 30 à 60 sec.'}
                     </div>
                   </>
                 ) : (
