@@ -410,8 +410,17 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
   var advance = (next) => { setAnimKey(k => k + 1); setSub(next); };
 
   useEffect(() => {
-    var backs = { 0: onBack, 1: () => advance(0), 2: () => advance(1), 3: () => advance(2), 5: () => advance(3) };
-    window.__obBack = backs[sub] || null;
+    var backs = {
+      0: onBack,
+      1: () => advance(0),
+      2: () => advance(1),
+      3: () => advance(2),
+      4: () => {},          // génération en cours — back bloqué (évite goTo(2) du shell)
+      5: () => advance(3),
+      6: () => {},          // confirm en cours — back bloqué
+      7: () => advance(5),  // résultat → retour au carousel
+    };
+    window.__obBack = backs[sub] !== undefined ? backs[sub] : onBack;
     return () => { window.__obBack = null; };
   }, [sub, onBack]);
 
@@ -445,7 +454,20 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
   useEffect(() => {
     if (!existingClientId) return;
 
-    // 1. localStorage — instantané, avant même que supabase réponde
+    // 1a. Etat confirmé (sub 7) — priorité maximale : retour depuis WOW
+    try {
+      var confirmed = localStorage.getItem('forje_confirmed_' + existingClientId);
+      if (confirmed) {
+        var p = JSON.parse(confirmed);
+        setBrandImg(p.brandImg); setConfig(p.config); setLogoUrl(p.logoUrl || null);
+        if (p.fontTitle) setFontTitle(p.fontTitle);
+        else if (p.config?.font_primary) setFontTitle(p.config.font_primary);
+        setSub(7);
+        return;
+      }
+    } catch(_) {}
+
+    // 1b. localStorage kits draft — instantané, avant même que supabase réponde
     try {
       var local = localStorage.getItem('forje_kits_draft_' + existingClientId);
       if (local) {
@@ -530,7 +552,13 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
       setBrandImg(data.imageUrl); setConfig(data.config); setLogoUrl(data.logoUrl || null);
       if (data.config?.font_primary) setFontTitle(data.config.font_primary);
       setSub(7);
-      try { localStorage.removeItem('forje_kits_draft_' + clientId); } catch(_) {}
+      try {
+        localStorage.setItem('forje_confirmed_' + clientId, JSON.stringify({
+          brandImg: data.imageUrl, config: data.config,
+          logoUrl: data.logoUrl || null, fontTitle: data.config?.font_primary || ''
+        }));
+        localStorage.removeItem('forje_kits_draft_' + clientId);
+      } catch(_) {}
     } catch (err) {
       setError(err.message); setSub(5);
     } finally {
