@@ -1315,8 +1315,12 @@ router.post('/brand-identity', async (req, res) => {
   }
 });
 
-// ─── Crop logo depuis le brand kit — Vision pour les coordonnées, Sharp pour tout le reste ──
-// Aucun modèle génératif : le logo n'est jamais redessiné.
+// ─── Crop logo depuis le brand kit ───────────────────────────────────────────
+// Workflow :
+//   1. Claude Vision  → localise la PP Instagram dans le proto téléphone (bas-droit)
+//   2. Sharp           → crop précis du cercle avec padding
+//   3. GPT Image 1 edit → nettoyage conservateur sur le crop (ring, fond → transparent, 1024×1024)
+//   4. removeWhiteBackground → purge les pixels blancs résiduels
 async function cropLogoFromBrandKit(imageUrl) {
   if (!openaiClient) return null;
   try {
@@ -1324,11 +1328,9 @@ async function cropLogoFromBrandKit(imageUrl) {
     const meta   = await sharp(imgBuf).metadata();
     const imgW   = meta.width, imgH = meta.height;
 
-    // Étape 1 : Claude Vision → coordonnées pixel de la PP Instagram
-    // On isole le quart bas-droit de l'image : c'est là que se trouve le proto téléphone
-    // avec la photo de profil Instagram (cercle de la PP).
-    const rLeft = Math.round(imgW * 0.35);   // 35% depuis la gauche → moitié droite
-    const rTop  = Math.round(imgH * 0.38);   // 38% depuis le haut  → moitié basse
+    // ── Étape 1 : Vision → trouver la PP dans le quart bas-droit (proto téléphone) ──
+    const rLeft = Math.round(imgW * 0.35);
+    const rTop  = Math.round(imgH * 0.38);
     const rW    = imgW - rLeft;
     const rH    = imgH - rTop;
 
@@ -1336,7 +1338,6 @@ async function cropLogoFromBrandKit(imageUrl) {
       .extract({ left: rLeft, top: rTop, width: rW, height: rH })
       .jpeg({ quality: 85 })
       .toBuffer();
-    const b64Kit = regionBuf.toString('base64');
 
     const resp = await haiku.messages.create({
       model:      'claude-sonnet-4-6',
@@ -1344,7 +1345,7 @@ async function cropLogoFromBrandKit(imageUrl) {
       messages: [{
         role: 'user',
         content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64Kit } },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: regionBuf.toString('base64') } },
           { type: 'text',  text:  `This is the bottom-right portion (${rW}x${rH}px) of a brand identity sheet. Inside a phone mockup showing an Instagram profile page, there is a CIRCULAR profile picture (PP) — a small filled circle at the top of the phone screen. Locate that circle and return ONLY valid JSON: {"x":N,"y":N,"w":N,"h":N} in pixels relative to THIS image (top-left origin, integers). No markdown, no text.` }
         ]
       }]
@@ -1352,56 +1353,61 @@ async function cropLogoFromBrandKit(imageUrl) {
 
     let coords;
     try {
-      const raw = resp.content[0].text.trim();
-      // Extrait le premier objet JSON trouvé dans la réponse (Claude peut ajouter du texte autour)
+      const raw   = resp.content[0].text.trim();
       const match = raw.match(/\{[^{}]*\}/);
-      if (!match) throw new Error('Pas de JSON trouvé dans : ' + raw.slice(0, 120));
+      if (!match) throw new Error('Pas de JSON trouve dans : ' + raw.slice(0, 120));
       coords = JSON.parse(match[0]);
     } catch(e) {
-      console.error('[crop logo] Claude Vision coord parse failed:', e.message);
+      console.error('[crop logo] Vision coord parse failed:', e.message);
       return null;
     }
 
-    // Les coords sont relatives à la région extraite → on les remet dans le référentiel de l'image complète
+    // Coords relatives a la region → referentiel image complete
     const x = Math.max(0, Math.round(Number(coords.x) || 0) + rLeft);
     const y = Math.max(0, Math.round(Number(coords.y) || 0) + rTop);
     const w = Math.min(Math.round(Number(coords.w) || 0), imgW - x);
     const h = Math.min(Math.round(Number(coords.h) || 0), imgH - y);
-    if (w < 20 || h < 20) { console.error('[crop logo] bbox trop petit ou invalide', {x,y,w,h,imgW,imgH}); return null; }
-    console.log('[crop logo] bbox trouvé →', {x,y,w,h});
+    if (w < 20 || h < 20) { console.error('[crop logo] bbox invalide', {x,y,w,h}); return null; }
+    console.log('[crop logo] PP trouvee →', {x,y,w,h});
 
-    // Étape 2 : Crop avec padding généreux (20 %) pour ne pas couper l'anneau extérieur
-    const pad = Math.round(Math.min(w, h) * 0.20);
-    const cx  = Math.max(0, x - pad);
-    const cy  = Math.max(0, y - pad);
-    const cw  = Math.min(w + pad * 2, imgW - cx);
-    const ch  = Math.min(h + pad * 2, imgH - cy);
+    // ── Etape 2 : Crop Sharp — carre avec padding 25% ──────────────────────────
+    const pad  = Math.round(Math.min(w, h) * 0.25);
+    const cx   = Math.max(0, x - pad);
+    const cy   = Math.max(0, y - pad);
+    const cw   = Math.min(w + pad * 2, imgW - cx);
+    const ch   = Math.min(h + pad * 2, imgH - cy);
+    const side = Math.min(cw, ch);
 
-    let logoBuf = await sharp(imgBuf).extract({ left: cx, top: cy, width: cw, height: ch }).png().toBuffer();
-
-    // Étape 3 : Suppression du fond (détection automatique par les coins — fonctionne fond blanc ou sombre)
-    logoBuf = await removeBackground(logoBuf);
-
-    // Étape 4 : Trim des bords transparents (avec fallback si ça plante) + upscale 1024×1024 centré
-    try {
-      logoBuf = await sharp(logoBuf).trim({ threshold: 10 }).png().toBuffer();
-    } catch(_) { /* trim peut planter si l'image est entièrement transparente — on garde le crop brut */ }
-
-    // Upscale haute résolution — Sharp uniquement, zero modèle génératif, logo pixel-perfect
-    logoBuf = await sharp(logoBuf)
-      .resize(960, 960, { fit: 'contain', background: { r:0, g:0, b:0, alpha:0 }, kernel: 'lanczos3' })
-      .extend({ top:32, bottom:32, left:32, right:32, background: { r:0, g:0, b:0, alpha:0 } })
+    const cropBuf = await sharp(imgBuf)
+      .extract({ left: cx, top: cy, width: cw, height: ch })
+      .resize(side, side, { fit: 'cover' })
       .png()
       .toBuffer();
 
-    console.log('[crop logo] succès 1024×1024 — aucun modèle génératif utilisé');
-    return logoBuf;
+    // ── Etape 3 : GPT Image 1 edit — sur le crop uniquement ────────────────────
+    // On passe le CROP (pas le brand kit complet) → bien moins de contexte = bien moins de risque de redesign.
+    console.log('[crop logo] GPT Image 1 edit sur le crop...');
+    const cropFile = await toFile(cropBuf, 'logo-crop.png', { type: 'image/png' });
+    const edited = await openaiClient.images.edit({
+      model:   'gpt-image-1',
+      size:    '1024x1024',
+      quality: 'high',
+      image:   cropFile,
+      prompt:  'This image shows a brand logo or monogram inside a circular Instagram stories ring frame. Your task is strictly conservative: (1) Remove the circular ring/border frame — keep the inner logo completely untouched. (2) Remove any background — output the logo on a fully transparent background. (3) Upscale and sharpen to 1024x1024 maximum quality. (4) Recenter ONLY if visibly off-center. Do NOT redesign, simplify, recolor, or alter the logo in any way. Output: exact logo mark, transparent background, PNG, centered.',
+    });
+
+    const b64 = edited.data?.[0]?.b64_json;
+    if (!b64) { console.error('[crop logo] no b64 in GPT Image response'); return null; }
+    console.log('[crop logo] GPT Image 1 succes — purge fond blanc residuel...');
+
+    // ── Etape 4 : Suppression des pixels blancs residuels ──────────────────────
+    const buf = await removeWhiteBackground(Buffer.from(b64, 'base64'));
+    return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
     return null;
   }
 }
-
 // ─── Brand Identity Confirm — Vision extraction + logo + save DB ──────────────
 router.post('/brand-identity/confirm', async (req, res) => {
   const { clientId, name, topics, energy, selectedKit } = req.body;
