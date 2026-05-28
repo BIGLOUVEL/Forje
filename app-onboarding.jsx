@@ -637,7 +637,7 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
   if (sub === 4) return (
     <div key="loading" className="ob-step ob-step-enter">
       <div className="ob-loading-wrap">
-        <div className="ob-forge-mark">F</div>
+        <div className="ob-forge-mark"><img src="assets/forje-logo.png" alt="Forje"/></div>
         <div className="ob-loading-line"/>
         <p className="ob-loading-text">
           Forge en cours...<br/>
@@ -711,7 +711,7 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
   if (sub === 6) return (
     <div key="confirming" className="ob-step ob-step-enter">
       <div className="ob-loading-wrap">
-        <div className="ob-forge-mark">F</div>
+        <div className="ob-forge-mark"><img src="assets/forje-logo.png" alt="Forje"/></div>
         <div className="ob-loading-line"/>
         <p className="ob-loading-text">
           Extraction en cours...<br/>
@@ -900,7 +900,7 @@ const StepWow = ({ clientId, onComplete, onBack }) => {
   if (phase === 'loading') return (
     <div className="ob-wow-root">
       <div className="ob-loading-wrap">
-        <div className="ob-forge-mark">F</div>
+        <div className="ob-forge-mark"><img src="assets/forje-logo.png" alt="Forje"/></div>
         <div className="ob-loading-line"/>
         <p className="ob-loading-text">
           Ton premier post se forge...<br/>
