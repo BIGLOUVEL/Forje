@@ -438,6 +438,61 @@
 }
 .gen-studio-actions { display: flex; gap: 8px; }
 
+/* ── Format dropdown trigger ── */
+.gen-fmt-trigger {
+  display: flex; align-items: center; gap: 8px;
+  background: none; border: none; cursor: pointer;
+  padding: 4px 8px; margin: -4px -8px;
+  border-radius: 6px;
+  color: inherit;
+  transition: background 0.15s;
+}
+.gen-fmt-trigger:hover { background: var(--app-surface-2, rgba(255,255,255,0.06)); }
+.gen-fmt-chevron {
+  font-size: 12px;
+  color: var(--app-fg-3);
+  transition: transform 0.18s ease;
+  margin-left: 2px;
+  line-height: 1;
+}
+
+/* ── Format dropdown panel ── */
+.gen-fmt-drop {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  min-width: 240px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  z-index: 200;
+  animation: fmtDropIn 0.15s ease;
+}
+@keyframes fmtDropIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.gen-fmt-option {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 11px 14px;
+  background: none; border: none; cursor: pointer;
+  color: var(--app-fg-2);
+  text-align: left;
+  transition: background 0.12s;
+  border-bottom: 1px solid var(--app-line);
+}
+.gen-fmt-option:last-child { border-bottom: none; }
+.gen-fmt-option:hover { background: var(--app-surface-2, rgba(255,255,255,0.05)); color: var(--app-fg); }
+.gen-fmt-option--active { color: var(--app-fg); }
+.gen-fmt-opt-icon { color: var(--app-fg-3); flex-shrink: 0; display: flex; align-items: center; }
+.gen-fmt-option--active .gen-fmt-opt-icon { color: var(--app-accent); }
+.gen-fmt-opt-body { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.gen-fmt-opt-label { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.gen-fmt-opt-desc  { font-size: 11px; color: var(--app-fg-3); }
+.gen-fmt-opt-check { font-size: 12px; color: var(--app-accent); font-weight: 700; flex-shrink: 0; }
+
 .gen-studio-grid {
   display: grid;
   grid-template-columns: minmax(340px, 1fr) minmax(0, 1.1fr);

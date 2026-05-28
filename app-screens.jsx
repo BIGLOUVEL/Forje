@@ -125,8 +125,8 @@ window.__renderActuCanvas = renderActuCanvas;
 const GenerateScreen = ({ layoutVariant, preset, onPickPreset, onBack, onGoToBoard, brandScore, onGoBrand }) => {
   if (preset) {
     return layoutVariant === 'chat'
-      ? <GenerateChat preset={preset} onBack={onBack} onGoToBoard={onGoToBoard} brandScore={brandScore} onGoBrand={onGoBrand}/>
-      : <GenerateStudio preset={preset} onBack={onBack} onGoToBoard={onGoToBoard} brandScore={brandScore} onGoBrand={onGoBrand}/>;
+      ? <GenerateChat preset={preset} onBack={onBack} onGoToBoard={onGoToBoard} brandScore={brandScore} onGoBrand={onGoBrand} onPickPreset={onPickPreset}/>
+      : <GenerateStudio preset={preset} onBack={onBack} onGoToBoard={onGoToBoard} brandScore={brandScore} onGoBrand={onGoBrand} onPickPreset={onPickPreset}/>;
   }
   return <GenerateHub onPick={onPickPreset}/>;
 };
@@ -793,7 +793,7 @@ const GenLoader = ({ preset, startTime, exiting }) => {
   );
 };
 
-const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand }) => {
+const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, onPickPreset }) => {
   const GEN_KEY    = `forje_gen_result_${preset.id}`;
   const FEED_KEY   = `forje_gen_feed_${preset.id}`;
   const INPUTS_KEY = `forje_gen_inputs_${preset.id}`;
@@ -818,10 +818,34 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand }
   const [error,        setError]        = useState(null);
   const [activeSlide,  setActiveSlide]  = useState(0);
   const [expandedItem, setExpandedItem] = useState(null);
+  const [showFmtDrop, setShowFmtDrop] = useState(false);
   const isMountedRef   = useRef(true);
   const loadingIdRef   = useRef(null);
   const autoStartedRef = useRef(false);
+  const fmtDropRef     = useRef(null);
   useEffect(() => { return () => { isMountedRef.current = false; }; }, []);
+
+  // Fermer le dropdown format au clic extérieur
+  useEffect(() => {
+    if (!showFmtDrop) return;
+    const fn = (e) => { if (fmtDropRef.current && !fmtDropRef.current.contains(e.target)) setShowFmtDrop(false); };
+    document.addEventListener('mousedown', fn);
+    return () => document.removeEventListener('mousedown', fn);
+  }, [showFmtDrop]);
+
+  // Switcher de format en préservant le texte courant
+  const handleSwitchFormat = (newId) => {
+    setShowFmtDrop(false);
+    if (newId === preset.id || !onPickPreset) return;
+    const newPreset = PRESETS.find(p => p.id === newId);
+    if (!newPreset) return;
+    const currentText = newsText || quoteText || topic || '';
+    const prefill =
+      newId === 'actu'     ? { newsText: currentText } :
+      newId === 'citation' ? { quoteText: currentText, authorName: authorName || '' } :
+      newId === 'deepdive' ? { topic: currentText } : {};
+    onPickPreset({ ...newPreset, prefill, fromBoard: preset.fromBoard });
+  };
 
   // Charge les posts depuis Supabase au mount
   useEffect(() => {
@@ -1014,9 +1038,35 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand }
             </button>
           )}
         </div>
-        <div className="gen-studio-title-row">
-          <AppIcon name={preset.icon} size={14} style={{color:'var(--app-fg-3)'}}/>
-          <h1 className="gen-studio-title">{preset.label}</h1>
+        <div className="gen-studio-title-row" ref={fmtDropRef} style={{ position:'relative' }}>
+          <button
+            className="gen-fmt-trigger"
+            onClick={() => setShowFmtDrop(v => !v)}
+            title="Changer de format"
+          >
+            <AppIcon name={preset.icon} size={13} style={{ color:'var(--app-fg-3)', flexShrink:0 }}/>
+            <span className="gen-studio-title">{preset.label}</span>
+            <span className="gen-fmt-chevron" style={{ transform: showFmtDrop ? 'rotate(180deg)' : 'rotate(0deg)' }}>▾</span>
+          </button>
+
+          {showFmtDrop && (
+            <div className="gen-fmt-drop">
+              {PRESETS.map(p => (
+                <button
+                  key={p.id}
+                  className={'gen-fmt-option' + (p.id === preset.id ? ' gen-fmt-option--active' : '')}
+                  onClick={() => handleSwitchFormat(p.id)}
+                >
+                  <span className="gen-fmt-opt-icon"><AppIcon name={p.icon} size={13}/></span>
+                  <span className="gen-fmt-opt-body">
+                    <span className="gen-fmt-opt-label">{p.label}</span>
+                    <span className="gen-fmt-opt-desc">{p.desc}</span>
+                  </span>
+                  {p.id === preset.id && <span className="gen-fmt-opt-check">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="gen-studio-actions">
         </div>
