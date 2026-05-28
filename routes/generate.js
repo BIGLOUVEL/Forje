@@ -1370,7 +1370,7 @@ async function cropLogoFromBrandKit(imageUrl) {
     if (w < 20 || h < 20) { console.error('[crop logo] bbox invalide', {x,y,w,h}); return null; }
     console.log('[crop logo] PP trouvee →', {x,y,w,h});
 
-    // ── Etape 2 : Crop Sharp — carre avec padding 25% ──────────────────────────
+    // ── Etape 2 : Crop Sharp — carré avec padding 25% ─────────────────────────
     const pad  = Math.round(Math.min(w, h) * 0.25);
     const cx   = Math.max(0, x - pad);
     const cy   = Math.max(0, y - pad);
@@ -1378,33 +1378,39 @@ async function cropLogoFromBrandKit(imageUrl) {
     const ch   = Math.min(h + pad * 2, imgH - cy);
     const side = Math.min(cw, ch);
 
-    const cropBuf = await sharp(imgBuf)
+    let cropBuf = await sharp(imgBuf)
       .extract({ left: cx, top: cy, width: cw, height: ch })
       .resize(side, side, { fit: 'cover' })
       .png()
       .toBuffer();
 
-    // ── Etape 3 : GPT Image 1 edit — sur le crop uniquement ────────────────────
-    // On passe le CROP (pas le brand kit complet) → bien moins de contexte = bien moins de risque de redesign.
-    console.log('[crop logo] GPT Image 1 edit sur le crop...');
+    // ── Etape 2b : Pre-nettoyage du contexte Instagram ─────────────────────────
+    // Le crop contient le fond sombre de l'UI Instagram autour du cercle logo.
+    // On supprime ce fond via detecfion des coins (dark Instagram → transparent)
+    // AVANT de passer à GPT, pour qu'il ne voie que le logo — pas le contexte insta.
+    cropBuf = await removeBackground(cropBuf, 35);
+    try {
+      cropBuf = await sharp(cropBuf).trim({ threshold: 15 }).png().toBuffer();
+    } catch(_) {}
+
+    // ── Etape 3 : GPT Image 1 edit — logo pré-isolé, contexte insta retiré ────
+    // GPT ne voit plus que le cercle logo sur fond transparent → pas d'influence des couleurs insta.
+    console.log('[crop logo] GPT Image 1 edit sur le logo isole...');
     const cropFile = await toFile(cropBuf, 'logo-crop.png', { type: 'image/png' });
     const edited = await openaiClient.images.edit({
       model:   'gpt-image-1',
       size:    '1024x1024',
       quality: 'high',
       image:   cropFile,
-      prompt:  'This image shows a brand logo or monogram inside a circular Instagram stories ring frame. Your task is strictly conservative: (1) Remove the circular ring/border frame — keep the inner logo completely untouched. (2) Remove any background — output the logo on a fully transparent background. (3) Upscale and sharpen to 1024x1024 maximum quality. (4) Recenter ONLY if visibly off-center. Do NOT redesign, simplify, recolor, or alter the logo in any way. Output: exact logo mark, transparent background, PNG, centered.',
+      prompt:  'This image shows a brand logo mark: a circular badge containing a monogram or letters on a colored background. Your task: (1) Keep the logo EXACTLY as-is — every color, every detail, every letter. (2) Ensure the background outside the logo circle is fully transparent. (3) Upscale and sharpen to 1024x1024. (4) Center it. Do NOT change, recolor, simplify or redesign anything. Preserve the original logo perfectly.',
     });
 
     const b64 = edited.data?.[0]?.b64_json;
     if (!b64) { console.error('[crop logo] no b64 in GPT Image response'); return null; }
-    console.log('[crop logo] GPT Image 1 succes — nettoyage fond par detection coins...');
+    console.log('[crop logo] GPT Image 1 succes');
 
-    // ── Etape 4 : removeBackground (détection coins) — PAS removeWhiteBackground ──
-    // removeWhiteBackground(tolerance=235) efface tous les pixels blancs y compris
-    // les lettres blanches du logo. removeBackground détecte la couleur des coins
-    // (le fond résiduel GPT) et ne supprime que ça → les blancs du logo sont préservés.
-    const buf = await removeBackground(Buffer.from(b64, 'base64'), 30);
+    // ── Etape 4 : Nettoyage fond résiduel par coins ────────────────────────────
+    const buf = await removeBackground(Buffer.from(b64, 'base64'), 25);
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
