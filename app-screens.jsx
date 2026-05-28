@@ -2224,10 +2224,9 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
 
   if (loading) return (
     <div className="page-body" style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:300 }}>
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12, color:'var(--app-fg-4)' }}>
-        <div style={{ width:24, height:24, border:'2px solid var(--app-line)',
-          borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .8s linear infinite' }}/>
-        <span style={{ fontSize:13 }}>Chargement de ton identite...</span>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:14 }}>
+        <div className="forje-blob-spin"/>
+        <span style={{ fontSize:13, color:'var(--app-fg-4)' }}>Chargement de ton identité...</span>
       </div>
     </div>
   );
@@ -2394,7 +2393,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
               <div onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/png'; inp.onchange=function(e){ handleLogoUpload(e.target.files[0]); }; inp.click(); }}
                 style={{ flex:1, border:'1.5px dashed var(--app-line)', borderRadius:10, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, cursor:'pointer', padding:16, background: logoUploading ? 'var(--app-surface-3)' : 'transparent', minHeight:120 }}>
                 {logoUploading
-                  ? <div style={{width:18,height:18,border:'2px solid var(--app-line)',borderTopColor:'var(--app-accent)',borderRadius:'50%',animation:'vb-spin .7s linear infinite'}}/>
+                  ? <div className="forje-blob-spin forje-blob-spin--sm"/>
                   : <><div style={{width:36,height:36,borderRadius:9,background:'var(--app-surface-3)',display:'flex',alignItems:'center',justifyContent:'center'}}><AppIcon name="image" size={17}/></div><div style={{fontSize:12,color:'var(--app-fg-4)',lineHeight:1.6,textAlign:'center'}}>Glisse ou clique<br/><span style={{fontSize:10,opacity:.6}}>PNG transparent</span></div></>
                 }
               </div>
@@ -2420,7 +2419,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
               <div onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click(); }}
                 style={{ flex:1, border:'1.5px dashed var(--app-line)', borderRadius:10, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, cursor:'pointer', padding:16, background: styleRefUploading ? 'var(--app-surface-3)' : 'transparent', minHeight:120 }}>
                 {styleRefUploading
-                  ? <div style={{width:18,height:18,border:'2px solid var(--app-line)',borderTopColor:'var(--app-accent)',borderRadius:'50%',animation:'vb-spin .7s linear infinite'}}/>
+                  ? <div className="forje-blob-spin forje-blob-spin--sm"/>
                   : <><div style={{width:36,height:36,borderRadius:9,background:'var(--app-surface-3)',display:'flex',alignItems:'center',justifyContent:'center'}}><AppIcon name="layers" size={17}/></div><div style={{fontSize:12,color:'var(--app-fg-4)',lineHeight:1.6,textAlign:'center'}}>Ref visuelle IA<br/><span style={{fontSize:10,opacity:.6}}>JPG, PNG, WebP</span></div></>
                 }
               </div>

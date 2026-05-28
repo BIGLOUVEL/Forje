@@ -1173,9 +1173,8 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   if (loading) return (
     <div className="page-body" style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:300, flexDirection:'column', gap:14 }}>
-      <div style={{ width:28, height:28, border:'2px solid var(--app-line)', borderTopColor:'var(--app-accent)', borderRadius:'50%', animation:'vb-spin .8s linear infinite' }}/>
+      <div className="forje-blob-spin"/>
       <span style={{ fontSize:13, color:'var(--app-fg-3)' }}>Chargement du board…</span>
-      <style>{`@keyframes vb-spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 

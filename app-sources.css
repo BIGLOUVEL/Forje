@@ -805,6 +805,9 @@
   animation: forje-blob 3s ease-in-out infinite;
   opacity: 0.9;
 }
+.forje-blob-spin--sm {
+  width: 20px; height: 20px;
+}
 @keyframes forje-blob {
   0%   { border-radius: 60% 40% 55% 45% / 50% 60% 40% 50%; transform: rotate(0deg)   scale(1);    }
   25%  { border-radius: 40% 60% 45% 55% / 60% 40% 60% 40%; transform: rotate(90deg)  scale(1.05); }
