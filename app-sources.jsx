@@ -860,13 +860,105 @@ const HeatBar = ({ topics }) => (
   </section>
 );
 
+// ─── StatusBar ────────────────────────────────────────────────────────────────
+const StatusBar = ({ refreshedAt, scoring, total }) => {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => tick(t => t + 1), 30000);
+    return () => clearInterval(iv);
+  }, []);
+  const lastMin = refreshedAt ? Math.round((Date.now() - refreshedAt) / 60000) : null;
+  const nextMin = refreshedAt ? Math.max(0, 5 - Math.round((Date.now() - refreshedAt) / 60000)) : null;
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', gap:8, padding:'6px 20px',
+      background:'var(--app-surface)', borderBottom:'1px solid var(--app-line)',
+      fontSize:11.5, color:'var(--app-fg-4)', flexShrink:0,
+    }}>
+      <span style={{
+        width:6, height:6, borderRadius:'50%', flexShrink:0,
+        background: scoring ? 'var(--app-accent)' : '#22C55E',
+        animation: scoring ? 'pulse 1.2s ease-in-out infinite' : 'none',
+      }}/>
+      <span style={{ color:'var(--app-fg-3)', fontWeight:500 }}>
+        {scoring ? 'Analyse en cours…' : lastMin !== null ? `Analysé il y a ${lastMin < 1 ? 'quelques secondes' : lastMin + ' min'}` : 'Veille active'}
+      </span>
+      {!scoring && nextMin !== null && nextMin > 0 && (
+        <><span style={{ opacity:.4 }}>·</span><span>Prochain dans {nextMin} min</span></>
+      )}
+      {total > 0 && (
+        <><span style={{ opacity:.4 }}>·</span><span>{total} articles scorés</span></>
+      )}
+    </div>
+  );
+};
+
+// ─── UrgentCard ───────────────────────────────────────────────────────────────
+const UrgentCard = ({ item, active, onClick, onDismiss, onGenerate }) => {
+  const scoreColor = item.score >= 9 ? '#ef4444' : item.score >= 8.5 ? '#f59e0b' : 'var(--app-accent)';
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        position:'relative', cursor:'pointer',
+        background: active ? 'rgba(79,91,213,.07)' : 'var(--app-surface-2)',
+        border: `1px solid ${active ? 'rgba(79,91,213,.3)' : 'var(--app-line)'}`,
+        borderRadius:'var(--radius)', padding:'14px 16px',
+        transition:'border-color .15s, background .15s',
+      }}
+      onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor='rgba(79,91,213,.2)'; e.currentTarget.style.background='rgba(79,91,213,.03)'; } }}
+      onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor='var(--app-line)'; e.currentTarget.style.background='var(--app-surface-2)'; } }}
+    >
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:7, gap:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+          <span style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', color:'var(--app-fg-4)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.source}</span>
+          <span style={{ fontSize:10, color:'var(--app-fg-4)', opacity:.5 }}>·</span>
+          <span style={{ fontSize:10, color:'var(--app-fg-4)', whiteSpace:'nowrap' }}>{item.when}</span>
+        </div>
+        <span style={{ fontSize:13, fontWeight:800, color:scoreColor, flexShrink:0 }}>{item.score?.toFixed(1)}</span>
+      </div>
+      <div style={{ fontSize:14, fontWeight:700, color:'var(--app-fg)', lineHeight:1.4, marginBottom:10 }}>{item.title}</div>
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        {item.format && (
+          <span style={{
+            fontSize:10, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase',
+            padding:'2px 8px', borderRadius:20,
+            background:'rgba(79,91,213,.08)', color:'var(--app-accent)',
+            border:'1px solid rgba(79,91,213,.15)',
+          }}>{item.format}</span>
+        )}
+        <button
+          onClick={e => { e.stopPropagation(); onGenerate?.(item.id, item.format); }}
+          style={{
+            all:'unset', cursor:'pointer', marginLeft:'auto',
+            fontSize:12, fontWeight:700, color:'var(--app-accent)',
+            display:'flex', alignItems:'center', gap:4,
+            padding:'5px 12px', borderRadius:6,
+            background:'rgba(79,91,213,.08)', border:'1px solid rgba(79,91,213,.2)',
+            transition:'all .12s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background='var(--app-accent)'; e.currentTarget.style.color='#fff'; e.currentTarget.style.borderColor='var(--app-accent)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background='rgba(79,91,213,.08)'; e.currentTarget.style.color='var(--app-accent)'; e.currentTarget.style.borderColor='rgba(79,91,213,.2)'; }}
+        >
+          Forger →
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); onDismiss?.(item.id); }}
+          style={{ all:'unset', cursor:'pointer', fontSize:16, color:'var(--app-fg-4)', opacity:.4, padding:'2px 6px', lineHeight:1 }}
+          onMouseEnter={e => e.currentTarget.style.opacity='1'}
+          onMouseLeave={e => e.currentTarget.style.opacity='.4'}
+        >×</button>
+      </div>
+    </div>
+  );
+};
+
 const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
   const [boardData, setBoardData]   = useState({ breaking: [], board: [], total: 0 });
   const [loading, setLoading]       = useState(true);
   const [scoring, setScoring]       = useState(false);
   const [selected, setSelected]     = useState(null);
-  const [filter, setFilter]         = useState('all');
-  const [view, setView]             = useState('board'); // 'board' | 'latest' | 'sources'
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [dismissed, setDismissed]   = useState(new Set());
   const [learning, setLearning]     = useState(false);
@@ -1137,72 +1229,40 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     } finally { setTwitterRefreshing(false); }
   };
 
-  // Build enriched feed: scored items first (rich metadata), then unscored latestRaw
-  const feed = (() => {
-    const seen = new Set();
-    const items = [];
+  const enrichItem = (item) => {
+    const raw = item.news_raw || {};
+    return {
+      id:          item.id,
+      createdAt:   raw.published_at || raw.created_at,
+      when:        fmtAge(raw.published_at || raw.created_at),
+      source:      raw.source || '—',
+      score:       item.score_total || 0,
+      why:         item.pourquoi_ce_score || '',
+      format:      item.format_suggere,
+      timing:      item.timing_optimal,
+      caption:     item.caption,
+      title:       raw.titre || '(sans titre)',
+      description: raw.description || '',
+      url:         raw.url,
+      hashtags:    item.hashtags || [],
+      angle:       item.angle || '',
+    };
+  };
 
-    // 1. Scored articles — priority, with full AI metadata
-    for (const item of (boardData.board || [])) {
-      const raw = item.news_raw || {};
-      if (dismissed.has(item.id)) continue;
-      seen.add(raw.id);
-      items.push({
-        id:          item.id,
-        rawId:       raw.id,
-        createdAt:   raw.published_at || raw.created_at,
-        when:        fmtAge(raw.published_at || raw.created_at),
-        heat:        item.flag === 'urgent' ? 'hot' : item.flag === 'a_traiter' ? 'warm' : 'cool',
-        source:      raw.source || '—',
-        cat:         item.format_suggere || null,
-        match:       Math.min(1, (item.score_total || 0) / 10),
-        score:       item.score_total || 0,
-        why:         item.pourquoi_ce_score || '',
-        format:      item.format_suggere,
-        timing:      item.timing_optimal,
-        caption:     item.caption,
-        title:       raw.titre || '(sans titre)',
-        description: raw.description || '',
-        url:         raw.url,
-        hashtags:    item.hashtags || [],
-        angle:       item.angle || '',
-        scored:      true,
-      });
-    }
+  const urgentItems = (boardData.board || [])
+    .filter(item => item.flag === 'urgent' && !dismissed.has(item.id))
+    .sort((a, b) => (b.score_total || 0) - (a.score_total || 0))
+    .map(enrichItem);
 
-    // 2. Unscored raw articles — fill the feed so it's never empty
-    for (const raw of latestRaw) {
-      if (dismissed.has(raw.id) || seen.has(raw.id)) continue;
-      items.push({
-        id:          raw.id,
-        rawId:       raw.id,
-        createdAt:   raw.published_at || raw.created_at,
-        when:        fmtAge(raw.published_at || raw.created_at),
-        heat:        'unscored',
-        source:      raw.source || '—',
-        cat:         null,
-        match:       null,
-        score:       null,
-        why:         '',
-        format:      null,
-        timing:      null,
-        caption:     null,
-        title:       raw.titre || '(sans titre)',
-        description: raw.description || raw.summary || '',
-        url:         raw.url,
-        hashtags:    [],
-        angle:       '',
-        scored:      false,
-      });
-    }
+  const watchItems = (boardData.board || [])
+    .filter(item => item.flag === 'a_traiter' && !dismissed.has(item.id))
+    .sort((a, b) => (b.score_total || 0) - (a.score_total || 0))
+    .map(enrichItem);
 
-    // Sort by date desc
-    return items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  })();
+  const allItems = [...urgentItems, ...watchItems];
 
   const breaking = (boardData.breaking || []).slice(0, 1).map(item => {
     const raw = item.news_raw || {};
-    // Calcul de l'âge réel depuis published_at (et non fenetre_age_minutes figé au moment du score)
     const pubAt = raw.published_at || raw.created_at;
     const actualAge = pubAt
       ? Math.round((Date.now() - new Date(pubAt.endsWith('Z') ? pubAt : pubAt + 'Z').getTime()) / 60000)
@@ -1218,504 +1278,262 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     };
   });
 
-  const activeId = selected ?? feed[0]?.id ?? null;
-  const active   = feed.find(n => n.id === activeId);
-  const filtered = feed.filter(n =>
-    filter === 'hot'      ? n.heat === 'hot'       :
-    filter === 'relevant' ? (n.match != null && n.match >= 0.7) : true
-  );
-
-  const refreshLabel = refreshedAt
-    ? (() => { const m = Math.round((Date.now() - refreshedAt) / 60000); return m < 1 ? 'maintenant' : `il y a ${m} min`; })()
-    : '—';
+  const activeId = selected ?? allItems[0]?.id ?? null;
+  const active   = allItems.find(n => n.id === activeId);
 
   if (loading) return (
     <div className="page-body" style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:300, flexDirection:'column', gap:14 }}>
       <div className="forje-blob-spin"/>
-      <span style={{ fontSize:13, color:'var(--app-fg-3)' }}>Chargement du board…</span>
+      <span style={{ fontSize:13, color:'var(--app-fg-3)' }}>Chargement…</span>
     </div>
   );
 
+  const goGenerate = (item) => {
+    if (!item || !window.__goToGenerate) return;
+    const brief = [item.title, item.description || '', item.why ? 'Contexte : ' + item.why : '', item.angle ? 'Angle : ' + item.angle : '', item.caption ? 'Caption suggérée : ' + item.caption : ''].filter(Boolean).join('\n');
+    window.__goToGenerate({ title: item.title, text: brief, url: item.url, source: item.source });
+  };
+
   return (
     <div className="sources-page">
-      {breaking[0] && view === 'board' && (
+
+      {/* ── Pipeline status bar ── */}
+      <StatusBar refreshedAt={refreshedAt} scoring={scoring} total={boardData.total}/>
+
+      {/* ── Breaking alert ── */}
+      {breaking[0] && (
         <BreakingBar
           data={breaking[0]}
           onGenerate={(d) => window.__goToGenerate?.({ title: d.title, url: d.url, source: d.source })}
         />
       )}
 
-      {/* ── Banner scoring en cours ── */}
-      {scoring && (
-        <div style={{
-          display:'flex', alignItems:'center', gap:10,
-          padding:'9px 20px',
-          background:'rgba(79,91,213,.06)',
-          borderBottom:'1px solid rgba(79,91,213,.15)',
-          fontSize:13, color:'var(--app-fg-2)',
-        }}>
-          <div style={{
-            width:8, height:8, borderRadius:'50%', background:'var(--app-accent)', flexShrink:0,
-            animation:'pulse 1.2s ease-in-out infinite',
-          }}/>
-          Forje est en train de chercher les meilleures infos pour vous…
+      {/* ── Tendances + action bar ── */}
+      <div style={{ display:'flex', alignItems:'center', borderBottom:'1px solid var(--app-line)', background:'var(--app-surface)', flexShrink:0 }}>
+        <div style={{ flex:1, overflow:'hidden' }}>
+          <BarreTendances tendances={tendances} onTrendClick={handleTrendClick}/>
         </div>
-      )}
-
-      {/* ── Onglets Board / Latest ── */}
-      <div className="view-tabs">
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          {compteInfo?.instagram_url && (() => {
-            const handle = compteInfo.instagram_url.replace(/\/$/, '').split('/').pop();
-            return (
-              <img
-                src={`https://unavatar.io/instagram/${handle}`}
-                alt={compteInfo.nom || handle}
-                title={`@${handle}`}
-                style={{ width:26, height:26, borderRadius:'50%', objectFit:'cover', border:'1.5px solid var(--app-line)', flexShrink:0 }}
-                onError={e => { e.target.style.display='none'; }}
-              />
-            );
-          })()}
-        <div className="view-tabs-inner">
-          <button className={`view-tab ${view==='board'?'active':''}`} onClick={() => setView('board')}>
-            <AppIcon name="bolt" size={12}/> Board
-            {feed.filter(n=>n.scored && n.heat==='hot').length > 0 && (
-              <span className="view-tab-hot">{feed.filter(n=>n.scored && n.heat==='hot').length}</span>
-            )}
-          </button>
-          <button className={`view-tab ${view==='latest'?'active':''}`} onClick={() => { setView('latest'); loadLatestRaw(); }}>
-            <AppIcon name="news" size={12}/> Latest
-            <span className="view-tab-count">{latestRaw.length + latestTweets.length}</span>
-          </button>
-          <button className={`view-tab ${view==='sources'?'active':''}`} onClick={() => setView('sources')}>
-            <AppIcon name="globe" size={12}/> Sources
-            <span className="view-tab-count">{sourcesRss.length}</span>
-          </button>
-        </div>
-        </div>
-        <div className="view-tabs-actions">
+        <div style={{ display:'flex', alignItems:'center', gap:6, padding:'0 14px', flexShrink:0, borderLeft:'1px solid var(--app-line)', height:42 }}>
+          {learning && <span style={{ fontSize:11, color:'var(--app-accent)', fontWeight:600, whiteSpace:'nowrap' }}>⚡ Apprentissage</span>}
           {window.__goToScreen && (
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => window.__goToScreen('pulse')}
-              title="Ouvrir le Pulse Terminal (vue trader)"
-              style={{ fontFamily:'JetBrains Mono, monospace', fontSize:11, letterSpacing:'0.05em', display:'flex', alignItems:'center', gap:5 }}
-            >
-              <span style={{ color:'#FF6B4A', fontSize:10 }}>●</span> PULSE TERMINAL
+            <button className="btn btn-ghost btn-sm" onClick={() => window.__goToScreen('pulse')} title="Pulse Terminal" style={{ fontFamily:'JetBrains Mono, monospace', fontSize:10, letterSpacing:'0.05em', gap:4 }}>
+              <span style={{ color:'#FF6B4A', fontSize:9 }}>●</span> PULSE
             </button>
           )}
-          {learning && <span style={{ fontSize:12, color:'var(--app-accent)', fontWeight:600 }}>⚡ Apprentissage…</span>}
-          {twitterMsg && (
-            <span style={{ fontSize:11, color: twitterMsg.type==='ok'?'var(--app-success)':twitterMsg.type==='warn'?'#f59e0b':'var(--app-danger)', maxWidth:240 }}>
-              {twitterMsg.text}
-            </span>
-          )}
-          {/* Bouton X/Twitter — manuel, coût estimé affiché avant fetch */}
-          <button
-            className="feed-filter-icon"
-            title={twitterRefreshing ? 'Fetch Twitter…' : 'Fetch Twitter manuellement (~160 crédits)'}
-            onClick={runTwitterRefresh}
-            disabled={twitterRefreshing || refreshing}
-            style={{ opacity: twitterRefreshing ? 0.5 : 1 }}
-          >
-            {twitterRefreshing
-              ? <span style={{fontSize:10,color:'#1d9bf0',fontWeight:700}}>…</span>
-              : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{color:'var(--app-fg-3)'}}><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-            }
+          <button className="feed-filter-icon" title="Sources & configuration" onClick={() => setSettingsOpen(o => !o)} style={{ opacity: settingsOpen ? 1 : undefined, color: settingsOpen ? 'var(--app-accent)' : undefined }}>
+            <AppIcon name="settings" size={13}/>
           </button>
-          <button className="feed-filter-icon" title={refreshing ? 'En cours…' : 'Rafraîchir RSS'} onClick={runRefresh} disabled={refreshing || scoring} style={{ opacity: (refreshing||scoring)?0.5:1 }}>
-            {refreshing ? <span style={{fontSize:10,color:'var(--app-accent)',fontWeight:700}}>…</span> : <AppIcon name="refresh" size={12}/>}
-          </button>
-          <button className="feed-filter-icon" title={scoring ? 'Scoring…' : 'Rescorer'} onClick={runScoring} disabled={scoring||refreshing} style={{ opacity:(scoring||refreshing)?0.5:1 }}>
-            {scoring ? <span style={{fontSize:10,color:'var(--app-accent)',fontWeight:700}}>…</span> : <AppIcon name="bolt" size={12}/>}
-          </button>
-          <button className="feed-filter-icon" title="Reconfigurer" onClick={onReset}><AppIcon name="settings" size={12}/></button>
         </div>
       </div>
 
-      {/* ── Barre tendances (board uniquement) ── */}
-      {view === 'board' && <BarreTendances tendances={tendances} onTrendClick={handleTrendClick}/>}
+      {/* ── Layout principal ── */}
+      <div className="sources-layout">
+        <section className="sources-feed">
 
-      {/* ── Vue Latest ── */}
-      {view === 'latest' && (
-        <div className="latest-wrapper">
-          <div className="latest-header">
-            <span>{latestRaw.length + latestTweets.length} articles · toutes sources · triés par date de publication</span>
-          </div>
-
-          {/* Tweets pinned at top */}
-          {latestTweets.length > 0 && (
-            <div style={{ borderBottom:'1px solid var(--app-line)' }}>
-              <div style={{ padding:'8px 20px 6px', fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--app-fg-3)', display:'flex', alignItems:'center', gap:6 }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ color:'var(--app-fg-3)' }}>
-                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                </svg>
-                Twitter / X <span style={{ fontWeight:400, color:'var(--app-fg-4)', textTransform:'none', letterSpacing:0, fontSize:11 }}>· {latestTweets.length}</span>
-              </div>
-              {latestTweets.map(item => (
-                <a
-                  key={item.id}
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="latest-row"
-                  style={{ background:'rgba(0,0,0,.015)' }}
-                >
-                  <div className="latest-row-left">
-                    <span className="latest-time">{fmtAge(item.published_at || item.created_at)}</span>
-                    <span className="latest-source" style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink:0, opacity:0.7 }}>
-                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                      </svg>
-                      {item.source}
-                    </span>
+          {/* État vide */}
+          {urgentItems.length === 0 && watchItems.length === 0 && (
+            <div style={{ padding:'52px 24px', textAlign:'center', display:'flex', flexDirection:'column', gap:12, alignItems:'center' }}>
+              {scoring || refreshing ? (
+                <>
+                  <div className="forje-blob-spin"/>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)', marginTop:4 }}>
+                    {refreshing ? 'Récupération des flux RSS…' : 'Forje est en train de chercher les meilleures infos pour vous…'}
                   </div>
-                  <div className="latest-row-title">{item.titre}</div>
-                </a>
-              ))}
-            </div>
-          )}
-
-          {/* RSS articles */}
-          <div className="latest-list">
-            {latestRaw.length === 0 && latestTweets.length === 0 ? (
-              <div style={{ padding:'40px 24px', textAlign:'center', color:'var(--app-fg-3)', fontSize:13 }}>
-                Aucune news — clique ↻ pour rafraîchir.
-              </div>
-            ) : latestRaw.map(item => (
-              <div key={item.id} className="latest-row">
-                <div className="latest-row-left">
-                  <span className="latest-time">{fmtAge(item.published_at || item.created_at)}</span>
-                  <span className="latest-source">{item.source}</span>
-                </div>
-                <a href={item.url} target="_blank" rel="noopener noreferrer" className="latest-row-title latest-row-link">{item.titre}</a>
-                <button
-                  className="latest-forge-btn"
-                  onClick={() => window.__goToGenerate?.({ titre: item.titre, url: item.url, source: item.source })}
-                >Forger →</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Vue Sources ── */}
-      {view === 'sources' && (
-        <div style={{ padding:'24px 0', maxWidth:680 }}>
-          {/* Add source */}
-          <div className="card card-pad" style={{ marginBottom:20, padding:'20px 24px' }}>
-            <div style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)', marginBottom:4 }}>
-              Ajouter une source de veille
-            </div>
-            <div style={{ fontSize:12, color:'var(--app-fg-3)', marginBottom:14 }}>
-              Donne un nom de média — l'IA trouve son flux RSS automatiquement.
-            </div>
-            <div style={{ display:'flex', gap:10 }}>
-              <input
-                type="text"
-                value={addInput}
-                onChange={e => { setAddInput(e.target.value); setAddSourceMsg(null); }}
-                onKeyDown={e => e.key === 'Enter' && !addingSource && handleAddSource()}
-                placeholder="ex: Le Monde, Wired, The Athletic…"
-                disabled={addingSource}
-                style={{
-                  flex:1, background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
-                  borderRadius:'var(--radius)', padding:'9px 12px',
-                  color:'var(--app-fg)', fontFamily:'DM Sans, sans-serif', fontSize:13,
-                  outline:'none', opacity: addingSource ? 0.6 : 1,
-                  transition:'border-color .15s',
-                }}
-                onFocus={e => e.target.style.borderColor='var(--app-accent)'}
-                onBlur={e  => e.target.style.borderColor='var(--app-line)'}
-              />
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={handleAddSource}
-                disabled={addingSource || !addInput.trim()}
-                style={{ whiteSpace:'nowrap', minWidth:120 }}
-              >
-                {addingSource
-                  ? <><span style={{ display:'inline-block', width:10, height:10, border:'1.5px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite', marginRight:6 }}/> Recherche…</>
-                  : <><AppIcon name="search" size={12}/>Trouver le RSS</>
-                }
-              </button>
-            </div>
-            {addSourceMsg && (
-              <div style={{
-                marginTop:10, padding:'8px 12px', borderRadius:7, fontSize:12,
-                background: addSourceMsg.type === 'ok' ? 'rgba(34,197,94,.08)' : 'rgba(197,48,48,.06)',
-                border: `1px solid ${addSourceMsg.type === 'ok' ? 'rgba(34,197,94,.2)' : 'rgba(197,48,48,.15)'}`,
-                color: addSourceMsg.type === 'ok' ? '#15803D' : '#C53030',
-              }}>
-                {addSourceMsg.text}
-              </div>
-            )}
-          </div>
-
-          {/* Sources découvertes par Agent 1 */}
-          <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--app-fg-3)', marginBottom:10 }}>
-            Sources actives ({sourcesRss.length})
-          </div>
-          {sourcesRss.length === 0 ? (
-            <div className="card card-pad" style={{ padding:'24px', textAlign:'center', color:'var(--app-fg-3)', fontSize:13 }}>
-              Aucune source RSS configurée — ajoute une source ci-dessus ou relance l'analyse de ton compte.
-            </div>
-          ) : (
-            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-              {sourcesRss.map((f, i) => (
-                <div key={i} className="card" style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 16px' }}>
-                  <div style={{ width:28, height:28, borderRadius:7, background:'rgba(79,91,213,.08)', display:'grid', placeItems:'center', flexShrink:0 }}>
-                    <AppIcon name="globe" size={13} style={{ color:'var(--app-accent)' }}/>
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)', marginBottom:1 }}>{f.source}</div>
-                    <div style={{ fontSize:11, color:'var(--app-fg-4)', fontFamily:'JetBrains Mono, monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.url}</div>
-                  </div>
-                  <a href={f.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-icon btn-sm" title="Ouvrir le feed" style={{ flexShrink:0 }}>
-                    <AppIcon name="arrowRight" size={12}/>
-                  </a>
-                  <button className="btn btn-ghost btn-icon btn-sm" title="Retirer" style={{ flexShrink:0 }} onClick={() => handleRemoveSource(f.url)}>
-                    <AppIcon name="trash" size={12}/>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize:28 }}>⚡</div>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)' }}>Aucune news pertinente</div>
+                  <div style={{ fontSize:13, color:'var(--app-fg-3)', maxWidth:260 }}>Lance le scoring pour analyser les dernières actus.</div>
+                  <button className="btn btn-primary btn-sm" onClick={runScoring} style={{ marginTop:4 }}>
+                    <AppIcon name="bolt" size={12}/>Lancer le scoring
                   </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div style={{ marginTop:20, padding:'12px 16px', background:'var(--app-surface-2)', borderRadius:9, fontSize:12, color:'var(--app-fg-3)', display:'flex', gap:8, alignItems:'flex-start' }}>
-            <AppIcon name="bolt" size={12} style={{ marginTop:1, flexShrink:0 }}/>
-            <span>En dehors de ces sources, Forje utilise aussi un ensemble de feeds généralistes (Le Monde, BFMTV, BBC, NYT…) et des feeds thématiques détectés automatiquement selon ta niche.</span>
-          </div>
-
-          {/* ── Comptes Twitter / X ── */}
-          <div style={{ marginTop:32 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style={{ color:'var(--app-fg-2)', flexShrink:0 }}>
-                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-              </svg>
-              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--app-fg-3)' }}>
-                Comptes Twitter / X ({twitterAccounts.length})
-              </div>
-            </div>
-
-            {/* Add Twitter account */}
-            <div className="card card-pad" style={{ marginBottom:12, padding:'20px 24px' }}>
-              <div style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)', marginBottom:4 }}>
-                Suivre un compte Twitter
-              </div>
-              <div style={{ fontSize:12, color:'var(--app-fg-3)', marginBottom:14 }}>
-                Colle un @handle ou une URL x.com — les tweets récents entrent dans le board et sont scorés comme les autres actus.
-              </div>
-              <div style={{ display:'flex', gap:10 }}>
-                <input
-                  type="text"
-                  value={addTwInput}
-                  onChange={e => { setAddTwInput(e.target.value); setAddTwMsg(null); }}
-                  onKeyDown={e => e.key === 'Enter' && !addingTw && handleAddTwitter()}
-                  placeholder="@handle  ou  https://x.com/handle"
-                  disabled={addingTw}
-                  style={{
-                    flex:1, background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
-                    borderRadius:'var(--radius)', padding:'9px 12px',
-                    color:'var(--app-fg)', fontFamily:'DM Sans, sans-serif', fontSize:13,
-                    outline:'none', opacity: addingTw ? 0.6 : 1,
-                    transition:'border-color .15s',
-                  }}
-                  onFocus={e => e.target.style.borderColor='var(--app-accent)'}
-                  onBlur={e  => e.target.style.borderColor='var(--app-line)'}
-                />
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleAddTwitter}
-                  disabled={addingTw || !addTwInput.trim()}
-                  style={{ whiteSpace:'nowrap', minWidth:110, background:'#000', borderColor:'#000' }}
-                >
-                  {addingTw
-                    ? <><span style={{ display:'inline-block', width:10, height:10, border:'1.5px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite', marginRight:6 }}/>Ajout…</>
-                    : <>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink:0 }}>
-                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                        </svg>
-                        Ajouter
-                      </>
-                  }
-                </button>
-              </div>
-              {addTwMsg && (
-                <div style={{
-                  marginTop:10, padding:'8px 12px', borderRadius:7, fontSize:12,
-                  background: addTwMsg.type === 'ok' ? 'rgba(34,197,94,.08)' : 'rgba(197,48,48,.06)',
-                  border: `1px solid ${addTwMsg.type === 'ok' ? 'rgba(34,197,94,.2)' : 'rgba(197,48,48,.15)'}`,
-                  color: addTwMsg.type === 'ok' ? '#15803D' : '#C53030',
-                }}>
-                  {addTwMsg.text}
-                </div>
+                </>
               )}
             </div>
+          )}
 
-            {/* Liste des comptes suivis manuellement */}
-            {twitterAccounts.length > 0 && (
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                {twitterAccounts.map((handle, i) => (
-                  <div key={i} className="card" style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 16px' }}>
-                    <div style={{ width:28, height:28, borderRadius:7, background:'rgba(0,0,0,.06)', display:'grid', placeItems:'center', flexShrink:0 }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ color:'#000' }}>
-                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                      </svg>
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)' }}>@{handle}</div>
-                    </div>
-                    <a href={`https://x.com/${handle}`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-icon btn-sm" title="Voir le profil" style={{ flexShrink:0 }}>
-                      <AppIcon name="arrowRight" size={12}/>
-                    </a>
-                    <button className="btn btn-ghost btn-icon btn-sm" title="Retirer" style={{ flexShrink:0 }} onClick={() => handleRemoveTwitter(handle)}>
-                      <AppIcon name="trash" size={12}/>
-                    </button>
-                  </div>
-                ))}
+          {/* 🔥 Top du moment */}
+          {urgentItems.length > 0 && (
+            <div style={{ padding:'16px 16px 8px' }}>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--app-fg-3)', marginBottom:10 }}>
+                🔥 Top du moment
               </div>
-            )}
-
-            {/* Sources curatées par l'IA lors de l'onboarding */}
-            {curatedSources.length > 0 && (
-              <div style={{ marginTop:20 }}>
-                <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--app-fg-4)', marginBottom:10 }}>
-                  Sources détectées par l'IA ({curatedSources.length})
-                </div>
-                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                  {curatedSources.map(src => (
-                    <div key={src.id} className="card" style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 16px', opacity: src.actif ? 1 : 0.5 }}>
-                      <img
-                        src={`https://unavatar.io/twitter/${src.handle}`}
-                        alt={src.handle}
-                        style={{ width:32, height:32, borderRadius:'50%', objectFit:'cover', flexShrink:0, background:'var(--app-surface-2)' }}
-                        onError={e => { e.target.style.display='none'; }}
-                      />
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <span style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)' }}>@{src.handle}</span>
-                          {src.nom && <span style={{ fontSize:11, color:'var(--app-fg-4)' }}>{src.nom}</span>}
-                        </div>
-                        <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:2 }}>
-                          {src.vitesse && (
-                            <span style={{
-                              fontSize:10, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase',
-                              padding:'1px 6px', borderRadius:4,
-                              background: src.vitesse === 'breaking' ? 'rgba(239,68,68,.1)' : src.vitesse === 'rapide' ? 'rgba(245,158,11,.1)' : 'rgba(99,102,241,.1)',
-                              color: src.vitesse === 'breaking' ? '#DC2626' : src.vitesse === 'rapide' ? '#D97706' : '#4F46E5',
-                            }}>
-                              {src.vitesse}
-                            </span>
-                          )}
-                          {src.type && <span style={{ fontSize:10, color:'var(--app-fg-4)' }}>{src.type}</span>}
-                          {src.fiabilite && <span style={{ fontSize:10, color:'var(--app-fg-4)' }}>{'★'.repeat(Math.round(src.fiabilite/2))}</span>}
-                        </div>
-                      </div>
-                      <a href={`https://x.com/${src.handle}`} target="_blank" rel="noopener noreferrer"
-                        className="btn btn-ghost btn-icon btn-sm" title="Voir le profil" style={{ flexShrink:0 }}>
-                        <AppIcon name="arrowRight" size={12}/>
-                      </a>
-                      <button
-                        className="btn btn-ghost btn-icon btn-sm"
-                        title={src.actif ? 'Désactiver' : 'Activer'}
-                        style={{ flexShrink:0 }}
-                        onClick={async () => {
-                          await veilleFetch(`/twitter/curated-sources/${src.id}`, {
-                            method:'PATCH', headers:{'Content-Type':'application/json'},
-                            body: JSON.stringify({ actif: !src.actif }),
-                          });
-                          setCuratedSources(cs => cs.map(s => s.id === src.id ? {...s, actif: !s.actif} : s));
-                        }}
-                      >
-                        <AppIcon name={src.actif ? 'eye' : 'eyeOff'} size={12}/>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Vue Board ── */}
-      {view === 'board' && (
-        <div className="sources-layout">
-          <section className="sources-feed">
-            <div className="feed-head">
-              <div>
-                <h2 className="feed-title-main">Flux temps réel</h2>
-                <p className="feed-sub">
-                  {feed.length} actus scorées · rafraîchi {refreshLabel}
-                </p>
-              </div>
-              <div className="feed-filters">
-                <button className={`feed-filter ${filter==='all'?'active':''}`} onClick={()=>setFilter('all')}>Tout <span className="count-inline">{feed.length}</span></button>
-                <button className={`feed-filter ${filter==='hot'?'active':''}`} onClick={()=>setFilter('hot')}><span className="dot dot-hot"/>Hot <span className="count-inline">{feed.filter(n=>n.heat==='hot').length}</span></button>
-                <button className={`feed-filter ${filter==='relevant'?'active':''}`} onClick={()=>setFilter('relevant')}>Scorés <span className="count-inline">{feed.filter(n=>n.scored).length}</span></button>
-              </div>
-            </div>
-            {feed.length === 0 ? (
-              <div style={{ padding:'48px 24px', textAlign:'center', display:'flex', flexDirection:'column', gap:12, alignItems:'center' }}>
-                {scoring || refreshing ? (
-                  <>
-                    <div className="forje-blob-spin"/>
-                    <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)', marginTop:4 }}>Analyse en cours…</div>
-                    <div style={{ fontSize:13, color:'var(--app-fg-3)', maxWidth:300 }}>
-                      {refreshing ? 'Récupération des flux RSS…' : 'Scoring des actus pour ton profil — 30 à 60 sec.'}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize:28 }}>⚡</div>
-                    <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)' }}>Aucune news scorée</div>
-                    <div style={{ fontSize:13, color:'var(--app-fg-3)', maxWidth:280 }}>Lance le scoring pour analyser les dernières actus.</div>
-                    <button className="btn btn-primary btn-sm" onClick={runScoring} style={{ marginTop:4 }}>
-                      <AppIcon name="bolt" size={12}/>Lancer le scoring
-                    </button>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="feed-list">
-                {filtered.map(item => (
-                  <NewsRow
-                    key={item.id} item={item}
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {urgentItems.slice(0, 5).map(item => (
+                  <UrgentCard
+                    key={item.id}
+                    item={item}
                     active={item.id === activeId}
                     onClick={() => { setSelected(item.id); track(item.id, 'open'); }}
-                    onHover3s={(id) => track(id, 'hover', { temps_passe_secondes: 3 })}
-                    onDismiss={(id) => { setDismissed(d => new Set([...d, id])); track(id, 'dismiss'); if (activeId===id) setSelected(null); }}
+                    onDismiss={(id) => { setDismissed(d => new Set([...d, id])); track(id, 'dismiss'); if (activeId === id) setSelected(null); }}
+                    onGenerate={(id, format) => { track(id, 'generate', { format_utilise: format }); goGenerate(urgentItems.find(n => n.id === id)); }}
                   />
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* À surveiller */}
+          {watchItems.length > 0 && (
+            <div style={{ padding: urgentItems.length > 0 ? '8px 16px 8px' : '16px 16px 8px' }}>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--app-fg-3)', marginBottom:6, padding:'4px 4px 0' }}>
+                À surveiller
+              </div>
+              <div className="feed-list">
+                {watchItems.slice(0, 15).map(item => (
+                  <NewsRow
+                    key={item.id} item={Object.assign({}, item, { heat: 'warm', scored: true, match: Math.min(1, (item.score || 0) / 10) })}
+                    active={item.id === activeId}
+                    onClick={() => { setSelected(item.id); track(item.id, 'open'); }}
+                    onHover3s={(id) => track(id, 'hover', { temps_passe_secondes: 3 })}
+                    onDismiss={(id) => { setDismissed(d => new Set([...d, id])); track(id, 'dismiss'); if (activeId === id) setSelected(null); }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <aside className="sources-action">
+          <RecapPanel
+            news={active}
+            onGenerate={(id, format) => {
+              track(id, 'generate', { format_utilise: format });
+              goGenerate(active);
+            }}
+          />
+        </aside>
+      </div>
+
+      {/* ── Settings drawer (slide-in depuis la droite) ── */}
+      {settingsOpen && (
+        <div style={{ position:'fixed', inset:0, zIndex:200, display:'flex' }}>
+          <div style={{ flex:1 }} onClick={() => setSettingsOpen(false)}/>
+          <div style={{
+            width:460, background:'var(--app-bg)', borderLeft:'1px solid var(--app-line)',
+            overflowY:'auto', display:'flex', flexDirection:'column',
+            animation:'slideInRight .18s ease',
+          }}>
+            {/* Header drawer */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 22px', borderBottom:'1px solid var(--app-line)', flexShrink:0 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:'var(--app-fg)' }}>Sources & Veille</div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setSettingsOpen(false); runRefresh(); }} disabled={refreshing || scoring} style={{ fontSize:11 }}>
+                  <AppIcon name="refresh" size={11}/>{refreshing ? 'RSS…' : 'Refresh RSS'}
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => { setSettingsOpen(false); runTwitterRefresh(); }}
+                  disabled={twitterRefreshing}
+                  style={{ fontSize:11, gap:5 }}
+                  title="Fetch Twitter (~160 crédits)"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                  {twitterRefreshing ? 'X…' : 'Fetch X'}
+                </button>
+                <button style={{ all:'unset', cursor:'pointer', fontSize:18, color:'var(--app-fg-4)', lineHeight:1, padding:'2px 6px' }} onClick={() => setSettingsOpen(false)}>×</button>
+              </div>
+            </div>
+            {twitterMsg && (
+              <div style={{ padding:'8px 22px', fontSize:12, borderBottom:'1px solid var(--app-line)', color: twitterMsg.type==='ok'?'#15803D':'#C53030' }}>{twitterMsg.text}</div>
             )}
-          </section>
-          <aside className="sources-action">
-            <RecapPanel
-              news={active}
-              onGenerate={(id, format) => {
-                if (!active || !window.__goToGenerate) return;
-                track(id, 'generate', { format_utilise: format });
 
-                // Contexte complet : tout ce qu'on a sur l'article
-                const brief = [
-                  active.title,
-                  active.description || '',
-                  active.why   ? 'Contexte : ' + active.why   : '',
-                  active.angle ? 'Angle : '    + active.angle  : '',
-                  active.caption ? 'Caption suggérée : ' + active.caption : '',
-                ].filter(Boolean).join('\n');
+            <div style={{ padding:'20px 22px', flex:1 }}>
+              {/* Ajouter une source */}
+              <div className="card card-pad" style={{ marginBottom:18, padding:'18px 20px' }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'var(--app-fg-2)', marginBottom:3 }}>Ajouter une source</div>
+                <div style={{ fontSize:12, color:'var(--app-fg-3)', marginBottom:12 }}>Donne un nom de média — l'IA trouve son flux RSS automatiquement.</div>
+                <div style={{ display:'flex', gap:8 }}>
+                  <input type="text" value={addInput} onChange={e => { setAddInput(e.target.value); setAddSourceMsg(null); }} onKeyDown={e => e.key === 'Enter' && !addingSource && handleAddSource()} placeholder="ex: Le Monde, Wired…" disabled={addingSource} style={{ flex:1, background:'var(--app-surface-2)', border:'1px solid var(--app-line)', borderRadius:'var(--radius)', padding:'8px 11px', color:'var(--app-fg)', fontFamily:'DM Sans, sans-serif', fontSize:13, outline:'none', opacity:addingSource?0.6:1 }} onFocus={e => e.target.style.borderColor='var(--app-accent)'} onBlur={e => e.target.style.borderColor='var(--app-line)'}/>
+                  <button className="btn btn-primary btn-sm" onClick={handleAddSource} disabled={addingSource||!addInput.trim()} style={{ whiteSpace:'nowrap' }}>
+                    {addingSource ? <><span style={{ display:'inline-block', width:9, height:9, border:'1.5px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite', marginRight:5 }}/>Recherche…</> : <><AppIcon name="search" size={11}/>Trouver</>}
+                  </button>
+                </div>
+                {addSourceMsg && <div style={{ marginTop:8, padding:'7px 10px', borderRadius:6, fontSize:12, background:addSourceMsg.type==='ok'?'rgba(34,197,94,.08)':'rgba(197,48,48,.06)', border:`1px solid ${addSourceMsg.type==='ok'?'rgba(34,197,94,.2)':'rgba(197,48,48,.15)'}`, color:addSourceMsg.type==='ok'?'#15803D':'#C53030' }}>{addSourceMsg.text}</div>}
+              </div>
 
-                window.__goToGenerate({ title: active.title, text: brief, url: active.url, source: active.source });
-              }}
-            />
-          </aside>
+              {/* Sources actives */}
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--app-fg-3)', marginBottom:8 }}>Sources actives ({sourcesRss.length})</div>
+              {sourcesRss.length === 0 ? (
+                <div style={{ padding:'16px', textAlign:'center', color:'var(--app-fg-3)', fontSize:12, background:'var(--app-surface-2)', borderRadius:'var(--radius)' }}>Aucune source RSS — ajoute-en une ci-dessus.</div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                  {sourcesRss.map((f, i) => (
+                    <div key={i} className="card" style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px' }}>
+                      <div style={{ width:26, height:26, borderRadius:6, background:'rgba(79,91,213,.08)', display:'grid', placeItems:'center', flexShrink:0 }}><AppIcon name="globe" size={12} style={{ color:'var(--app-accent)' }}/></div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:'var(--app-fg-2)' }}>{f.source}</div>
+                        <div style={{ fontSize:10, color:'var(--app-fg-4)', fontFamily:'JetBrains Mono, monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.url}</div>
+                      </div>
+                      <a href={f.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-icon btn-sm"><AppIcon name="arrowRight" size={11}/></a>
+                      <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleRemoveSource(f.url)}><AppIcon name="trash" size={11}/></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop:12, padding:'9px 12px', background:'var(--app-surface-2)', borderRadius:7, fontSize:11, color:'var(--app-fg-3)' }}>
+                Forje utilise aussi des feeds généralistes (Le Monde, BBC, NYT…) et des feeds thématiques auto selon ta niche.
+              </div>
+
+              {/* Comptes Twitter */}
+              <div style={{ marginTop:24 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:10 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ color:'var(--app-fg-3)' }}><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                  <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--app-fg-3)' }}>Comptes X ({twitterAccounts.length})</div>
+                </div>
+                <div className="card card-pad" style={{ marginBottom:10, padding:'14px 18px' }}>
+                  <div style={{ display:'flex', gap:8 }}>
+                    <input type="text" value={addTwInput} onChange={e => { setAddTwInput(e.target.value); setAddTwMsg(null); }} onKeyDown={e => e.key === 'Enter' && !addingTw && handleAddTwitter()} placeholder="@handle ou x.com/handle" disabled={addingTw} style={{ flex:1, background:'var(--app-surface-2)', border:'1px solid var(--app-line)', borderRadius:'var(--radius)', padding:'8px 11px', color:'var(--app-fg)', fontFamily:'DM Sans, sans-serif', fontSize:13, outline:'none', opacity:addingTw?0.6:1 }} onFocus={e => e.target.style.borderColor='var(--app-accent)'} onBlur={e => e.target.style.borderColor='var(--app-line)'}/>
+                    <button className="btn btn-primary btn-sm" onClick={handleAddTwitter} disabled={addingTw||!addTwInput.trim()} style={{ background:'#000', borderColor:'#000', whiteSpace:'nowrap' }}>
+                      {addingTw ? 'Ajout…' : <><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg> Ajouter</>}
+                    </button>
+                  </div>
+                  {addTwMsg && <div style={{ marginTop:8, padding:'7px 10px', borderRadius:6, fontSize:12, background:addTwMsg.type==='ok'?'rgba(34,197,94,.08)':'rgba(197,48,48,.06)', border:`1px solid ${addTwMsg.type==='ok'?'rgba(34,197,94,.2)':'rgba(197,48,48,.15)'}`, color:addTwMsg.type==='ok'?'#15803D':'#C53030' }}>{addTwMsg.text}</div>}
+                </div>
+                {twitterAccounts.length > 0 && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                    {twitterAccounts.map((handle, i) => (
+                      <div key={i} className="card" style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px' }}>
+                        <div style={{ width:26, height:26, borderRadius:6, background:'rgba(0,0,0,.06)', display:'grid', placeItems:'center', flexShrink:0 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ color:'#000' }}><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></div>
+                        <div style={{ flex:1 }}><div style={{ fontSize:12, fontWeight:600, color:'var(--app-fg-2)' }}>@{handle}</div></div>
+                        <a href={`https://x.com/${handle}`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-icon btn-sm"><AppIcon name="arrowRight" size={11}/></a>
+                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleRemoveTwitter(handle)}><AppIcon name="trash" size={11}/></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {curatedSources.length > 0 && (
+                  <div style={{ marginTop:16 }}>
+                    <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--app-fg-4)', marginBottom:8 }}>Détectés par l'IA ({curatedSources.length})</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                      {curatedSources.map(src => (
+                        <div key={src.id} className="card" style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', opacity:src.actif?1:0.5 }}>
+                          <img src={`https://unavatar.io/twitter/${src.handle}`} alt={src.handle} style={{ width:28, height:28, borderRadius:'50%', objectFit:'cover', flexShrink:0 }} onError={e=>{e.target.style.display='none';}}/>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:12, fontWeight:600, color:'var(--app-fg-2)' }}>@{src.handle}</div>
+                            {src.vitesse && <span style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', padding:'1px 5px', borderRadius:3, background:src.vitesse==='breaking'?'rgba(239,68,68,.1)':src.vitesse==='rapide'?'rgba(245,158,11,.1)':'rgba(99,102,241,.1)', color:src.vitesse==='breaking'?'#DC2626':src.vitesse==='rapide'?'#D97706':'#4F46E5' }}>{src.vitesse}</span>}
+                          </div>
+                          <button className="btn btn-ghost btn-icon btn-sm" title={src.actif?'Désactiver':'Activer'} onClick={async()=>{await veilleFetch(`/twitter/curated-sources/${src.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({actif:!src.actif})});setCuratedSources(cs=>cs.map(s=>s.id===src.id?{...s,actif:!s.actif}:s));}}><AppIcon name={src.actif?'eye':'eyeOff'} size={11}/></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Reconfigurer */}
+              <div style={{ marginTop:28, paddingTop:20, borderTop:'1px solid var(--app-line)' }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setSettingsOpen(false); onReset(); }} style={{ width:'100%', justifyContent:'center', fontSize:12, color:'var(--app-fg-3)' }}>
+                  <AppIcon name="settings" size={11}/> Reconfigurer le compte Instagram
+                </button>
+              </div>
+            </div>
+          </div>
+          <style>{`@keyframes slideInRight { from{transform:translateX(100%)} to{transform:translateX(0)} }`}</style>
         </div>
       )}
 
-      {view === 'board' && <HeatBar topics={HEAT_TOPICS}/>}
     </div>
   );
 };
