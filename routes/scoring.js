@@ -245,33 +245,22 @@ async function _scoreForCompteInner(compteId, batchSize, windowHours) {
   const unscored = (allNews || []).filter(n => !scoredIds.has(n.id));
   if (!unscored.length) return { scored: 0, skipped: 0 };
 
-  // Étape 0 — pré-filtre rapide (0 appel API) : élimine ce qui n'a aucun lien avec la niche
-  const { pass: afterQuick, quickExclu } = quickKeywordFilter(unscored, compte);
-  if (quickExclu.length) {
-    await supabase.from('news_scored').insert(
-      quickExclu.map(n => ({ news_raw_id: n.id, compte_id: compteId, flag: 'exclu', score_total: 0 }))
-    );
-    console.log(`[QuickFilter] ${compte.nom}: -${quickExclu.length} hors niche sur ${unscored.length}`);
-  }
-
-  if (!afterQuick.length) return { scored: 0, skipped: unscored.length, quick_exclu: quickExclu.length };
-
-  // Étape 1+2 — filtre embeddings avant d'envoyer à Claude
-  const pertinentes = await filtrerNews(afterQuick, compte).catch(err => {
+  // Filtre embeddings niveau 1+2 avant d'envoyer à Claude
+  const pertinentes = await filtrerNews(unscored, compte).catch(err => {
     console.error('[Filtre] Erreur — passage de tout le lot:', err.message);
-    return afterQuick;
+    return unscored;
   });
 
   // Marque les news filtrées comme 'exclu' pour ne pas les re-scorer
   const pertinentesIds = new Set(pertinentes.map(n => n.id));
-  const filtrees = afterQuick.filter(n => !pertinentesIds.has(n.id));
+  const filtrees = unscored.filter(n => !pertinentesIds.has(n.id));
   if (filtrees.length) {
     await supabase.from('news_scored').insert(
       filtrees.map(n => ({ news_raw_id: n.id, compte_id: compteId, flag: 'exclu', score_total: 0 }))
     );
   }
 
-  if (!pertinentes.length) return { scored: 0, skipped: unscored.length, quick_exclu: quickExclu.length };
+  if (!pertinentes.length) return { scored: 0, skipped: unscored.length };
 
   // Traite par lots de batchSize
   let totalScored = 0;
@@ -291,7 +280,7 @@ async function _scoreForCompteInner(compteId, batchSize, windowHours) {
     }
   }
 
-  return { scored: totalScored, skipped: unscored.length - totalScored, quick_exclu: quickExclu.length, filtered: filtrees.length };
+  return { scored: totalScored, skipped: unscored.length - totalScored, filtered: filtrees.length };
 }
 
 // ─── GET /api/scoring/status — scoring en cours ? ────────────────────────────

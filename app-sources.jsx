@@ -884,7 +884,7 @@ const StatusBar = ({ refreshedAt, scoring, total }) => {
         {scoring ? 'Analyse en cours…' : lastMin !== null ? `Analysé il y a ${lastMin < 1 ? 'quelques secondes' : lastMin + ' min'}` : 'Veille active'}
       </span>
       {!scoring && nextMin !== null && nextMin > 0 && (
-        <><span style={{ opacity:.4 }}>·</span><span>Prochain dans {nextMin} min</span></>
+        <><span style={{ opacity:.4 }}>·</span><span>Prochain fetch dans {nextMin} min</span></>
       )}
       {total > 0 && (
         <><span style={{ opacity:.4 }}>·</span><span>{total} articles scorés</span></>
