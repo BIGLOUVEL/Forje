@@ -1249,17 +1249,28 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     };
   };
 
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const isRecent = (item) => {
+    const pubAt = item.news_raw?.published_at || item.news_raw?.created_at;
+    return !pubAt || pubAt >= since24h;
+  };
+
   const urgentItems = (boardData.board || [])
-    .filter(item => item.flag === 'urgent' && !dismissed.has(item.id))
+    .filter(item => item.flag === 'urgent' && !dismissed.has(item.id) && isRecent(item))
     .sort((a, b) => (b.score_total || 0) - (a.score_total || 0))
     .map(enrichItem);
 
   const watchItems = (boardData.board || [])
-    .filter(item => item.flag === 'a_traiter' && !dismissed.has(item.id))
+    .filter(item => item.flag === 'a_traiter' && !dismissed.has(item.id) && isRecent(item))
     .sort((a, b) => (b.score_total || 0) - (a.score_total || 0))
     .map(enrichItem);
 
-  const allItems = [...urgentItems, ...watchItems];
+  const lowItems = (boardData.board || [])
+    .filter(item => item.flag === 'faible_priorite' && !dismissed.has(item.id) && isRecent(item))
+    .sort((a, b) => (b.score_total || 0) - (a.score_total || 0))
+    .map(enrichItem);
+
+  const allItems = [...urgentItems, ...watchItems, ...lowItems];
 
   const breaking = (boardData.breaking || []).slice(0, 1).map(item => {
     const raw = item.news_raw || {};
@@ -1320,7 +1331,22 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
               <span style={{ color:'#FF6B4A', fontSize:9 }}>●</span> PULSE
             </button>
           )}
-          <button className="feed-filter-icon" title="Sources & configuration" onClick={() => setSettingsOpen(o => !o)} style={{ opacity: settingsOpen ? 1 : undefined, color: settingsOpen ? 'var(--app-accent)' : undefined }}>
+          <button
+            className="feed-filter-icon"
+            title={twitterRefreshing ? 'Fetch X…' : 'Fetch Twitter (~160 crédits)'}
+            onClick={runTwitterRefresh}
+            disabled={twitterRefreshing}
+            style={{ opacity: twitterRefreshing ? 0.5 : 1 }}
+          >
+            {twitterRefreshing
+              ? <span style={{ fontSize:10, color:'#1d9bf0', fontWeight:700 }}>…</span>
+              : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ color:'var(--app-fg-3)' }}><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            }
+          </button>
+          <button className="feed-filter-icon" title={scoring ? 'Analyse en cours…' : 'Lancer le scoring'} onClick={runScoring} disabled={scoring || refreshing} style={{ opacity: (scoring || refreshing) ? 0.5 : 1 }}>
+            {scoring ? <span style={{ fontSize:10, color:'var(--app-accent)', fontWeight:700 }}>…</span> : <AppIcon name="bolt" size={12}/>}
+          </button>
+          <button className="feed-filter-icon" title="Sources & configuration" onClick={() => setSettingsOpen(o => !o)} style={{ color: settingsOpen ? 'var(--app-accent)' : undefined }}>
             <AppIcon name="settings" size={13}/>
           </button>
         </div>
@@ -1384,6 +1410,26 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
                 {watchItems.slice(0, 15).map(item => (
                   <NewsRow
                     key={item.id} item={Object.assign({}, item, { heat: 'warm', scored: true, match: Math.min(1, (item.score || 0) / 10) })}
+                    active={item.id === activeId}
+                    onClick={() => { setSelected(item.id); track(item.id, 'open'); }}
+                    onHover3s={(id) => track(id, 'hover', { temps_passe_secondes: 3 })}
+                    onDismiss={(id) => { setDismissed(d => new Set([...d, id])); track(id, 'dismiss'); if (activeId === id) setSelected(null); }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Faible priorité — scorés mais peu pertinents, affichés en retrait */}
+          {lowItems.length > 0 && (
+            <div style={{ padding:'4px 16px 16px', opacity:.55 }}>
+              <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--app-fg-4)', marginBottom:4, padding:'4px 4px 0' }}>
+                Faible priorité
+              </div>
+              <div className="feed-list">
+                {lowItems.slice(0, 8).map(item => (
+                  <NewsRow
+                    key={item.id} item={Object.assign({}, item, { heat: 'cool', scored: true, match: Math.min(1, (item.score || 0) / 10) })}
                     active={item.id === activeId}
                     onClick={() => { setSelected(item.id); track(item.id, 'open'); }}
                     onHover3s={(id) => track(id, 'hover', { temps_passe_secondes: 3 })}
