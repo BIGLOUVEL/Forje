@@ -1065,7 +1065,16 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     if (freshSetup) {
       setTimeout(() => { clearInterval(iv); iv = setInterval(loadBoard, SLOW); }, 3 * 60 * 1000);
     }
-    return () => clearInterval(iv);
+    // Poll statut scoring toutes les 12s — reflète aussi le scoring auto lancé par le RSS loop
+    const statusIv = setInterval(async () => {
+      try {
+        const res  = await veilleFetch(`/scoring/status?compte_id=${compteId}`);
+        const json = await res.json();
+        setScoring(json.running);
+        if (!json.running) loadBoard();
+      } catch (_) {}
+    }, 12000);
+    return () => { clearInterval(iv); clearInterval(statusIv); };
   }, [compteId]);
 
   const fmtAge = (createdAt) => {
@@ -1193,14 +1202,19 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const breaking = (boardData.breaking || []).slice(0, 1).map(item => {
     const raw = item.news_raw || {};
-    const age = item.fenetre_age_minutes || 0;
+    // Calcul de l'âge réel depuis published_at (et non fenetre_age_minutes figé au moment du score)
+    const pubAt = raw.published_at || raw.created_at;
+    const actualAge = pubAt
+      ? Math.round((Date.now() - new Date(pubAt.endsWith('Z') ? pubAt : pubAt + 'Z').getTime()) / 60000)
+      : (item.fenetre_age_minutes || 0);
     const rem = item.fenetre_temps_restant_minutes || 120;
     return {
       title:             raw.titre || '(breaking)',
-      source:            `${raw.source || '—'} · il y a ${age} min`,
+      source:            `${raw.source || '—'} · il y a ${actualAge} min`,
       matched:           item.hashtags?.length ? item.hashtags : [item.angle].filter(Boolean),
-      saturationMinutes: age + rem,
-      elapsedMinutes:    age,
+      saturationMinutes: actualAge + rem,
+      elapsedMinutes:    actualAge,
+      url:               raw.url,
     };
   });
 
@@ -1229,6 +1243,23 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
           data={breaking[0]}
           onGenerate={(d) => window.__goToGenerate?.({ title: d.title, url: d.url, source: d.source })}
         />
+      )}
+
+      {/* ── Banner scoring en cours ── */}
+      {scoring && (
+        <div style={{
+          display:'flex', alignItems:'center', gap:10,
+          padding:'9px 20px',
+          background:'rgba(79,91,213,.06)',
+          borderBottom:'1px solid rgba(79,91,213,.15)',
+          fontSize:13, color:'var(--app-fg-2)',
+        }}>
+          <div style={{
+            width:8, height:8, borderRadius:'50%', background:'var(--app-accent)', flexShrink:0,
+            animation:'pulse 1.2s ease-in-out infinite',
+          }}/>
+          Forje est en train de chercher les meilleures infos pour vous…
+        </div>
       )}
 
       {/* ── Onglets Board / Latest ── */}

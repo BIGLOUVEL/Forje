@@ -7,6 +7,34 @@ const { filtrerNews }    = require('../lib/embeddings');
 const router = express.Router();
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ─── Suivi scoring en cours (en mémoire) ─────────────────────────────────────
+const _scoringStatus = new Map(); // compte_id → { running: boolean, startedAt: number }
+
+// ─── Pré-filtre rapide par mots-clés (0 appel API) ───────────────────────────
+function quickKeywordFilter(news, compte) {
+  const kws = [
+    compte.niche_principale,
+    ...(compte.sous_niches || []),
+    ...(compte.keywords_niche || []),
+    ...(compte.sujets_toujours_traites || []),
+  ].filter(Boolean).map(k => k.toLowerCase());
+
+  const avoid = (compte.sujets_a_eviter || []).map(k => k.toLowerCase());
+
+  // Pas assez de mots-clés pour filtrer → passe tout
+  if (kws.length < 2) return { pass: news, quickExclu: [] };
+
+  const pass = [], quickExclu = [];
+  for (const n of news) {
+    const text = ((n.titre || '') + ' ' + (n.description || '')).toLowerCase();
+    const blocked = avoid.length && avoid.some(k => text.includes(k));
+    if (blocked) { quickExclu.push(n); continue; }
+    const relevant = kws.some(k => text.includes(k));
+    if (relevant) pass.push(n); else quickExclu.push(n);
+  }
+  return { pass, quickExclu };
+}
+
 // ─── System prompt Agent 2 (injecté dynamiquement) ──────────────────────────
 function buildSystemPrompt(compte) {
   const arr = (v) => (Array.isArray(v) && v.length ? v.join(', ') : '—');
@@ -187,14 +215,22 @@ async function saveScores(compteId, resultats) {
 }
 
 // ─── Pipeline complet pour un compte ─────────────────────────────────────────
-async function scoreForCompte(compteId, batchSize = 10) {
+async function scoreForCompte(compteId, batchSize = 10, windowHours = 24) {
+  _scoringStatus.set(compteId, { running: true, startedAt: Date.now() });
+  try {
+    return await _scoreForCompteInner(compteId, batchSize, windowHours);
+  } finally {
+    _scoringStatus.set(compteId, { running: false });
+  }
+}
+
+async function _scoreForCompteInner(compteId, batchSize, windowHours) {
   // Charger le profil
   const { data: compte, error: e1 } = await supabase
     .from('comptes').select('*').eq('id', compteId).single();
   if (e1) throw e1;
 
-  // News non encore scorées pour ce compte (dernières 48h)
-  const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
   const { data: scored, error: e2 } = await supabase
     .from('news_scored').select('news_raw_id').eq('compte_id', compteId);
   if (e2) throw e2;
@@ -203,28 +239,39 @@ async function scoreForCompte(compteId, batchSize = 10) {
 
   const { data: allNews, error: e3 } = await supabase
     .from('news_raw').select('*').gte('created_at', since)
-    .order('created_at', { ascending: false }).limit(100);
+    .order('created_at', { ascending: false }).limit(200);
   if (e3) throw e3;
 
   const unscored = (allNews || []).filter(n => !scoredIds.has(n.id));
   if (!unscored.length) return { scored: 0, skipped: 0 };
 
-  // Filtre niveau 1+2 avant d'envoyer à Claude
-  const pertinentes = await filtrerNews(unscored, compte).catch(err => {
+  // Étape 0 — pré-filtre rapide (0 appel API) : élimine ce qui n'a aucun lien avec la niche
+  const { pass: afterQuick, quickExclu } = quickKeywordFilter(unscored, compte);
+  if (quickExclu.length) {
+    await supabase.from('news_scored').insert(
+      quickExclu.map(n => ({ news_raw_id: n.id, compte_id: compteId, flag: 'exclu', score_total: 0 }))
+    );
+    console.log(`[QuickFilter] ${compte.nom}: -${quickExclu.length} hors niche sur ${unscored.length}`);
+  }
+
+  if (!afterQuick.length) return { scored: 0, skipped: unscored.length, quick_exclu: quickExclu.length };
+
+  // Étape 1+2 — filtre embeddings avant d'envoyer à Claude
+  const pertinentes = await filtrerNews(afterQuick, compte).catch(err => {
     console.error('[Filtre] Erreur — passage de tout le lot:', err.message);
-    return unscored; // fallback : pas de filtrage si erreur
+    return afterQuick;
   });
 
   // Marque les news filtrées comme 'exclu' pour ne pas les re-scorer
   const pertinentesIds = new Set(pertinentes.map(n => n.id));
-  const filtrees = unscored.filter(n => !pertinentesIds.has(n.id));
+  const filtrees = afterQuick.filter(n => !pertinentesIds.has(n.id));
   if (filtrees.length) {
     await supabase.from('news_scored').insert(
       filtrees.map(n => ({ news_raw_id: n.id, compte_id: compteId, flag: 'exclu', score_total: 0 }))
     );
   }
 
-  if (!pertinentes.length) return { scored: 0, skipped: unscored.length };
+  if (!pertinentes.length) return { scored: 0, skipped: unscored.length, quick_exclu: quickExclu.length };
 
   // Traite par lots de batchSize
   let totalScored = 0;
@@ -244,8 +291,16 @@ async function scoreForCompte(compteId, batchSize = 10) {
     }
   }
 
-  return { scored: totalScored, skipped: unscored.length - totalScored, filtered: filtrees.length };
+  return { scored: totalScored, skipped: unscored.length - totalScored, quick_exclu: quickExclu.length, filtered: filtrees.length };
 }
+
+// ─── GET /api/scoring/status — scoring en cours ? ────────────────────────────
+router.get('/status', (req, res) => {
+  const { compte_id } = req.query;
+  if (!compte_id) return res.status(400).json({ error: 'compte_id manquant' });
+  const s = _scoringStatus.get(compte_id);
+  res.json({ running: !!(s && s.running), startedAt: s?.startedAt || null });
+});
 
 // ─── POST /api/scoring/run — déclenche le scoring pour un compte ──────────────
 router.post('/run', async (req, res) => {
@@ -253,7 +308,8 @@ router.post('/run', async (req, res) => {
   if (!compte_id) return res.status(400).json({ error: 'compte_id manquant' });
 
   try {
-    const result = await scoreForCompte(compte_id);
+    // Fenêtre 48h pour les runs manuels (vs 6h pour l'auto-score du RSS loop)
+    const result = await scoreForCompte(compte_id, 10, 48);
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[Agent 2]', err.message);

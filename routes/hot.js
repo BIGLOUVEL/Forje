@@ -10,9 +10,10 @@ const STOP_WORDS = new Set([
   'when','what','your','more','than','just','also','into','would','could','some',
 ]);
 
-// Compute buzz_score = score_total × freshness multiplier
+// Compute buzz_score = score_total × freshness multiplier (basé sur published_at de l'article)
 function buzzScore(item) {
-  var ageMin = Math.round((Date.now() - new Date(item.created_at).getTime()) / 60000);
+  var pubAt = (item.news_raw && (item.news_raw.published_at || item.news_raw.created_at)) || item.created_at;
+  var ageMin = Math.round((Date.now() - new Date(pubAt).getTime()) / 60000);
   var decay = ageMin < 30 ? 1.5 : ageMin < 60 ? 1.2 : ageMin < 180 ? 1.0 : ageMin < 360 ? 0.75 : 0.5;
   var base  = item.score_total || 0;
   // Breaking bonus
@@ -65,8 +66,9 @@ async function getNicheKeywords(compte_id) {
 }
 
 async function buildPayload(compte_id) {
-  var sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-  var oneHourAgo  = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+  var sixHoursAgo      = new Date(Date.now() - 6  * 60 * 60 * 1000).toISOString();
+  var twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  var oneHourAgo       = new Date(Date.now() - 1  * 60 * 60 * 1000).toISOString();
 
   var [{ data: scored }, { data: recent }, nicheKeywords] = await Promise.all([
     supabase
@@ -76,7 +78,7 @@ async function buildPayload(compte_id) {
       .neq('flag', 'exclu')
       .gte('created_at', sixHoursAgo)
       .order('score_total', { ascending: false })
-      .limit(20),
+      .limit(50),
     supabase
       .from('news_raw')
       .select('titre, published_at, created_at')
@@ -86,7 +88,13 @@ async function buildPayload(compte_id) {
     getNicheKeywords(compte_id).catch(function() { return []; }),
   ]);
 
-  var items = (scored || [])
+  // Écarte les articles publiés il y a plus de 24h — évite de remonter de vieilles actus
+  var freshScored = (scored || []).filter(function(item) {
+    var pubAt = item.news_raw && (item.news_raw.published_at || item.news_raw.created_at);
+    return !pubAt || pubAt >= twentyFourHoursAgo;
+  });
+
+  var items = freshScored
     .map(function(item) {
       var b = buzzScore(item);
       return Object.assign({}, item, { buzz_score: b.buzz, age_min: b.age_min });
