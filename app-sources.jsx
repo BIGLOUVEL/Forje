@@ -670,16 +670,33 @@ const HEAT_TOPICS = [
   { name:"Streetwear luxe",    level:0, delta:"-14%", series:[0.7,0.66,0.6,0.55,0.5,0.45,0.42] },
 ];
 
-const BreakingBar = ({ data, onGenerate }) => {
-  const pct = (data.elapsedMinutes / data.saturationMinutes) * 100;
+const BreakingBar = ({ items, onGenerate }) => {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (items.length <= 1) return;
+    const iv = setInterval(() => setIdx(i => (i + 1) % items.length), 8000);
+    return () => clearInterval(iv);
+  }, [items.length]);
+
+  const data = items[idx] || items[0];
+  if (!data) return null;
+
+  const pct = Math.min(100, (data.elapsedMinutes / (data.saturationMinutes || 1)) * 100);
   const remaining = data.saturationMinutes - data.elapsedMinutes;
   const hours = Math.floor(remaining / 60);
   const mins = remaining % 60;
+
   return (
     <div className="breaking-bar">
       <div className="breaking-pulse-layer"/>
       <div className="breaking-main">
-        <div className="breaking-badge"><span className="breaking-dot"/><span>BREAKING</span></div>
+        <div className="breaking-badge">
+          <span className="breaking-dot"/>
+          <span>BREAKING</span>
+          {items.length > 1 && (
+            <span style={{ fontSize:10, opacity:.6, marginLeft:5 }}>{idx + 1}/{items.length}</span>
+          )}
+        </div>
         <div className="breaking-content">
           <div className="breaking-title">{data.title}</div>
           <div className="breaking-meta">
@@ -701,6 +718,13 @@ const BreakingBar = ({ data, onGenerate }) => {
           </div>
         </div>
         <div className="breaking-actions">
+          {items.length > 1 && (
+            <div style={{ display:'flex', gap:5, marginRight:'auto', alignItems:'center' }}>
+              {items.map((_, i) => (
+                <button key={i} onClick={() => setIdx(i)} style={{ all:'unset', cursor:'pointer', width:6, height:6, borderRadius:'50%', background: i === idx ? '#fff' : 'rgba(255,255,255,.35)', transition:'background .2s' }}/>
+              ))}
+            </div>
+          )}
           {data.url && <Btn variant="ghost" size="sm" icon="eye" onClick={() => window.open(data.url, '_blank')}>Voir</Btn>}
           <Btn variant="primary" size="sm" icon="bolt" onClick={() => onGenerate?.(data)}>Générer maintenant</Btn>
         </div>
@@ -976,6 +1000,8 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
   const [addingTw, setAddingTw]       = useState(false);
   const [addTwMsg, setAddTwMsg]       = useState(null);
   const [tendances, setTendances]     = useState([]);
+  const [scoringMsg, setScoringMsg]   = useState(null);
+  const scoringMsgTimer               = useRef(null);
 
   const track = React.useCallback((newsScoredId, action, extra = {}) => {
     if (!newsScoredId || !compteId) return;
@@ -1112,12 +1138,21 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const runScoring = async () => {
     setScoring(true);
+    setScoringMsg(null);
     try {
-      await veilleFetch(`/scoring/run`, {
+      const res  = await veilleFetch(`/scoring/run`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compte_id: compteId }),
       });
+      const json = await res.json();
       await loadBoard();
+      const n = json.scored ?? 0;
+      const msg = n > 0
+        ? `${n} article${n > 1 ? 's' : ''} analysé${n > 1 ? 's' : ''} · prochain fetch dans ~2 min`
+        : 'Tout est à jour · prochain fetch dans ~2 min';
+      setScoringMsg(msg);
+      if (scoringMsgTimer.current) clearTimeout(scoringMsgTimer.current);
+      scoringMsgTimer.current = setTimeout(() => setScoringMsg(null), 4 * 60 * 1000);
     } catch (err) { console.error('[Scoring]', err.message); }
     finally { setScoring(false); }
   };
@@ -1272,7 +1307,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   const allItems = [...urgentItems, ...watchItems, ...lowItems];
 
-  const breaking = (boardData.breaking || []).slice(0, 1).map(item => {
+  const breaking = (boardData.breaking || []).map(item => {
     const raw = item.news_raw || {};
     const pubAt = raw.published_at || raw.created_at;
     const actualAge = pubAt
@@ -1282,10 +1317,15 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
     return {
       title:             raw.titre || '(breaking)',
       source:            `${raw.source || '—'} · il y a ${actualAge} min`,
+      sourceRaw:         raw.source || '—',
       matched:           item.hashtags?.length ? item.hashtags : [item.angle].filter(Boolean),
       saturationMinutes: actualAge + rem,
       elapsedMinutes:    actualAge,
       url:               raw.url,
+      description:       raw.description || '',
+      why:               item.pourquoi_ce_score || '',
+      angle:             item.angle || '',
+      caption:           item.caption || '',
     };
   });
 
@@ -1326,6 +1366,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:6, padding:'0 14px', flexShrink:0, borderLeft:'1px solid var(--app-line)', height:42 }}>
           {learning && <span style={{ fontSize:11, color:'var(--app-accent)', fontWeight:600, whiteSpace:'nowrap' }}>⚡ Apprentissage</span>}
+          {!learning && scoringMsg && <span style={{ fontSize:11, color:'var(--app-fg-3)', whiteSpace:'nowrap', maxWidth:240, overflow:'hidden', textOverflow:'ellipsis' }}>{scoringMsg}</span>}
           {window.__goToScreen && (
             <button className="btn btn-ghost btn-sm" onClick={() => window.__goToScreen('pulse')} title="Pulse Terminal" style={{ fontFamily:'JetBrains Mono, monospace', fontSize:10, letterSpacing:'0.05em', gap:4 }}>
               <span style={{ color:'#FF6B4A', fontSize:9 }}>●</span> PULSE
@@ -1363,16 +1404,16 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
                 <>
                   <div className="forje-blob-spin"/>
                   <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)', marginTop:4 }}>
-                    {refreshing ? 'Récupération des flux RSS…' : 'Forje est en train de chercher les meilleures infos pour vous…'}
+                    {refreshing ? 'Récupération des flux RSS…' : 'Analyse en cours — résultats dans 1 à 2 min'}
                   </div>
                 </>
               ) : (
                 <>
                   <div style={{ fontSize:28 }}>⚡</div>
-                  <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)' }}>Aucune news pertinente</div>
-                  <div style={{ fontSize:13, color:'var(--app-fg-3)', maxWidth:260 }}>Lance le scoring pour analyser les dernières actus.</div>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--app-fg-2)' }}>Aucune actu pertinente pour l'instant</div>
+                  <div style={{ fontSize:13, color:'var(--app-fg-3)', maxWidth:280, lineHeight:1.5 }}>Les flux se rafraîchissent toutes les 2 min. Les résultats peuvent prendre 1 à 2 min à apparaître après une analyse.</div>
                   <button className="btn btn-primary btn-sm" onClick={runScoring} style={{ marginTop:4 }}>
-                    <AppIcon name="bolt" size={12}/>Lancer le scoring
+                    <AppIcon name="bolt" size={12}/>Forcer l'analyse maintenant
                   </button>
                 </>
               )}
