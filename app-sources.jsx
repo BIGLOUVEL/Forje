@@ -1352,9 +1352,9 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
       <StatusBar refreshedAt={refreshedAt} scoring={scoring} total={boardData.total}/>
 
       {/* ── Breaking alert ── */}
-      {breaking[0] && (
+      {breaking.length > 0 && (
         <BreakingBar
-          data={breaking[0]}
+          items={breaking}
           onGenerate={(d) => window.__goToGenerate?.({ title: d.title, url: d.url, source: d.source })}
         />
       )}
