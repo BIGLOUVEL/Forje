@@ -727,7 +727,7 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
     var titleFontsKit = kitFont && !TITLE_FONTS.find(function(f) { return f.name === kitFont; })
       ? [{ name: kitFont, sample: kitFont + ' — Brand Kit' }, ...TITLE_FONTS]
       : TITLE_FONTS;
-    var bodyFontsKit = kitFont && !BODY_FONTS.find(function(f) { return f.name === kitFont; })
+    var bodyFontsKit = kitFont && !BODY_FONTS.find(function(f) { return f.name === kitFont; }) && !TITLE_FONTS.find(function(f) { return f.name === kitFont; })
       ? [{ name: kitFont, sample: kitFont + ' — Brand Kit' }, ...BODY_FONTS]
       : BODY_FONTS;
 
