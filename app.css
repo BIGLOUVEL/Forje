@@ -280,7 +280,8 @@ button { font-family: inherit; }
 .sidebar-account-item.active .sidebar-account-avatar {
   background: var(--app-accent); border-color: var(--app-accent); color: #fff;
 }
-.sidebar-account-avatar img { width: 120%; height: 120%; object-fit: cover; border-radius: 50%; margin: -10%; }
+.sidebar-account-avatar img { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; }
+.sidebar-account-avatar:has(img) { background: transparent; border-color: transparent; }
 .sidebar-account-meta { flex: 1; min-width: 0; }
 .sidebar-account-name {
   font-size: 12px; font-weight: 500; color: var(--app-fg-2);
