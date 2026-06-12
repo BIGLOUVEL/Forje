@@ -2020,6 +2020,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   var [deleting,          setDeleting]          = useState(false);
   var [brandKitUrl,       setBrandKitUrl]       = useState('');
   var [relogoing,         setRelogoing]         = useState(false);
+  var [logoStyle,         setLogoStyle]         = useState('badge');
 
   // Load from Supabase — réagit au changement de clientId (switch de compte)
   useEffect(function() {
@@ -2029,7 +2030,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
     setPrimaryColor('#6366F1'); setAccentColor('#10B981'); setFontPrimary('DM Sans'); setFontSecondary('');
     setMood(''); setToneTags([]); setGraphicStyle(''); setTopics([]);
     setInstaHandle(''); setHashtags([]); setPreferredFormat('4:5');
-    setBadgeVisible(true); setBarVisible(true);
+    setBadgeVisible(true); setBarVisible(true); setLogoStyle('badge');
     setSaveMsg(''); setSaveErr(''); setIgInput(''); setIgResult(null); setIgErr('');
 
     if (!sb || !user) { setLoading(false); return; }
@@ -2060,6 +2061,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
           setBadgeVisible(d.badge_visible !== false);
           setBarVisible(d.bar_visible !== false);
           setBrandKitUrl(d.brand_kit_url || '');
+          setLogoStyle(d.logo_style || 'badge');
         }
         setLoading(false);
       });
@@ -2123,6 +2125,17 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
       setSaveErr('Relogo échoué : ' + e.message);
     }
     setRelogoing(false);
+  };
+
+  var handleLogoStyleChange = async function(newStyle) {
+    setLogoStyle(newStyle);
+    var sb = window.__supabase; var user = window.__currentUser;
+    if (sb && user && clientId) {
+      await sb.from('clients').update({ logo_style: newStyle }).eq('id', clientId).eq('user_id', user.id);
+    }
+    if (newStyle === 'logo_nu' && brandKitUrl) {
+      handleRelogo();
+    }
   };
 
   var handleLogoUpload = function(file) {
@@ -2232,6 +2245,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
       font_secondary:   fontSecondary || null,
       badge_visible:    badgeVisible,
       bar_visible:      barVisible,
+      logo_style:       logoStyle,
       mood:             mood,
       tone_tags:        toneTags,
       graphic_style:    graphicStyle,
@@ -2443,6 +2457,20 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
                     </Btn>
                   )}
                   <Btn variant="ghost" size="sm" onClick={function(){ setLogoUrl(''); }} style={{ flex:1, justifyContent:'center', color:'#ef4444', borderColor:'rgba(239,68,68,.35)' }}>Supprimer</Btn>
+                </div>
+                <div style={{ display:'flex', gap:4, background:'rgba(255,255,255,.04)', borderRadius:8, padding:'3px' }}>
+                  {[['badge', '⬤  Badge'], ['logo_nu', '◎  Logo nu']].map(function(opt) {
+                    var active = logoStyle === opt[0];
+                    return (
+                      <button key={opt[0]} onClick={function(){ handleLogoStyleChange(opt[0]); }}
+                        style={{ flex:1, padding:'5px 0', borderRadius:6, border:'none', cursor:'pointer', fontSize:11, fontWeight:active?700:400,
+                          background: active ? 'rgba(99,102,241,.35)' : 'transparent',
+                          color: active ? '#a5b4fc' : 'var(--app-fg-4)',
+                          transition:'background .15s,color .15s' }}>
+                        {opt[1]}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ) : (

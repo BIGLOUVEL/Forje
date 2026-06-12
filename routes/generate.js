@@ -37,14 +37,17 @@ async function geminiExtractLogo(imgBuf) {
       const result = await model.generateContent([
         { inlineData: { mimeType: 'image/png', data: b64 } },
         [
-          'Task: background removal only.',
-          'Remove the background (dark area, outer ring/border) and make it transparent.',
+          'Task: background removal + perspective circle correction.',
+          '',
+          'Step 1 — Remove the background: the dark area, outer ring/glow, and any Instagram interface border must become fully transparent.',
+          'Step 2 — Fix the ellipse: the logo badge in this image may appear as a slight ellipse due to the phone mockup perspective. Output the badge as a PERFECT CIRCLE (equal width and height, no distortion).',
+          '',
           'STRICT RULES — zero exceptions:',
           '- Do NOT change any color in the logo.',
-          '- Do NOT change any shape, line, or letter.',
-          '- Do NOT redesign or redraw anything.',
-          '- The logo content must be pixel-identical to the input.',
-          'Only the background becomes transparent. Nothing else changes.',
+          '- Do NOT change any shape or letter inside the badge.',
+          '- Do NOT redesign or redraw anything inside the badge.',
+          '- Only the background becomes transparent, and the outer shape is corrected to a circle.',
+          '- Output the result centered on a transparent square canvas.',
         ].join('\n')
       ]);
       const part = result.response.candidates?.[0]?.content?.parts?.find(
@@ -1584,6 +1587,40 @@ router.post('/brand-identity/relogo', async (req, res) => {
     res.json({ ok: true, logoUrl });
   } catch(e) {
     console.error('[relogo]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Logo Export 4K — retourne le logo en PNG 2048×2048 ──────────────────────
+router.get('/brand-identity/logo-export', async (req, res) => {
+  const { clientId } = req.query;
+  if (!clientId) return res.status(400).json({ error: 'clientId requis' });
+
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) return res.status(401).json({ error: 'Non autorisé' });
+
+  const { data: client } = await supabase.from('clients').select('logo_url, name').eq('id', clientId).eq('user_id', user.id).single();
+  if (!client?.logo_url) return res.status(404).json({ error: 'Logo introuvable' });
+
+  try {
+    const resp = await fetch(client.logo_url);
+    if (!resp.ok) throw new Error('Fetch logo failed');
+    const raw = Buffer.from(await resp.arrayBuffer());
+
+    const png4k = await sharp(raw)
+      .resize(2048, 2048, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+
+    const safeName = (client.name || 'logo').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    res.set('Content-Type', 'image/png');
+    res.set('Content-Disposition', `attachment; filename="${safeName}-logo-4k.png"`);
+    res.set('Content-Length', png4k.length);
+    res.send(png4k);
+  } catch(e) {
+    console.error('[logo-export]', e.message);
     res.status(500).json({ error: e.message });
   }
 });

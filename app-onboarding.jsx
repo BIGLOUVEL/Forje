@@ -400,6 +400,8 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
   var [loading,    setLoading]    = useState(false);
   var [confirming, setConfirming] = useState(false);
   var [relogoing,  setRelogoing]  = useState(false);
+  var [downloading4k, setDownloading4k] = useState(false);
+  var [show4kModal, setShow4kModal] = useState(false);
   var [error,      setError]      = useState('');
   var [animKey,    setAnimKey]    = useState(0);
   var [zoomedKit,  setZoomedKit]  = useState(null);
@@ -436,6 +438,24 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
       if (res.ok && data.logoUrl) setLogoUrl(data.logoUrl);
     } catch(_) {}
     setRelogoing(false);
+  };
+
+  var downloadLogo4k = async () => {
+    if (!clientId || !logoUrl || downloading4k) return;
+    setDownloading4k(true);
+    try {
+      var res = await obFetch('/generate/brand-identity/logo-export?clientId=' + clientId);
+      if (!res.ok) throw new Error('Export échoué');
+      var blob = await res.blob();
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'logo-4k.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      setShow4kModal(true);
+    } catch(e) { console.error('[logo-export]', e); }
+    setDownloading4k(false);
   };
 
   useEffect(() => {
@@ -754,6 +774,9 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
                 <button className="ob-relogo-btn" onClick={relogo} disabled={relogoing} title="Recadrer" style={{ flexShrink:0 }}>
                   {relogoing ? '…' : '↻'}
                 </button>
+                <button className="ob-dl4k-btn" onClick={downloadLogo4k} disabled={downloading4k} title="Télécharger en 4K" style={{ flexShrink:0 }}>
+                  {downloading4k ? '…' : '⬇'}
+                </button>
               </div>
             ) : (
               <span style={{ fontSize:11, color:'rgba(150,180,255,.35)', fontStyle:'italic', flex:1 }}>
@@ -761,6 +784,21 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
               </span>
             )}
           </div>
+
+          {/* Modal 4K */}
+          {show4kModal && (
+            <div className="ob-modal-overlay" onClick={() => setShow4kModal(false)}>
+              <div className="ob-modal ob-modal--4k" onClick={e => e.stopPropagation()}>
+                <div className="ob-modal__icon">🎉</div>
+                <h3 className="ob-modal__title">Logo téléchargé en 4K !</h3>
+                <p className="ob-modal__body">
+                  Ce fichier PNG (2048×2048) est prêt à être utilisé comme <strong>photo de profil Instagram</strong>.
+                  Ouvre ta galerie photo sur ton téléphone et mets-le directement en PP.
+                </p>
+                <button className="ob-modal__close" onClick={() => setShow4kModal(false)}>Parfait ✓</button>
+              </div>
+            </div>
+          )}
 
           {/* Palette tile */}
           <div className="ob-bt ob-bt--palette">
