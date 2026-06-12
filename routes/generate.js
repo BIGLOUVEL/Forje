@@ -1482,18 +1482,12 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : flood-fill → retire fond sombre UI Instagram ─────────────────
+    // ── Etape 2b : flood-fill coins → retire fond sombre UI Instagram ───────────
     cropBuf = await removeBackground(cropBuf, 40);
 
-    // ── Etape 2c : Gemini peint ring/border en vert lime, badge inchangé ─────────
-    const geminiOut = await geminiExtractLogo(cropBuf);
-
-    // ── Etape 2d : retire vert lime (détection relative, robuste aux variations) ──
-    const noGreen = await removeChromaKey(geminiOut);
-
-    // ── Etape 2e : flood-fill depuis transparent → retire ring sombre résiduel ────
-    const buf = await removeRingFromTransparent(noGreen, 45);
-    console.log('[crop logo] ring retiré, badge intact');
+    // ── Etape 2c : flood-fill depuis transparent → retire ring sombre adjacent ───
+    const buf = await removeRingFromTransparent(cropBuf, 45);
+    console.log('[crop logo] fond + ring retirés, badge intact');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);

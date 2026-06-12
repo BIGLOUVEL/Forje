@@ -271,16 +271,16 @@ button { font-family: inherit; }
 .sidebar-account-item:hover { background: var(--app-surface-2); }
 .sidebar-account-item.active { background: var(--app-surface-3); }
 .sidebar-account-avatar {
-  width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 9px; font-weight: 700; letter-spacing: 0;
+  font-size: 11px; font-weight: 700; letter-spacing: 0;
   background: var(--app-surface-3); border: 1px solid var(--app-line);
   color: var(--app-fg-2); overflow: hidden;
 }
 .sidebar-account-item.active .sidebar-account-avatar {
   background: var(--app-accent); border-color: var(--app-accent); color: #fff;
 }
-.sidebar-account-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; }
+.sidebar-account-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .sidebar-account-meta { flex: 1; min-width: 0; }
 .sidebar-account-name {
   font-size: 12px; font-weight: 500; color: var(--app-fg-2);
