@@ -1468,35 +1468,40 @@ async function cropLogoFromBrandKit(imageUrl) {
     }
     console.log('[crop logo] PP trouvee →', {x,y,w,h});
 
-    // ── Etape 2 : Crop Sharp — carré avec padding 25% ─────────────────────────
-    const pad  = Math.round(Math.min(w, h) * 0.25);
-    const cx   = Math.max(0, x - pad);
-    const cy   = Math.max(0, y - pad);
-    const cw   = Math.min(w + pad * 2, imgW - cx);
-    const ch   = Math.min(h + pad * 2, imgH - cy);
-    const side = Math.min(cw, ch);
+    // ── Etape 2 : Crop centré sur le centre exact de la PP ───────────────────────
+    // On calcule le centre pixel de la PP et on crop un carré autour,
+    // pour que le masque circulaire soit toujours parfaitement aligné.
+    const ppCx  = x + Math.round(w / 2);
+    const ppCy  = y + Math.round(h / 2);
+    const ppR   = Math.round(Math.min(w, h) / 2);
+    const OUT   = 400; // taille fixe de sortie
+    // Crop source : PP + 20% de marge, clampé aux bords
+    const cropR = Math.round(ppR * 1.20);
+    const cl    = Math.max(0, ppCx - cropR);
+    const ct    = Math.max(0, ppCy - cropR);
+    const cr    = Math.min(imgW, ppCx + cropR);
+    const cb    = Math.min(imgH, ppCy + cropR);
+    const csz   = Math.min(cr - cl, cb - ct);
 
-    let cropBuf = await sharp(imgBuf)
-      .extract({ left: cx, top: cy, width: cw, height: ch })
-      .resize(side, side, { fit: 'cover' })
+    const cropBuf = await sharp(imgBuf)
+      .extract({ left: cl, top: ct, width: csz, height: csz })
+      .resize(OUT, OUT)
       .png()
       .toBuffer();
 
-    // ── Etape 2b : masque circulaire basé sur la taille réelle de la PP ──────────
-    // La PP occupe ~w px dans un crop de side=1.5*w. Rayon = 85% de w/2 pour
-    // couper le ring Instagram (~15% du rayon) sans mordre dans le badge.
-    const mc   = Math.floor(side / 2);
-    const r    = Math.round(Math.min(w, h) * 0.425); // 85% de (w/2)
+    // ── Etape 2b : masque circulaire — rayon 82% pour couper le ring Instagram ───
+    // PP occupe ~83% du crop (1/1.2), ring ~10-15% du PP → rayon 82% coupe le ring.
+    const r    = Math.round(OUT * 0.41); // ~82% de OUT/2
     const mask = Buffer.from(
-      `<svg width="${side}" height="${side}" xmlns="http://www.w3.org/2000/svg">` +
-      `<circle cx="${mc}" cy="${mc}" r="${r}" fill="white"/>` +
+      `<svg width="${OUT}" height="${OUT}" xmlns="http://www.w3.org/2000/svg">` +
+      `<circle cx="${OUT/2}" cy="${OUT/2}" r="${r}" fill="white"/>` +
       `</svg>`
     );
     const buf = await sharp(cropBuf)
       .composite([{ input: mask, blend: 'dest-in' }])
       .png()
       .toBuffer();
-    console.log('[crop logo] masque r=%d sur side=%d (PP w=%d)', r, side, w);
+    console.log('[crop logo] OK — r=%d ppR=%d', r, ppR);
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
