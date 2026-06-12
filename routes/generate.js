@@ -25,30 +25,41 @@ async function gemini(prompt) {
 }
 
 async function geminiExtractLogo(imgBuf) {
-  const model = genai.getGenerativeModel({
-    model: 'gemini-2.5-flash-image',
-    generationConfig: { responseModalities: ['image', 'text'] }
-  });
-  const b64 = imgBuf.toString('base64');
-  const result = await model.generateContent([
-    { inlineData: { mimeType: 'image/png', data: b64 } },
-    [
-      'Task: background removal only.',
-      'Remove the background (dark area, outer ring/border) and make it transparent.',
-      'STRICT RULES — zero exceptions:',
-      '- Do NOT change any color in the logo.',
-      '- Do NOT change any shape, line, or letter.',
-      '- Do NOT redesign or redraw anything.',
-      '- Do NOT add any element.',
-      '- The logo content must be pixel-identical to the input.',
-      'Only the background becomes transparent. Nothing else changes.',
-    ].join('\n')
-  ]);
-  const part = result.response.candidates?.[0]?.content?.parts?.find(
-    p => p.inlineData && p.inlineData.mimeType.startsWith('image')
-  );
-  if (!part) throw new Error('geminiExtractLogo: no image in response');
-  return Buffer.from(part.inlineData.data, 'base64');
+  // Essaie plusieurs modèles — certains supportent mieux image→image
+  const MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash-image', 'gemini-3.1-flash-image'];
+  for (const modelId of MODELS) {
+    try {
+      const model = genai.getGenerativeModel({
+        model: modelId,
+        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
+      });
+      const b64 = imgBuf.toString('base64');
+      const result = await model.generateContent([
+        { inlineData: { mimeType: 'image/png', data: b64 } },
+        [
+          'Task: background removal only.',
+          'Remove the background (dark area, outer ring/border) and make it transparent.',
+          'STRICT RULES — zero exceptions:',
+          '- Do NOT change any color in the logo.',
+          '- Do NOT change any shape, line, or letter.',
+          '- Do NOT redesign or redraw anything.',
+          '- The logo content must be pixel-identical to the input.',
+          'Only the background becomes transparent. Nothing else changes.',
+        ].join('\n')
+      ]);
+      const part = result.response.candidates?.[0]?.content?.parts?.find(
+        p => p.inlineData && p.inlineData.mimeType.startsWith('image')
+      );
+      if (part) {
+        console.log('[crop logo] Gemini image OK via', modelId);
+        return Buffer.from(part.inlineData.data, 'base64');
+      }
+      console.warn('[crop logo] Gemini no image from', modelId);
+    } catch(e) {
+      console.warn('[crop logo] Gemini failed', modelId, e.message.slice(0, 80));
+    }
+  }
+  throw new Error('geminiExtractLogo: aucun modèle na retourné dimage');
 }
 
 async function getClientBrand(userId, clientId) {
