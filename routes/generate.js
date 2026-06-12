@@ -196,14 +196,57 @@ async function tryDownloadFirst(urls) {
 let sharp;
 try { sharp = require('sharp'); } catch (_) { sharp = null; }
 
-// Supprime une couleur chroma key (ex : lime green) globalement — safe car aucun logo ne l'utilise
-async function removeChromaKey(pngBuffer, [kr, kg, kb] = [0, 255, 0], tolerance = 80) {
+// Supprime les pixels à dominante verte (chroma key lime) — détection relative,
+// robuste aux variations de teinte que Gemini peut introduire.
+async function removeChromaKey(pngBuffer) {
   const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   for (let i = 0; i < data.length; i += 4) {
-    if (Math.abs(data[i]-kr) < tolerance && Math.abs(data[i+1]-kg) < tolerance && Math.abs(data[i+2]-kb) < tolerance)
-      data[i+3] = 0;
+    const r = data[i], g = data[i+1], b = data[i+2];
+    if (g > 80 && g > r * 1.4 && g > b * 1.4) data[i+3] = 0;
   }
   return sharp(Buffer.from(data), { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
+// Flood-fill depuis les pixels transparents du bord — retire le ring sombre adjacent.
+// S'arrête dès qu'un pixel est trop lumineux (badge coloré) → ne touche pas au contenu.
+async function removeRingFromTransparent(pngBuffer, brightnessThreshold = 45) {
+  const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height, S = 4;
+  const visited = new Uint8Array(W * H);
+  const queue = [];
+  // Seed : tous les pixels de bord déjà transparents
+  for (let x = 0; x < W; x++) {
+    for (const y of [0, H - 1]) {
+      const px = y * W + x;
+      if (data[px * S + 3] === 0 && !visited[px]) { visited[px] = 1; queue.push(px); }
+    }
+  }
+  for (let y = 1; y < H - 1; y++) {
+    for (const x of [0, W - 1]) {
+      const px = y * W + x;
+      if (data[px * S + 3] === 0 && !visited[px]) { visited[px] = 1; queue.push(px); }
+    }
+  }
+  let head = 0;
+  while (head < queue.length) {
+    const px = queue[head++];
+    const x = px % W, y = (px / W) | 0;
+    const ns = [];
+    if (x > 0) ns.push(px - 1); if (x < W - 1) ns.push(px + 1);
+    if (y > 0) ns.push(px - W); if (y < H - 1) ns.push(px + W);
+    for (const n of ns) {
+      if (visited[n]) continue;
+      visited[n] = 1;
+      const ni = n * S;
+      if (data[ni + 3] === 0) {
+        queue.push(n); // pixel déjà transparent, on propage
+      } else {
+        const brightness = (data[ni] + data[ni + 1] + data[ni + 2]) / 3;
+        if (brightness < brightnessThreshold) { data[ni + 3] = 0; queue.push(n); }
+      }
+    }
+  }
+  return sharp(Buffer.from(data), { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
 }
 
 // Supprime les pixels blancs/clairs d'un PNG (fond généré par GPT Image qui ignore "transparent")
@@ -1443,11 +1486,13 @@ async function cropLogoFromBrandKit(imageUrl) {
     cropBuf = await removeBackground(cropBuf, 40);
 
     // ── Etape 2c : Gemini peint ring/border en vert lime, badge inchangé ─────────
-    // Chroma key : Gemini "colorie" uniquement l'extérieur, ne redessinne rien.
     const geminiOut = await geminiExtractLogo(cropBuf);
 
-    // ── Etape 2d : supprime le vert lime → fond transparent ──────────────────────
-    const buf = await removeChromaKey(geminiOut);
+    // ── Etape 2d : retire vert lime (détection relative, robuste aux variations) ──
+    const noGreen = await removeChromaKey(geminiOut);
+
+    // ── Etape 2e : flood-fill depuis transparent → retire ring sombre résiduel ────
+    const buf = await removeRingFromTransparent(noGreen, 45);
     console.log('[crop logo] ring retiré, badge intact');
     return buf;
   } catch(e) {
