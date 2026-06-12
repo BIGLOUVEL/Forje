@@ -24,6 +24,23 @@ async function gemini(prompt) {
   return result.response.text();
 }
 
+async function geminiRemoveBg(imgBuf) {
+  const model = genai.getGenerativeModel({
+    model: 'gemini-2.0-flash-preview-image-generation',
+    generationConfig: { responseModalities: ['image', 'text'] }
+  });
+  const b64 = imgBuf.toString('base64');
+  const result = await model.generateContent([
+    { inlineData: { mimeType: 'image/png', data: b64 } },
+    'Remove the background and make it fully transparent. The logo or icon content must be preserved EXACTLY — same colors, shapes, proportions, zero changes. Only output: transparent background, logo unchanged.'
+  ]);
+  const part = result.response.candidates?.[0]?.content?.parts?.find(
+    p => p.inlineData && p.inlineData.mimeType.startsWith('image')
+  );
+  if (!part) throw new Error('geminiRemoveBg: no image in response');
+  return Buffer.from(part.inlineData.data, 'base64');
+}
+
 async function getClientBrand(userId, clientId) {
   if (!userId) return null;
   let q = supabase.from('clients').select(
@@ -1332,10 +1349,9 @@ router.post('/brand-identity', async (req, res) => {
 // Workflow :
 //   1. Claude Vision  → localise la PP Instagram dans le proto téléphone (bas-droit)
 //   2. Sharp           → crop précis du cercle avec padding
-//   3. GPT Image 1 edit → nettoyage conservateur sur le crop (ring, fond → transparent, 1024×1024)
-//   4. removeWhiteBackground → purge les pixels blancs résiduels
+//   2b. Gemini        → suppression fond, logo préservé pixel-perfect
+//   3. Sharp dest-in  → masque circulaire final
 async function cropLogoFromBrandKit(imageUrl) {
-  if (!openaiClient) return null;
   try {
     const imgBuf = await downloadBuffer(imageUrl);
     const meta   = await sharp(imgBuf).metadata();
@@ -1354,12 +1370,12 @@ async function cropLogoFromBrandKit(imageUrl) {
 
     const resp = await haiku.messages.create({
       model:      'claude-sonnet-4-6',
-      max_tokens: 100,
+      max_tokens: 120,
       messages: [{
         role: 'user',
         content: [
           { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: regionBuf.toString('base64') } },
-          { type: 'text',  text:  `This is the bottom-right portion (${rW}x${rH}px) of a brand identity sheet. Inside a phone mockup showing an Instagram profile page, there is a CIRCULAR profile picture (PP) — a small filled circle at the top of the phone screen. Locate that circle and return ONLY valid JSON: {"x":N,"y":N,"w":N,"h":N} in pixels relative to THIS image (top-left origin, integers). No markdown, no text.` }
+          { type: 'text',  text: `This is a cropped portion (${rW}x${rH}px) of a brand identity sheet showing an Instagram profile inside a phone mockup. Locate ONLY the circular profile picture avatar — a SMALL circle containing a photo or logo, positioned at the very top of the phone screen content area, above the username. It is NOT the full header card, NOT the username, NOT the bio. Its width should be roughly 5-15% of the image width (between 30px and 160px). Return ONLY valid JSON: {"x":N,"y":N,"w":N,"h":N} in pixels relative to THIS image. CONSTRAINT: w and h must each be between 30 and 160. No markdown, no explanation.` }
         ]
       }]
     });
@@ -1381,6 +1397,12 @@ async function cropLogoFromBrandKit(imageUrl) {
     const w = Math.min(Math.round(Number(coords.w) || 0), imgW - x);
     const h = Math.min(Math.round(Number(coords.h) || 0), imgH - y);
     if (w < 20 || h < 20) { console.error('[crop logo] bbox invalide', {x,y,w,h}); return null; }
+    // Guard: si Vision a retourné une zone trop grande (header complet), on abandonne plutôt que de cropper le mauvais élément
+    const maxPPSize = Math.round(rW * 0.22);
+    if (w > maxPPSize || h > maxPPSize) {
+      console.error('[crop logo] Vision bbox trop large — probablement pas la PP:', {x,y,w,h}, 'max attendu:', maxPPSize);
+      return null;
+    }
     console.log('[crop logo] PP trouvee →', {x,y,w,h});
 
     // ── Etape 2 : Crop Sharp — carré avec padding 25% ─────────────────────────
@@ -1397,10 +1419,8 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : Suppression fond Instagram sombre (détection par coins) ──────
-    // Le fond de l'UI Instagram est sombre/noir → détecté aux coins → supprimé.
-    // Le logo (couleurs vives) est à l'écart du seuil → préservé intact.
-    cropBuf = await removeBackground(cropBuf, 35);
+    // ── Etape 2b : Suppression fond par Gemini — préserve le logo pixel-perfect ──
+    cropBuf = await geminiRemoveBg(cropBuf);
 
     // ── Etape 3 : Masque circulaire Sharp — fond transparent pixel-perfect ─────
     // Pas d'appel GPT : aucun risque de redessin ou de confusion fond/logo.
