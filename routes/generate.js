@@ -32,7 +32,17 @@ async function geminiExtractLogo(imgBuf) {
   const b64 = imgBuf.toString('base64');
   const result = await model.generateContent([
     { inlineData: { mimeType: 'image/png', data: b64 } },
-    'This image shows a logo badge, possibly with an outer ring or Instagram profile picture border around it. Fill the outer background and any ring/border with pure lime green (RGB 0,255,0). Do NOT touch or modify anything inside the badge — keep every color, shape, letter, and pixel of the logo 100% identical. Only paint the outside. Output same size.'
+    [
+      'Task: background removal only.',
+      'Remove the background (dark area, outer ring/border) and make it transparent.',
+      'STRICT RULES — zero exceptions:',
+      '- Do NOT change any color in the logo.',
+      '- Do NOT change any shape, line, or letter.',
+      '- Do NOT redesign or redraw anything.',
+      '- Do NOT add any element.',
+      '- The logo content must be pixel-identical to the input.',
+      'Only the background becomes transparent. Nothing else changes.',
+    ].join('\n')
   ]);
   const part = result.response.candidates?.[0]?.content?.parts?.find(
     p => p.inlineData && p.inlineData.mimeType.startsWith('image')
@@ -1469,13 +1479,9 @@ async function cropLogoFromBrandKit(imageUrl) {
     console.log('[crop logo] PP trouvee →', {x,y,w,h});
 
     // ── Etape 2 : Crop centré sur le centre exact de la PP ───────────────────────
-    // On calcule le centre pixel de la PP et on crop un carré autour,
-    // pour que le masque circulaire soit toujours parfaitement aligné.
     const ppCx  = x + Math.round(w / 2);
     const ppCy  = y + Math.round(h / 2);
     const ppR   = Math.round(Math.min(w, h) / 2);
-    const OUT   = 400; // taille fixe de sortie
-    // Crop source : PP + 20% de marge, clampé aux bords
     const cropR = Math.round(ppR * 1.20);
     const cl    = Math.max(0, ppCx - cropR);
     const ct    = Math.max(0, ppCy - cropR);
@@ -1485,23 +1491,13 @@ async function cropLogoFromBrandKit(imageUrl) {
 
     const cropBuf = await sharp(imgBuf)
       .extract({ left: cl, top: ct, width: csz, height: csz })
-      .resize(OUT, OUT)
+      .resize(400, 400)
       .png()
       .toBuffer();
 
-    // ── Etape 2b : masque circulaire — rayon 82% pour couper le ring Instagram ───
-    // PP occupe ~83% du crop (1/1.2), ring ~10-15% du PP → rayon 82% coupe le ring.
-    const r    = Math.round(OUT * 0.41); // ~82% de OUT/2
-    const mask = Buffer.from(
-      `<svg width="${OUT}" height="${OUT}" xmlns="http://www.w3.org/2000/svg">` +
-      `<circle cx="${OUT/2}" cy="${OUT/2}" r="${r}" fill="white"/>` +
-      `</svg>`
-    );
-    const buf = await sharp(cropBuf)
-      .composite([{ input: mask, blend: 'dest-in' }])
-      .png()
-      .toBuffer();
-    console.log('[crop logo] OK — r=%d ppR=%d', r, ppR);
+    // ── Etape 2b : Gemini — retire le fond, préserve le logo à 100% ──────────────
+    const buf = await geminiExtractLogo(cropBuf);
+    console.log('[crop logo] Gemini OK');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
