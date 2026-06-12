@@ -1482,12 +1482,11 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : flood-fill coins → retire fond sombre UI Instagram ───────────
-    cropBuf = await removeBackground(cropBuf, 40);
-
-    // ── Etape 2c : flood-fill depuis transparent → retire ring sombre adjacent ───
-    const buf = await removeRingFromTransparent(cropBuf, 45);
-    console.log('[crop logo] fond + ring retirés, badge intact');
+    // ── Etape 2b : flood-fill coins → retire fond sombre + ring Instagram ────────
+    // Tolérance 55 : attrape le fond (18,18,18) et le ring légèrement plus clair
+    // sans atteindre le badge coloré (ex: bleu ~150 → hors tolérance).
+    const buf = await removeBackground(cropBuf, 55);
+    console.log('[crop logo] fond + ring retirés');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
