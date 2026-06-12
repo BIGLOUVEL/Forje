@@ -1482,11 +1482,22 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : flood-fill coins → retire fond sombre + ring Instagram ────────
-    // Tolérance 55 : attrape le fond (18,18,18) et le ring légèrement plus clair
-    // sans atteindre le badge coloré (ex: bleu ~150 → hors tolérance).
-    const buf = await removeBackground(cropBuf, 55);
-    console.log('[crop logo] fond + ring retirés');
+    // ── Etape 2b : masque circulaire avec inset 8% — exclut le ring Instagram ────
+    // Le ring fait ~5-8% du rayon → on réduit le rayon de 8%.
+    // dest-in = transparent hors cercle, badge préservé à l'intérieur.
+    const inset  = Math.round(side * 0.08);
+    const r      = Math.floor(side / 2) - inset;
+    const cx     = Math.floor(side / 2);
+    const mask   = Buffer.from(
+      `<svg width="${side}" height="${side}" xmlns="http://www.w3.org/2000/svg">` +
+      `<circle cx="${cx}" cy="${cx}" r="${r}" fill="white"/>` +
+      `</svg>`
+    );
+    const buf = await sharp(cropBuf)
+      .composite([{ input: mask, blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+    console.log('[crop logo] masque circulaire inset 8%');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
