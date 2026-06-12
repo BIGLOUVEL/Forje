@@ -1493,7 +1493,7 @@ async function cropLogoFromBrandKit(imageUrl) {
     const ppCx  = x + Math.round(w / 2);
     const ppCy  = y + Math.round(h / 2);
     const ppR   = Math.round(Math.min(w, h) / 2);
-    const cropR = Math.round(ppR * 1.20);
+    const cropR = Math.round(ppR * 1.05);
     const cl    = Math.max(0, ppCx - cropR);
     const ct    = Math.max(0, ppCy - cropR);
     const cr    = Math.min(imgW, ppCx + cropR);
