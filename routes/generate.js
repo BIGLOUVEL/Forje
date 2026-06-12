@@ -564,8 +564,7 @@ router.post('/actu', async (req, res) => {
         const logoPng = await sharp(logoBuf)
           .resize(null, 260, { fit: 'inside' })
           .png()
-          .toBuffer()
-          .then(buf => removeBackground(buf, 30));
+          .toBuffer();
 
         const logoMeta = await sharp(logoPng).metadata();
         const logoX = W - logoMeta.width - 40;
