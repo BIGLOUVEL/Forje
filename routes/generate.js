@@ -1419,8 +1419,8 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : Suppression fond par Gemini — préserve le logo pixel-perfect ──
-    cropBuf = await geminiRemoveBg(cropBuf);
+    // ── Etape 2b : Suppression fond Instagram sombre (détection par coins) ──────
+    cropBuf = await removeBackground(cropBuf, 35);
 
     // ── Etape 3 : Masque circulaire Sharp — fond transparent pixel-perfect ─────
     // Pas d'appel GPT : aucun risque de redessin ou de confusion fond/logo.
