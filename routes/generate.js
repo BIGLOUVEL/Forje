@@ -26,7 +26,7 @@ async function gemini(prompt) {
 
 async function geminiRemoveBg(imgBuf) {
   const model = genai.getGenerativeModel({
-    model: 'gemini-2.0-flash-preview-image-generation',
+    model: 'gemini-2.5-flash-image',
     generationConfig: { responseModalities: ['image', 'text'] }
   });
   const b64 = imgBuf.toString('base64');
