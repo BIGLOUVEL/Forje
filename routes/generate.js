@@ -1397,33 +1397,26 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : Pre-nettoyage du contexte Instagram ─────────────────────────
-    // Le crop contient le fond sombre de l'UI Instagram autour du cercle logo.
-    // On supprime ce fond via detecfion des coins (dark Instagram → transparent)
-    // AVANT de passer à GPT, pour qu'il ne voie que le logo — pas le contexte insta.
+    // ── Etape 2b : Suppression fond Instagram sombre (détection par coins) ──────
+    // Le fond de l'UI Instagram est sombre/noir → détecté aux coins → supprimé.
+    // Le logo (couleurs vives) est à l'écart du seuil → préservé intact.
     cropBuf = await removeBackground(cropBuf, 35);
-    try {
-      cropBuf = await sharp(cropBuf).trim({ threshold: 15 }).png().toBuffer();
-    } catch(_) {}
 
-    // ── Etape 3 : GPT Image 1 edit — logo pré-isolé, contexte insta retiré ────
-    // GPT ne voit plus que le cercle logo sur fond transparent → pas d'influence des couleurs insta.
-    console.log('[crop logo] GPT Image 1 edit sur le logo isole...');
-    const cropFile = await toFile(cropBuf, 'logo-crop.png', { type: 'image/png' });
-    const edited = await openaiClient.images.edit({
-      model:   'gpt-image-1',
-      size:    '1024x1024',
-      quality: 'high',
-      image:   cropFile,
-      prompt:  'This image shows a brand logo mark: a circular badge containing a monogram or letters on a colored background. Your task: (1) Keep the logo EXACTLY as-is — every color, every detail, every letter. (2) Ensure the background outside the logo circle is fully transparent. (3) Upscale and sharpen to 1024x1024. (4) Center it. Do NOT change, recolor, simplify or redesign anything. Preserve the original logo perfectly.',
-    });
-
-    const b64 = edited.data?.[0]?.b64_json;
-    if (!b64) { console.error('[crop logo] no b64 in GPT Image response'); return null; }
-    console.log('[crop logo] GPT Image 1 succes');
-
-    // ── Etape 4 : Nettoyage fond résiduel par coins ────────────────────────────
-    const buf = await removeBackground(Buffer.from(b64, 'base64'), 25);
+    // ── Etape 3 : Masque circulaire Sharp — fond transparent pixel-perfect ─────
+    // Pas d'appel GPT : aucun risque de redessin ou de confusion fond/logo.
+    // dest-in = conserve les pixels du crop là où le masque SVG est opaque (cercle),
+    // met transparent partout ailleurs. Les coins (déjà transparentisés en 2b) restent tels quels.
+    const r = Math.floor(side / 2);
+    const circleMask = Buffer.from(
+      `<svg width="${side}" height="${side}" xmlns="http://www.w3.org/2000/svg">` +
+      `<circle cx="${r}" cy="${r}" r="${r}" fill="white"/>` +
+      `</svg>`
+    );
+    const buf = await sharp(cropBuf)
+      .composite([{ input: circleMask, blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+    console.log('[crop logo] masque circulaire appliqué — logo préservé');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
