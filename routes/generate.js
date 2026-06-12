@@ -1485,11 +1485,11 @@ async function cropLogoFromBrandKit(imageUrl) {
     // ── Etape 2b : masque circulaire basé sur la taille réelle de la PP ──────────
     // La PP occupe ~w px dans un crop de side=1.5*w. Rayon = 85% de w/2 pour
     // couper le ring Instagram (~15% du rayon) sans mordre dans le badge.
-    const cx   = Math.floor(side / 2);
+    const mc   = Math.floor(side / 2);
     const r    = Math.round(Math.min(w, h) * 0.425); // 85% de (w/2)
     const mask = Buffer.from(
       `<svg width="${side}" height="${side}" xmlns="http://www.w3.org/2000/svg">` +
-      `<circle cx="${cx}" cy="${cx}" r="${r}" fill="white"/>` +
+      `<circle cx="${mc}" cy="${mc}" r="${r}" fill="white"/>` +
       `</svg>`
     );
     const buf = await sharp(cropBuf)
