@@ -1482,13 +1482,12 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : masque circulaire avec inset 8% — exclut le ring Instagram ────
-    // Le ring fait ~5-8% du rayon → on réduit le rayon de 8%.
-    // dest-in = transparent hors cercle, badge préservé à l'intérieur.
-    const inset  = Math.round(side * 0.08);
-    const r      = Math.floor(side / 2) - inset;
-    const cx     = Math.floor(side / 2);
-    const mask   = Buffer.from(
+    // ── Etape 2b : masque circulaire basé sur la taille réelle de la PP ──────────
+    // La PP occupe ~w px dans un crop de side=1.5*w. Rayon = 85% de w/2 pour
+    // couper le ring Instagram (~15% du rayon) sans mordre dans le badge.
+    const cx   = Math.floor(side / 2);
+    const r    = Math.round(Math.min(w, h) * 0.425); // 85% de (w/2)
+    const mask = Buffer.from(
       `<svg width="${side}" height="${side}" xmlns="http://www.w3.org/2000/svg">` +
       `<circle cx="${cx}" cy="${cx}" r="${r}" fill="white"/>` +
       `</svg>`
@@ -1497,7 +1496,7 @@ async function cropLogoFromBrandKit(imageUrl) {
       .composite([{ input: mask, blend: 'dest-in' }])
       .png()
       .toBuffer();
-    console.log('[crop logo] masque circulaire inset 8%');
+    console.log('[crop logo] masque r=%d sur side=%d (PP w=%d)', r, side, w);
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
