@@ -205,21 +205,31 @@ async function removeWhiteBackground(pngBuffer, tolerance = 235) {
   return sharp(Buffer.from(data), { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
 }
 
-// Détecte la couleur de fond via les coins et la supprime (fonctionne fond blanc OU sombre)
+// Flood-fill depuis les 4 coins — supprime uniquement le fond extérieur connecté au bord.
+// Contrairement à removeBackground global, préserve les pixels identiques au fond
+// qui sont à l'intérieur du logo (ex : lettres blanches dans un badge bleu).
 async function removeBackground(pngBuffer, tolerance = 40) {
   const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const W = info.width, H = info.height, S = 4;
-  // Échantillonne les 4 coins pour déterminer la couleur de fond
-  const corners = [
-    [data[0], data[1], data[2]],
-    [data[(W-1)*S], data[(W-1)*S+1], data[(W-1)*S+2]],
-    [data[(H-1)*W*S], data[(H-1)*W*S+1], data[(H-1)*W*S+2]],
-    [data[((H-1)*W+(W-1))*S], data[((H-1)*W+(W-1))*S+1], data[((H-1)*W+(W-1))*S+2]],
-  ];
-  const bg = corners.reduce((a, c) => [a[0]+c[0], a[1]+c[1], a[2]+c[2]], [0,0,0]).map(v => Math.round(v/4));
-  for (let i = 0; i < data.length; i += S) {
-    const dr = Math.abs(data[i]-bg[0]), dg = Math.abs(data[i+1]-bg[1]), db = Math.abs(data[i+2]-bg[2]);
-    if (dr < tolerance && dg < tolerance && db < tolerance) data[i+3] = 0;
+  const bgR = data[0], bgG = data[1], bgB = data[2];
+
+  const visited = new Uint8Array(W * H);
+  // BFS depuis les 4 coins
+  const queue = [0, W - 1, (H - 1) * W, (H - 1) * W + W - 1];
+  for (const px of queue) visited[px] = 1;
+
+  let head = 0;
+  while (head < queue.length) {
+    const px = queue[head++];
+    const i  = px * S;
+    if (Math.abs(data[i]-bgR) < tolerance && Math.abs(data[i+1]-bgG) < tolerance && Math.abs(data[i+2]-bgB) < tolerance) {
+      data[i+3] = 0;
+      const x = px % W, y = (px / W) | 0;
+      if (x > 0     && !visited[px-1])   { visited[px-1] = 1;   queue.push(px-1); }
+      if (x < W - 1 && !visited[px+1])   { visited[px+1] = 1;   queue.push(px+1); }
+      if (y > 0     && !visited[px-W])   { visited[px-W] = 1;   queue.push(px-W); }
+      if (y < H - 1 && !visited[px+W])   { visited[px+W] = 1;   queue.push(px+W); }
+    }
   }
   return sharp(Buffer.from(data), { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
 }
@@ -1420,8 +1430,13 @@ async function cropLogoFromBrandKit(imageUrl) {
       .toBuffer();
 
     // ── Etape 2b : Gemini → extrait logo intérieur, retire ring IG, recentre ────
-    const buf = await geminiExtractLogo(cropBuf);
-    console.log('[crop logo] Gemini logo extrait');
+    const geminiOut = await geminiExtractLogo(cropBuf);
+
+    // ── Etape 2c : flood-fill depuis les coins → retire fond blanc Gemini ────────
+    // Préserve les pixels blancs à l'intérieur du badge (lettres, formes internes)
+    // car ils ne sont pas connectés au bord extérieur.
+    const buf = await removeBackground(geminiOut, 30);
+    console.log('[crop logo] fond extérieur retiré, intérieur préservé');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
