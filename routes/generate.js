@@ -1510,9 +1510,18 @@ async function cropLogoFromBrandKit(imageUrl) {
     const geminiOut = await geminiExtractLogo(cropBuf);
 
     // ── Etape 2c : flood-fill depuis coins → retire fond blanc Gemini ────────────
-    // BFS : préserve les lettres blanches internes (non connectées aux bords).
-    const buf = await removeBackground(geminiOut, 30);
-    console.log('[crop logo] OK');
+    const noBg = await removeBackground(geminiOut, 30);
+
+    // ── Etape 2d : force cercle parfait — corrige ellipse du mockup incliné ──────
+    const { width: bw, height: bh } = await sharp(noBg).metadata();
+    const sz   = Math.max(bw, bh);
+    const circ = Buffer.from(`<svg width="${sz}" height="${sz}"><circle cx="${sz/2}" cy="${sz/2}" r="${sz/2}" fill="white"/></svg>`);
+    const buf  = await sharp(noBg)
+      .resize(sz, sz, { fit: 'fill' })
+      .composite([{ input: circ, blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+    console.log('[crop logo] OK — cercle forcé');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
