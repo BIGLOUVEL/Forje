@@ -24,7 +24,7 @@ async function gemini(prompt) {
   return result.response.text();
 }
 
-async function geminiRemoveBg(imgBuf) {
+async function geminiExtractLogo(imgBuf) {
   const model = genai.getGenerativeModel({
     model: 'gemini-2.5-flash-image',
     generationConfig: { responseModalities: ['image', 'text'] }
@@ -32,12 +32,12 @@ async function geminiRemoveBg(imgBuf) {
   const b64 = imgBuf.toString('base64');
   const result = await model.generateContent([
     { inlineData: { mimeType: 'image/png', data: b64 } },
-    'Remove the background and make it fully transparent. The logo or icon content must be preserved EXACTLY — same colors, shapes, proportions, zero changes. Only output: transparent background, logo unchanged.'
+    'This is a cropped Instagram profile picture. Extract ONLY the inner logo or icon — remove any outer ring, circular border, dark or colored background. Center the logo in a square output on a clean WHITE background. Keep logo colors, shapes and proportions exactly unchanged, zero redesign.'
   ]);
   const part = result.response.candidates?.[0]?.content?.parts?.find(
     p => p.inlineData && p.inlineData.mimeType.startsWith('image')
   );
-  if (!part) throw new Error('geminiRemoveBg: no image in response');
+  if (!part) throw new Error('geminiExtractLogo: no image in response');
   return Buffer.from(part.inlineData.data, 'base64');
 }
 
@@ -1347,10 +1347,11 @@ router.post('/brand-identity', async (req, res) => {
 
 // ─── Crop logo depuis le brand kit ───────────────────────────────────────────
 // Workflow :
-//   1. Claude Vision  → localise la PP Instagram dans le proto téléphone (bas-droit)
-//   2. Sharp           → crop précis du cercle avec padding
-//   2b. Gemini        → suppression fond, logo préservé pixel-perfect
-//   3. Sharp dest-in  → masque circulaire final
+//   1. Claude Vision  → localise la PP Instagram (petit cercle, guard taille)
+//   2. Sharp           → crop carré avec padding
+//   2b. Gemini        → extrait logo intérieur, supprime ring IG, recentre sur blanc
+//   2c. removeBackground → retire le fond blanc Gemini
+//   3. Sharp dest-in  → masque circulaire final transparent
 async function cropLogoFromBrandKit(imageUrl) {
   try {
     const imgBuf = await downloadBuffer(imageUrl);
@@ -1419,13 +1420,13 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : Suppression fond Instagram sombre (détection par coins) ──────
-    cropBuf = await removeBackground(cropBuf, 35);
+    // ── Etape 2b : Gemini → extrait logo intérieur, recentre, fond blanc ────────
+    cropBuf = await geminiExtractLogo(cropBuf);
 
-    // ── Etape 3 : Masque circulaire Sharp — fond transparent pixel-perfect ─────
-    // Pas d'appel GPT : aucun risque de redessin ou de confusion fond/logo.
-    // dest-in = conserve les pixels du crop là où le masque SVG est opaque (cercle),
-    // met transparent partout ailleurs. Les coins (déjà transparentisés en 2b) restent tels quels.
+    // ── Etape 2c : Supprime le fond blanc retourné par Gemini ───────────────────
+    cropBuf = await removeBackground(cropBuf, 30);
+
+    // ── Etape 3 : Masque circulaire Sharp — sortie circulaire transparent ───────
     const r = Math.floor(side / 2);
     const circleMask = Buffer.from(
       `<svg width="${side}" height="${side}" xmlns="http://www.w3.org/2000/svg">` +
