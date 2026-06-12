@@ -566,7 +566,7 @@ router.post('/actu', async (req, res) => {
     }
     if (serperBuffers.length === 0 && search_query && process.env.SERPER_API_KEY) {
       const isGooglePhoto = imageMode !== 'ai';
-      const images = await serperImages(search_query, { hq: isGooglePhoto });
+      const images = await serperImages(search_query, { hq: true }); // toujours HQ — qualité + filtres anti-watermark
       const urls   = images.map(img => img.imageUrl).filter(Boolean).slice(0, isGooglePhoto ? 8 : 3);
       const results = await Promise.all(urls.map(u => downloadBuffer(u).catch(() => null)));
       serperBuffers = results
@@ -1506,9 +1506,13 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : Gemini — retire le fond, préserve le logo à 100% ──────────────
-    const buf = await geminiExtractLogo(cropBuf);
-    console.log('[crop logo] Gemini OK');
+    // ── Etape 2b : Gemini — retire le fond (retourne fond blanc ou transparent) ──
+    const geminiOut = await geminiExtractLogo(cropBuf);
+
+    // ── Etape 2c : flood-fill depuis coins → retire fond blanc Gemini ────────────
+    // BFS : préserve les lettres blanches internes (non connectées aux bords).
+    const buf = await removeBackground(geminiOut, 30);
+    console.log('[crop logo] OK');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
