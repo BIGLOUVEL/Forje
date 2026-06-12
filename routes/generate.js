@@ -32,7 +32,7 @@ async function geminiExtractLogo(imgBuf) {
   const b64 = imgBuf.toString('base64');
   const result = await model.generateContent([
     { inlineData: { mimeType: 'image/png', data: b64 } },
-    'This is a cropped Instagram profile picture. Extract ONLY the inner logo or icon — remove any outer ring, circular border, dark or colored background. Center the logo in a square output on a clean WHITE background. Keep logo colors, shapes and proportions exactly unchanged, zero redesign.'
+    'This image shows a logo badge, possibly with an outer ring or Instagram profile picture border around it. Fill the outer background and any ring/border with pure lime green (RGB 0,255,0). Do NOT touch or modify anything inside the badge — keep every color, shape, letter, and pixel of the logo 100% identical. Only paint the outside. Output same size.'
   ]);
   const part = result.response.candidates?.[0]?.content?.parts?.find(
     p => p.inlineData && p.inlineData.mimeType.startsWith('image')
@@ -195,6 +195,16 @@ async function tryDownloadFirst(urls) {
 // ─── Chargement lazy de Sharp ─────────────────────────────────────────────────
 let sharp;
 try { sharp = require('sharp'); } catch (_) { sharp = null; }
+
+// Supprime une couleur chroma key (ex : lime green) globalement — safe car aucun logo ne l'utilise
+async function removeChromaKey(pngBuffer, [kr, kg, kb] = [0, 255, 0], tolerance = 80) {
+  const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (let i = 0; i < data.length; i += 4) {
+    if (Math.abs(data[i]-kr) < tolerance && Math.abs(data[i+1]-kg) < tolerance && Math.abs(data[i+2]-kb) < tolerance)
+      data[i+3] = 0;
+  }
+  return sharp(Buffer.from(data), { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
 
 // Supprime les pixels blancs/clairs d'un PNG (fond généré par GPT Image qui ignore "transparent")
 async function removeWhiteBackground(pngBuffer, tolerance = 235) {
@@ -1429,11 +1439,16 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : flood-fill depuis les coins → retire fond UI Instagram ────────
-    // BFS depuis les bords : supprime uniquement le fond extérieur connecté.
-    // Couleurs du badge et formes internes (lettres, contre-formes) préservées.
-    const buf = await removeBackground(cropBuf, 40);
-    console.log('[crop logo] fond extérieur retiré, badge intact');
+    // ── Etape 2b : flood-fill → retire fond sombre UI Instagram ─────────────────
+    cropBuf = await removeBackground(cropBuf, 40);
+
+    // ── Etape 2c : Gemini peint ring/border en vert lime, badge inchangé ─────────
+    // Chroma key : Gemini "colorie" uniquement l'extérieur, ne redessinne rien.
+    const geminiOut = await geminiExtractLogo(cropBuf);
+
+    // ── Etape 2d : supprime le vert lime → fond transparent ──────────────────────
+    const buf = await removeChromaKey(geminiOut);
+    console.log('[crop logo] ring retiré, badge intact');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
