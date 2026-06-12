@@ -1429,14 +1429,11 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : Gemini → extrait logo intérieur, retire ring IG, recentre ────
-    const geminiOut = await geminiExtractLogo(cropBuf);
-
-    // ── Etape 2c : flood-fill depuis les coins → retire fond blanc Gemini ────────
-    // Préserve les pixels blancs à l'intérieur du badge (lettres, formes internes)
-    // car ils ne sont pas connectés au bord extérieur.
-    const buf = await removeBackground(geminiOut, 30);
-    console.log('[crop logo] fond extérieur retiré, intérieur préservé');
+    // ── Etape 2b : flood-fill depuis les coins → retire fond UI Instagram ────────
+    // BFS depuis les bords : supprime uniquement le fond extérieur connecté.
+    // Couleurs du badge et formes internes (lettres, contre-formes) préservées.
+    const buf = await removeBackground(cropBuf, 40);
+    console.log('[crop logo] fond extérieur retiré, badge intact');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
