@@ -1420,24 +1420,9 @@ async function cropLogoFromBrandKit(imageUrl) {
       .png()
       .toBuffer();
 
-    // ── Etape 2b : Gemini → extrait logo intérieur, recentre, fond blanc ────────
-    cropBuf = await geminiExtractLogo(cropBuf);
-
-    // ── Etape 2c : Supprime le fond blanc retourné par Gemini ───────────────────
-    cropBuf = await removeBackground(cropBuf, 30);
-
-    // ── Etape 3 : Masque circulaire Sharp — sortie circulaire transparent ───────
-    const r = Math.floor(side / 2);
-    const circleMask = Buffer.from(
-      `<svg width="${side}" height="${side}" xmlns="http://www.w3.org/2000/svg">` +
-      `<circle cx="${r}" cy="${r}" r="${r}" fill="white"/>` +
-      `</svg>`
-    );
-    const buf = await sharp(cropBuf)
-      .composite([{ input: circleMask, blend: 'dest-in' }])
-      .png()
-      .toBuffer();
-    console.log('[crop logo] masque circulaire appliqué — logo préservé');
+    // ── Etape 2b : Gemini → extrait logo intérieur, retire ring IG, recentre ────
+    const buf = await geminiExtractLogo(cropBuf);
+    console.log('[crop logo] Gemini logo extrait');
     return buf;
   } catch(e) {
     console.error('[crop logo] FAILED:', e.message);
