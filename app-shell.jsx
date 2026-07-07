@@ -130,11 +130,11 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
   const initials = fullName
     ? fullName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()
     : (email.split('@')[0] || '?').slice(0,2).toUpperCase();
-  const plan = profile?.plan || 'free';
+  const subStatus = profile?.subscription_status || 'trial';
   const credits = profile?.credits ?? 0;
-  const creditsMax = plan === 'pro' ? 150 : 30;
+  const creditsMax = window.FORJE_CREDITS ? window.FORJE_CREDITS.cap(subStatus) : (subStatus === 'active' ? 700 : 50);
   const creditsPct = Math.min(100, credits > 0 ? Math.round(credits / creditsMax * 100) : 0);
-  const planLabel = { pro: 'Pro', free: 'Free', starter: 'Starter' }[plan] || 'Free';
+  const planLabel = subStatus === 'active' ? 'Studio' : 'Essai';
 
   const mainItems = [
     { key: 'generate', icon: 'sparkle',  label: 'Générer' },

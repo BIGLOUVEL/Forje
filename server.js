@@ -20,12 +20,25 @@ const ROOT = __dirname;
 const NM   = path.join(__dirname, 'node_modules');
 
 app.use(cors());
+
+// ─── Stripe webhook : raw body AVANT express.json (vérif signature) ──────────
+const { router: billingRouter, webhook: stripeWebhook } = require('./routes/billing');
+app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
+
 app.use(express.json({ limit: '20mb' }));
 
-// Fonts pour le Canvas côté client
+// Fonts pour le Canvas côté client (bibliothèque ForjeFonts — voir lib/fonts.js)
+app.use('/fonts/anton',            express.static(path.join(NM, '@fontsource/anton/files')));
 app.use('/fonts/bebas-neue',       express.static(path.join(NM, '@fontsource/bebas-neue/files')));
-app.use('/fonts/playfair-display', express.static(path.join(NM, '@fontsource/playfair-display/files')));
+app.use('/fonts/oswald',           express.static(path.join(NM, '@fontsource/oswald/files')));
+app.use('/fonts/archivo-black',    express.static(path.join(NM, '@fontsource/archivo-black/files')));
+app.use('/fonts/dm-sans',          express.static(path.join(NM, '@fontsource/dm-sans/files')));
+app.use('/fonts/inter',            express.static(path.join(NM, '@fontsource/inter/files')));
 app.use('/fonts/space-grotesk',    express.static(path.join(NM, '@fontsource/space-grotesk/files')));
+app.use('/fonts/sora',             express.static(path.join(NM, '@fontsource/sora/files')));
+app.use('/fonts/montserrat',       express.static(path.join(NM, '@fontsource/montserrat/files')));
+app.use('/fonts/playfair-display', express.static(path.join(NM, '@fontsource/playfair-display/files')));
+// legacy packs (encore référencés par d'anciens kits)
 app.use('/fonts/syne',             express.static(path.join(NM, '@fontsource/syne/files')));
 app.use('/fonts/dm-serif-display', express.static(path.join(NM, '@fontsource/dm-serif-display/files')));
 
@@ -62,6 +75,7 @@ app.use('/api/generate',     require('./routes/generate'));
 app.use('/api/brand',        require('./routes/brand'));
 app.use('/api/interactions', require('./routes/interactions'));
 app.use('/api/agent',        require('./routes/agent'));
+app.use('/api/billing',      billingRouter);
 
 const { router: rssRouter,     fetchAllFeeds }                              = require('./routes/rss');
 const { router: scoringRouter, scoreForCompte }                             = require('./routes/scoring');

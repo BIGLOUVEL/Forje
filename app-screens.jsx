@@ -13,41 +13,43 @@ async function renderActuCanvas(data) {
   await new Promise(function(res, rej) { bg.onload = res; bg.onerror = rej; bg.src = data.bgImage; });
   ctx.drawImage(bg, 0, 0, W, H);
 
-  // 2. Resolve pack typography from FONT_PACKS
-  var pack = (typeof FONT_PACKS !== 'undefined' && FONT_PACKS.find(function(p) { return p.id === data.packId; })) || null;
-  var headFamily  = pack ? pack.displayFont : 'Impact,sans-serif';
-  var headWeight  = pack ? (pack.headStyle.fontWeight || 900) : 900;
-  var headStyleV  = pack ? (pack.headStyle.fontStyle  || 'normal') : 'normal';
-  var headSpacing = pack ? (parseFloat(pack.headStyle.letterSpacing) || 0) : -1;
-  var doUppercase = pack ? (pack.headStyle.textTransform === 'uppercase') : true;
-  var catFamily   = pack ? pack.catStyle.fontFamily : 'Arial,sans-serif';
+  // 2. Resolve typography — la police effective vient du serveur (data.font), source de
+  //    vérité unique (bibliothèque ForjeFonts ou police custom). Le Canvas charge CETTE
+  //    police → effectivité réelle (l'aperçu reflète exactement le post généré).
+  var df = data.font || null;
+  var headWeight, headStyleV, headSpacing, doUppercase;
+  var headFamily, catFamily = 'DM Sans,Arial,sans-serif';
+  if (df && df.name) {
+    headWeight  = df.weight || 700;
+    headStyleV  = df.style  || 'normal';
+    doUppercase = df.transform === 'uppercase';
+    // letterSpacing fourni en em → converti en px (taille titre 88px)
+    var lsNum = parseFloat(df.letterSpacing || '0');
+    headSpacing = (df.letterSpacing && /em$/.test(df.letterSpacing)) ? Math.round(lsNum * 88) : (lsNum || 0);
+    headFamily  = "'" + df.name + "',Impact,sans-serif";
+  } else {
+    headWeight = 400; headStyleV = 'normal'; headSpacing = 1; doUppercase = true;
+    headFamily = "'Anton',Impact,sans-serif";
+  }
 
-  // 3. Load pack font via @font-face injection + document.fonts.load() (plus fiable que FontFace API pour Canvas)
-  var PACK_FONT_SRCS = {
-    'impact-news':    { family:'Bebas Neue',       url:'/fonts/bebas-neue/bebas-neue-latin-400-normal.woff',              weight:400, style:'normal' },
-    'edito-luxe':     { family:'Playfair Display',  url:'/fonts/playfair-display/playfair-display-latin-900-italic.woff',  weight:900, style:'italic' },
-    'digital-native': { family:'Space Grotesk',     url:'/fonts/space-grotesk/space-grotesk-latin-700-normal.woff',        weight:700, style:'normal' },
-    'minimal-power':  { family:'Syne',              url:'/fonts/syne/syne-latin-800-normal.woff',                          weight:800, style:'normal' },
-    'neo-retro':      { family:'DM Serif Display',  url:'/fonts/dm-serif-display/dm-serif-display-latin-400-italic.woff',  weight:400, style:'italic' },
-  };
-  var fi = PACK_FONT_SRCS[data.packId];
-  if (fi) {
-    // Injecte @font-face dans le DOM si pas encore présent (1 seule fois par famille)
-    var styleId = 'ff-' + data.packId;
+  // 3. Load font via @font-face injection + document.fonts.load() (fiable pour Canvas)
+  if (df && df.name && df.url) {
+    var fam = df.name;
+    var ext = (df.url.split('.').pop() || '').toLowerCase().split(/[?#]/)[0];
+    var fmt = ({ ttf:'truetype', otf:'opentype', woff:'woff', woff2:'woff2' })[ext] || 'woff';
+    var styleId = 'ff-forje-' + fam.replace(/\s+/g, '-').toLowerCase();
     if (!document.getElementById(styleId)) {
       var style = document.createElement('style');
       style.id = styleId;
-      style.textContent = '@font-face{font-family:\'' + fi.family + '\';src:url(\'' + fi.url + '\') format(\'woff\');font-weight:' + fi.weight + ';font-style:' + fi.style + ';}';
+      style.textContent = "@font-face{font-family:'" + fam + "';src:url('" + df.url + "') format('" + fmt + "');font-weight:" + headWeight + ";font-style:" + headStyleV + ";}";
       document.head.appendChild(style);
     }
-    // Attend que la police soit prête pour le Canvas
     try {
       await Promise.race([
-        document.fonts.load(fi.style + ' ' + fi.weight + ' 72px \'' + fi.family + '\''),
+        document.fonts.load(headStyleV + ' ' + headWeight + " 72px '" + fam + "'"),
         new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('font timeout')); }, 4000); }),
       ]);
     } catch(e) { console.warn('[Font]', e.message); }
-    headFamily = '\'' + fi.family + '\',' + headFamily;
   }
 
   // 4. Text-wrap helper (uses ctx.measureText)
@@ -119,6 +121,120 @@ async function renderActuCanvas(data) {
 }
 window.__renderActuCanvas = renderActuCanvas;
 
+// ─── Canvas renderer : citation avec la vraie police du client ───────────────
+// Sharp/librsvg ignore les @font-face base64 (rend toujours un serif système), donc
+// on compose le texte ici, sur Canvas, où document.fonts charge la vraie police.
+async function renderCitationCanvas(data) {
+  var W = 1080, H = 1350;
+  var canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext('2d');
+
+  // 1. Fond serveur (photo + vignette + logo)
+  var bg = new Image();
+  await new Promise(function(res, rej) { bg.onload = res; bg.onerror = rej; bg.src = data.bgImage; });
+  ctx.drawImage(bg, 0, 0, W, H);
+
+  // 2. Police effective (source de vérité : serveur → data.font)
+  var df = data.font || null;
+  var headWeight = (df && df.weight) || 700;
+  var headStyleV = (df && df.style)  || 'normal';
+  var headName   = (df && df.name)   || 'Anton';
+  var headFamily = "'" + headName + "',Impact,sans-serif";
+
+  // 3. Charge la police (@font-face + document.fonts.load) — fiable pour Canvas
+  if (df && df.name && df.url) {
+    var ext = (df.url.split('.').pop() || '').toLowerCase().split(/[?#]/)[0];
+    var fmt = ({ ttf:'truetype', otf:'opentype', woff:'woff', woff2:'woff2' })[ext] || 'woff';
+    var styleId = 'ff-forje-' + headName.replace(/\s+/g, '-').toLowerCase();
+    if (!document.getElementById(styleId)) {
+      var style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = "@font-face{font-family:'" + headName + "';src:url('" + df.url + "') format('" + fmt + "');font-weight:" + headWeight + ";font-style:" + headStyleV + ";}";
+      document.head.appendChild(style);
+    }
+    try {
+      await Promise.race([
+        document.fonts.load(headStyleV + ' ' + headWeight + " 64px '" + headName + "'"),
+        new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('font timeout')); }, 4000); }),
+      ]);
+    } catch(e) { console.warn('[Font]', e.message); }
+  }
+
+  var accent = data.accentColor || '#FFFFFF';
+  var maxW = W - 200;
+
+  function wrapLines(text, font) {
+    ctx.font = font;
+    var words = String(text).split(' '), lines = [], cur = '';
+    words.forEach(function(w) {
+      var cand = cur ? cur + ' ' + w : w;
+      if (ctx.measureText(cand).width > maxW && cur) { lines.push(cur); cur = w; }
+      else { cur = cand; }
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
+  // 4. Citation — taille adaptée à la longueur
+  var qText = String(data.quoteText || '');
+  var qSize = qText.length > 140 ? 44 : qText.length > 90 ? 52 : 60;
+  var qFont = headStyleV + ' ' + headWeight + ' ' + qSize + 'px ' + headFamily;
+  var qLines = wrapLines(qText, qFont);
+  var qLineH = Math.round(qSize * 1.26);
+  var qH = qLines.length * qLineH;
+
+  // 5. Métriques auteur
+  var nameText = String(data.authorName || '').toUpperCase();
+  var titleText = data.authorTitle ? String(data.authorTitle) : '';
+  var markH = 70, gap1 = 28, sepGap = 40, nameH = 40, titleH = titleText ? 34 : 0;
+  var total = markH + gap1 + qH + sepGap + nameH + titleH;
+  var startY = Math.round((H - total) / 2) + 50;
+
+  ctx.textAlign = 'center';
+  var cx = W / 2;
+
+  // 6. Guillemet décoratif (accent)
+  ctx.fillStyle = accent;
+  ctx.globalAlpha = 0.5;
+  ctx.font = "700 120px Georgia,serif";
+  ctx.fillText('“', cx, startY + markH);
+  ctx.globalAlpha = 1;
+
+  // 7. Citation (blanc, ombre pour lisibilité)
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 3;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = qFont;
+  var qy = startY + markH + gap1;
+  qLines.forEach(function(line, i) { ctx.fillText(line, cx, qy + qSize + i * qLineH); });
+
+  // 8. Trait séparateur (accent)
+  var sepY = qy + qH + Math.round(sepGap / 2);
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = accent; ctx.globalAlpha = 0.75; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx - 50, sepY); ctx.lineTo(cx + 50, sepY); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // 9. Nom de l'auteur (police du client) + fonction
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = headStyleV + ' ' + headWeight + ' 32px ' + headFamily;
+  ctx.letterSpacing = '1px';
+  var nameY = sepY + 20 + nameH;
+  ctx.fillText(nameText, cx, nameY);
+  ctx.letterSpacing = '0px';
+  if (titleText) {
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = 'rgba(255,255,255,0.66)';
+    ctx.font = '400 23px DM Sans,Arial,sans-serif';
+    ctx.fillText(titleText, cx, nameY + 34);
+  }
+
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.textAlign = 'left';
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
+window.__renderCitationCanvas = renderCitationCanvas;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GENERATE — hub (Higgsfield-like) + creation (2 variations via tweak)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -133,11 +249,11 @@ const GenerateScreen = ({ layoutVariant, preset, onPickPreset, onBack, onGoToBoa
 
 const PRESETS = [
   { id: 'actu',     label: 'Actualité', desc: 'Du breaking au post en 90 secondes',
-    tag: 'Le plus utilisé', icon: 'news',   img: 'assets/actu.webp',      visual: 'actu'  },
+    tag: 'Le plus utilisé', icon: 'news',   img: 'assets/actu.webp',      vid: 'assets/actu-loop.mp4',      visual: 'actu'  },
   { id: 'citation', label: 'Citation',  desc: 'Une phrase forte, mise en image',
-    icon: 'quote',  img: 'assets/citation.webp',  visual: 'quote' },
+    icon: 'quote',  img: 'assets/citation.webp',  vid: 'assets/citation-loop.mp4',  visual: 'quote' },
   { id: 'deepdive', label: 'Deep Dive', desc: 'Carousel 6 slides — le format le plus sauvegardé',
-    tag: 'Meilleur reach', icon: 'layers', img: 'assets/deep-dive.webp',  visual: 'bts'   },
+    tag: 'Meilleur reach', icon: 'layers', img: 'assets/deep-dive.webp',  vid: 'assets/deep-dive-loop.mp4', visual: 'bts'   },
 ];
 
 const HUB_PLACEHOLDERS = [
@@ -414,21 +530,36 @@ const GenerateHub = ({ onPick }) => {
   );
 };
 
-const PresetCard = ({ preset, onPick }) => (
-  <button className="preset-card" onClick={onPick}>
-    {preset.tag && <span className="preset-tag">{preset.tag}</span>}
-    <img className="preset-card-img" src={preset.img} alt={preset.label} draggable="false"/>
-    <div className="preset-card-overlay">
-      <div className="preset-card-label">{preset.label}</div>
-      <div className="preset-card-desc">{preset.desc}</div>
-    </div>
-    <div className="preset-card-arrow">
-      <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-        <path d="M2.5 6.5h8M7.5 3l3.5 3.5L7.5 10" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    </div>
-  </button>
-);
+const PresetCard = ({ preset, onPick }) => {
+  var [hover, setHover] = useState(false);
+  var vidRef = useRef(null);
+  useEffect(function() {
+    var v = vidRef.current; if (!v) return;
+    if (hover) { try { v.currentTime = 0; v.play().catch(function(){}); } catch(_){} }
+    else { try { v.pause(); } catch(_){} }
+  }, [hover]);
+  return (
+    <button className="preset-card" onClick={onPick}
+      onMouseEnter={function(){ setHover(true); }} onMouseLeave={function(){ setHover(false); }}>
+      {preset.tag && <span className="preset-tag">{preset.tag}</span>}
+      <img className="preset-card-img" src={preset.img} alt={preset.label} draggable="false"/>
+      {preset.vid && (
+        <video ref={vidRef} className="preset-card-vid" src={preset.vid} muted loop playsInline preload="none"
+          style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
+            opacity: hover ? 1 : 0, transition:'opacity .3s ease', pointerEvents:'none', zIndex:1 }}/>
+      )}
+      <div className="preset-card-overlay">
+        <div className="preset-card-label">{preset.label}</div>
+        <div className="preset-card-desc">{preset.desc}</div>
+      </div>
+      <div className="preset-card-arrow">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <path d="M2.5 6.5h8M7.5 3l3.5 3.5L7.5 10" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+    </button>
+  );
+};
 
 // Tiny stylized preview of each format (SVG-driven, chromatic world)
 const PresetPreview = ({ kind }) => {
@@ -524,13 +655,15 @@ async function veilleFetch(path, opts) {
   return fetch(GEN_API + path, Object.assign({}, opts, { headers }));
 }
 
-const GenFormInput = ({ value, onChange, placeholder, type, rows }) => {
+const GenFormInput = ({ value, onChange, placeholder, type, rows, maxLength }) => {
   var r = rows || 3;
+  var handleChange = e => onChange(maxLength ? e.target.value.slice(0, maxLength) : e.target.value);
   if (type === 'input') {
     return (
       <input
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={handleChange}
+        maxLength={maxLength}
         placeholder={placeholder}
         style={{ width:'100%', boxSizing:'border-box', background:'var(--app-surface-2)',
           border:'1px solid var(--app-line)', borderRadius:'var(--radius)', padding:'9px 12px',
@@ -540,13 +673,21 @@ const GenFormInput = ({ value, onChange, placeholder, type, rows }) => {
     );
   }
   return (
-    <textarea
-      className="tool-textarea"
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      rows={r}
-    />
+    <>
+      <textarea
+        className="tool-textarea"
+        value={value}
+        onChange={handleChange}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        rows={r}
+      />
+      {maxLength && (
+        <div className="tool-sub" style={{ textAlign:'right', opacity: (value||'').length > maxLength - 20 ? 1 : 0.5 }}>
+          {(value||'').length} / {maxLength}
+        </div>
+      )}
+    </>
   );
 };
 
@@ -706,7 +847,7 @@ const GenFormFields = ({ preset, s }) => {
 
   if (preset.id === 'citation') return (<>
     <ToolSection title="Citation" icon="quote">
-      <GenFormInput value={s.quoteText} onChange={s.setQuoteText} rows={4}
+      <GenFormInput value={s.quoteText} onChange={s.setQuoteText} rows={4} maxLength={200}
         placeholder="Colle la citation ici..."/>
     </ToolSection>
     <ToolSection title="Auteur" icon="target">
@@ -714,6 +855,11 @@ const GenFormFields = ({ preset, s }) => {
         placeholder="Nom de l auteur"/>
       <GenFormInput type="input" value={s.authorTitle} onChange={s.setAuthorTitle}
         placeholder="Titre / fonction (optionnel)"/>
+    </ToolSection>
+    <ToolSection title="Photo" icon="image">
+      <PhotoDropzone photoData={s.photoData} setPhotoData={s.setPhotoData}
+        photoUrl={s.photoUrl} setPhotoUrl={s.setPhotoUrl}/>
+      <div className="tool-sub">Sans photo, Forje cherche le portrait via Serper</div>
     </ToolSection>
   </>);
 
@@ -932,6 +1078,15 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
     deepdive: topic.trim().length > 5,
   }[preset.id] || false;
 
+  // Coût en crédits de la génération en cours (transparence avant clic)
+  const genCost = (function() {
+    const C = (window.FORJE_CREDITS && window.FORJE_CREDITS.costs) || { actu:2, citation:1, deep_dive_light:3, deep_dive_premium:8 };
+    if (preset.id === 'actu')     return C.actu;
+    if (preset.id === 'citation') return C.citation;
+    if (preset.id === 'deepdive') return (ddImageMode === 'genai' || ddImageMode === 'hybrid') ? C.deep_dive_premium : C.deep_dive_light;
+    return 1;
+  })();
+
   const handleGenerate = async () => {
     const lId = Date.now();
     loadingIdRef.current = lId;
@@ -954,13 +1109,15 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
       const ep   = { actu:'/generate/actu', citation:'/generate/citation', deepdive:'/generate/deepdive' }[preset.id];
       const body = {
         actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, clientId, imageMode, styleRefData: styleRefData || undefined },
-        citation: { quoteText, authorName, authorTitle: authorTitle || undefined, userId, clientId },
+        citation: { quoteText, authorName, authorTitle: authorTitle || undefined, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, clientId },
         deepdive: { topic, userId, clientId, imageMode: ddImageMode },
       }[preset.id];
       const res  = await veilleFetch(ep, { method: 'POST', body: JSON.stringify(body), signal: _abortController.signal });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur génération');
-      if (data.bgImage) { data.image = await renderActuCanvas(data); }
+      if (!res.ok) throw new Error(data.message || data.error || 'Erreur génération');
+      // Solde de crédits renvoyé par le serveur → maj immédiate de la sidebar
+      if (typeof data.creditsLeft === 'number') window.__applyCredits?.(data.creditsLeft);
+      if (data.bgImage) { data.image = await (preset.id === 'citation' ? renderCitationCanvas(data) : renderActuCanvas(data)); }
       window.__setGenToast?.({ status: 'ready', label: preset.label, presetId: preset.id, preset });
       const entry = { ...data, id: lId, preset_id: preset.id };
       // Sauvegarde Supabase — toujours, même si le composant est démonté
@@ -1117,7 +1274,7 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
             disabled={generating}>
             {generating
               ? <><span style={{ display:'inline-block', width:13, height:13, border:'2px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'vb-spin .7s linear infinite' }}/> Génération…</>
-              : <><AppIcon name="sparkle" size={15}/> Générer</>}
+              : <><AppIcon name="sparkle" size={15}/> Générer <span style={{ opacity:.65, fontWeight:500 }}>· {genCost} {genCost > 1 ? 'crédits' : 'crédit'}</span></>}
           </button>
         </div>
 
@@ -1229,6 +1386,14 @@ const GenFeedCard = ({ item, onExpand }) => {
             {item.category && <span className="caption-label" style={{fontSize:11}}>{item.category}</span>}
             <div className="gen-feed-title">{item.title}</div>
             {item.subtitle && <div className="gen-feed-subtitle">{item.subtitle}</div>}
+          </div>
+        )}
+        {item.photoFallback && (
+          <div style={{ display:'flex', alignItems:'flex-start', gap:8, margin:'2px 0 4px', padding:'8px 11px',
+            background:'rgba(245,158,11,.10)', border:'1px solid rgba(245,158,11,.28)', borderRadius:9,
+            fontSize:12, color:'#b45309', lineHeight:1.45 }}>
+            <AppIcon name="image" size={13}/>
+            <span>{item.notice || 'Aucune photo pertinente trouvée — ajoute ta propre image pour un rendu plus fort.'}</span>
           </div>
         )}
         <div className="gen-feed-caption-wrap">
@@ -1987,6 +2152,165 @@ const BrandSect = ({ num, title, desc, tip, children }) => (
   </div>
 );
 
+// ─── Paper-motion : animations de packs déclenchées au clic ──────────────────
+const PACK_ANIM_CSS = `
+@font-face{font-family:'Bebas Neue';src:url('/fonts/bebas-neue/bebas-neue-latin-400-normal.woff') format('woff');font-weight:400;font-display:block;}
+@font-face{font-family:'PlayfairIt';src:url('/fonts/playfair-display/playfair-display-latin-900-italic.woff') format('woff');font-weight:900;font-style:italic;font-display:block;}
+@font-face{font-family:'SpaceGro';src:url('/fonts/space-grotesk/space-grotesk-latin-700-normal.woff') format('woff');font-weight:700;font-display:block;}
+@font-face{font-family:'SyneF';src:url('/fonts/syne/syne-latin-800-normal.woff') format('woff');font-weight:800;font-display:block;}
+@font-face{font-family:'DMSerifIt';src:url('/fonts/dm-serif-display/dm-serif-display-latin-400-italic.woff') format('woff');font-weight:400;font-style:italic;font-display:block;}
+
+.fpk-wrap{position:relative;width:156px;height:208px;border-radius:12px;overflow:hidden;cursor:pointer;flex:0 0 auto;transition:box-shadow .15s;}
+.fpk{position:absolute;top:0;left:0;width:300px;height:400px;transform:scale(.52);transform-origin:top left;}
+.fpk .cat{position:absolute;z-index:4;font-weight:700;font-size:10px;letter-spacing:.28em;text-transform:uppercase;}
+.fpk .headline{position:absolute;z-index:4;}
+.fpk .headline .ln{display:block;overflow:hidden;}
+.fpk .headline .ln > span{display:inline-block;}
+.fpk .grain{position:absolute;inset:-4%;z-index:6;pointer-events:none;mix-blend-mode:multiply;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");}
+@keyframes fpk-jit{0%{transform:translate(0,0)}25%{transform:translate(-1px,1px)}50%{transform:translate(1px,-1px)}75%{transform:translate(-1px,-1px)}100%{transform:translate(1px,1px)}}
+@keyframes fpk-fade{from{opacity:0}to{opacity:1}}
+
+/* IMPACT */
+.fpk-impact{background:#f4f0e6;}
+.fpk-impact .strip{position:absolute;left:-20%;width:150%;background:#e11d48;box-shadow:0 6px 14px rgba(180,20,60,.35);transform:rotate(-14deg);}
+.fpk-impact .s1{top:52px;height:70px;} .fpk-impact .s2{top:132px;height:34px;background:#151515;} .fpk-impact .s3{top:180px;height:22px;}
+@keyframes fpk-imp-slide{from{transform:rotate(-14deg) translateX(-130%)}82%{transform:rotate(-14deg) translateX(4%)}to{transform:rotate(-14deg) translateX(0)}}
+.fpk-impact.play .s1{animation:fpk-imp-slide .45s steps(3) .10s both;} .fpk-impact.play .s2{animation:fpk-imp-slide .45s steps(3) .22s both;} .fpk-impact.play .s3{animation:fpk-imp-slide .45s steps(3) .30s both;}
+.fpk-impact .footer{position:absolute;inset:auto 0 0 0;height:180px;background:linear-gradient(180deg,rgba(20,20,20,0),#141414 36%);z-index:2;}
+.fpk-impact .cat{left:20px;bottom:140px;color:#fff;background:#e11d48;padding:5px 10px;border-radius:3px;transform:rotate(-2deg);}
+@keyframes fpk-imp-stamp{from{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.18) rotate(3deg)}to{transform:scale(1) rotate(-2deg)}}
+.fpk-impact.play .cat{animation:fpk-imp-stamp .3s steps(4) .9s both;}
+.fpk-impact .headline{left:18px;right:14px;bottom:30px;font-family:'Bebas Neue',Impact,sans-serif;color:#fff;font-size:56px;line-height:.9;letter-spacing:2px;}
+@keyframes fpk-imp-rev{from{transform:translateY(108%)}to{transform:translateY(0)}}
+.fpk-impact.play .l1 > span{animation:fpk-imp-rev .4s steps(3) 1.1s both;} .fpk-impact.play .l2 > span{animation:fpk-imp-rev .4s steps(3) 1.28s both;}
+.fpk-impact .grain{opacity:.10;animation:fpk-jit .5s steps(1) infinite;}
+
+/* EDITO */
+.fpk-edito{background:#1a1612;}
+.fpk-edito .glow{position:absolute;inset:0;z-index:1;background:radial-gradient(120% 80% at 70% 20%,rgba(200,160,96,.18),transparent 60%);}
+.fpk-edito.play .glow{animation:fpk-fade 1.4s ease .1s both;}
+.fpk-edito .hair{position:absolute;left:24px;height:1px;background:#a08060;width:252px;z-index:3;}
+.fpk-edito .h1{top:60px;} .fpk-edito .h2{bottom:120px;}
+@keyframes fpk-ed-line{from{width:0}to{width:252px}}
+.fpk-edito.play .h1{animation:fpk-ed-line 1.1s ease .3s both;} .fpk-edito.play .h2{animation:fpk-ed-line 1.1s ease 1.4s both;}
+.fpk-edito .cat{left:24px;top:74px;color:#a08060;}
+.fpk-edito.play .cat{animation:fpk-fade 1s ease .5s both;}
+.fpk-edito .headline{left:24px;right:24px;top:110px;font-family:'PlayfairIt',Georgia,serif;font-style:italic;font-weight:900;color:#e8ddc8;font-size:40px;line-height:1.06;letter-spacing:-.01em;}
+@keyframes fpk-ed-rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.fpk-edito.play .l1 > span{animation:fpk-ed-rise 1s cubic-bezier(.2,.7,.2,1) .7s both;} .fpk-edito.play .l2 > span{animation:fpk-ed-rise 1s cubic-bezier(.2,.7,.2,1) .95s both;} .fpk-edito.play .l3 > span{animation:fpk-ed-rise 1s cubic-bezier(.2,.7,.2,1) 1.2s both;}
+.fpk-edito .sub{position:absolute;left:24px;bottom:88px;z-index:4;font-family:'PlayfairIt',serif;font-style:italic;color:#a08060;font-size:15px;}
+.fpk-edito.play .sub{animation:fpk-fade 1.1s ease 1.6s both;}
+.fpk-edito .grain{opacity:.06;}
+
+/* DIGITAL */
+.fpk-digital{background:#0d0f14;}
+.fpk-digital .grid-bg{position:absolute;inset:0;z-index:1;opacity:.5;background-image:linear-gradient(#1a2540 1px,transparent 1px),linear-gradient(90deg,#1a2540 1px,transparent 1px);background-size:26px 26px;}
+@keyframes fpk-dg-grid{from{opacity:0}to{opacity:.5}}
+.fpk-digital.play .grid-bg{animation:fpk-dg-grid .8s steps(4) .1s both;}
+.fpk-digital .scan{position:absolute;left:0;right:0;height:120px;z-index:2;background:linear-gradient(180deg,transparent,rgba(64,96,255,.12),transparent);top:-120px;}
+@keyframes fpk-dg-scan{0%{top:-120px}100%{top:420px}}
+.fpk-digital.play .scan{animation:fpk-dg-scan 2.6s linear 1s infinite;}
+.fpk-digital .cat{left:22px;top:26px;color:#4060ff;font-family:'SpaceGro',monospace;letter-spacing:.1em;text-transform:lowercase;white-space:nowrap;overflow:hidden;width:180px;}
+@keyframes fpk-dg-type{from{width:0}to{width:180px}}
+.fpk-digital.play .cat{animation:fpk-dg-type 1s steps(18) .5s both;}
+.fpk-digital .headline{left:22px;right:18px;top:150px;font-family:'SpaceGro',Arial,sans-serif;font-weight:700;color:#e8eeff;font-size:44px;line-height:1;letter-spacing:-.03em;}
+.fpk-digital .headline .ln > span{clip-path:inset(0 0 0 0);}
+@keyframes fpk-dg-wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes fpk-dg-flick{0%,100%{color:#e8eeff}50%{color:#4060ff;transform:translateX(2px)}}
+.fpk-digital.play .l1 > span{animation:fpk-dg-wipe .5s steps(6) 1.15s both, fpk-dg-flick .25s steps(2) 1.15s 3;} .fpk-digital.play .l2 > span{animation:fpk-dg-wipe .5s steps(6) 1.45s both, fpk-dg-flick .25s steps(2) 1.45s 3;}
+.fpk-digital .cursor{position:absolute;z-index:4;width:16px;height:6px;background:#4060ff;left:22px;bottom:110px;opacity:0;}
+@keyframes fpk-dg-blink{0%,50%{opacity:1}51%,100%{opacity:0}}
+.fpk-digital.play .cursor{animation:fpk-fade .1s 1.9s both, fpk-dg-blink .8s steps(1) 2s infinite;}
+.fpk-digital .grain{opacity:.05;}
+
+/* MINIMAL */
+.fpk-minimal{background:#f3f2ef;}
+.fpk-minimal .cat{left:26px;top:40px;color:#a6a6a6;letter-spacing:.42em;}
+@keyframes fpk-mp-in{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
+.fpk-minimal.play .cat{animation:fpk-mp-in .8s cubic-bezier(.2,.7,.2,1) .35s both;}
+.fpk-minimal .dot{position:absolute;right:26px;top:37px;width:13px;height:13px;border-radius:50%;background:#111;z-index:4;}
+@keyframes fpk-mp-dot{from{transform:scale(0)}to{transform:scale(1)}}
+.fpk-minimal.play .dot{animation:fpk-mp-dot .5s cubic-bezier(.34,1.56,.64,1) .55s both;}
+.fpk-minimal .line{position:absolute;left:26px;top:68px;height:3px;width:74px;background:#111;z-index:3;}
+@keyframes fpk-mp-draw{from{width:0}to{width:74px}}
+.fpk-minimal.play .line{animation:fpk-mp-draw .8s cubic-bezier(.85,0,.15,1) .55s both;}
+.fpk-minimal .headline{left:26px;right:18px;bottom:42px;font-family:'SyneF','Arial Black',sans-serif;font-weight:800;color:#111;font-size:39px;line-height:1.0;letter-spacing:-.035em;text-transform:uppercase;}
+.fpk-minimal .headline .ln{margin-top:2px;}
+.fpk-minimal .headline .ln > span{clip-path:inset(0 0 -12% 0);}
+@keyframes fpk-mp-wipe{from{clip-path:inset(0 100% -12% 0);transform:translateX(-14px);opacity:.001}to{clip-path:inset(0 0 -12% 0);transform:translateX(0);opacity:1}}
+.fpk-minimal.play .l1 > span{animation:fpk-mp-wipe .6s cubic-bezier(.76,0,.24,1) .75s both;} .fpk-minimal.play .l2 > span{animation:fpk-mp-wipe .6s cubic-bezier(.76,0,.24,1) .95s both;} .fpk-minimal.play .l3 > span{animation:fpk-mp-wipe .6s cubic-bezier(.76,0,.24,1) 1.15s both;}
+.fpk-minimal .grain{opacity:.045;}
+
+/* NEO */
+.fpk-neo{background:#241a12;}
+.fpk-neo .warm{position:absolute;inset:0;z-index:1;background:radial-gradient(120% 90% at 50% 60%,rgba(210,150,80,.18),transparent 55%),linear-gradient(180deg,rgba(0,0,0,.35),transparent 30%,transparent 70%,rgba(0,0,0,.5));}
+.fpk-neo.play .warm{animation:fpk-fade 1.4s ease .1s both;}
+.fpk-neo .leak{position:absolute;top:-40%;left:0;width:55%;height:180%;z-index:3;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(255,186,110,.35),rgba(255,150,70,.15),transparent);transform:rotate(16deg) translateX(-140px);opacity:0;mix-blend-mode:screen;}
+@keyframes fpk-neo-leak{0%{opacity:0;transform:rotate(16deg) translateX(-140px)}25%{opacity:1}100%{opacity:0;transform:rotate(16deg) translateX(360px)}}
+.fpk-neo.play .leak{animation:fpk-neo-leak 2.6s cubic-bezier(.4,0,.5,1) .5s both;}
+.fpk-neo .scratch{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:.4;mix-blend-mode:overlay;background:repeating-linear-gradient(90deg,transparent 0 36px,rgba(0,0,0,.16) 36px 37px,transparent 37px 70px,rgba(255,255,255,.05) 70px 71px);animation:fpk-jit .28s steps(1) infinite;}
+.fpk-neo .cat{left:24px;top:66px;color:#d09a63;letter-spacing:.3em;}
+.fpk-neo.play .cat{animation:fpk-fade 1s ease .5s both;}
+.fpk-neo .headline{left:24px;right:22px;top:102px;font-family:'DMSerifIt',Georgia,serif;font-style:italic;color:#f2e6d2;font-size:40px;line-height:1.05;}
+@keyframes fpk-neo-focus{from{opacity:0;filter:blur(12px);transform:scale(1.06)}60%{opacity:1}to{opacity:1;filter:blur(0);transform:scale(1)}}
+.fpk-neo.play .l1 > span{animation:fpk-neo-focus 1.2s cubic-bezier(.3,.7,.3,1) .8s both;} .fpk-neo.play .l2 > span{animation:fpk-neo-focus 1.2s cubic-bezier(.3,.7,.3,1) 1.15s both;}
+.fpk-neo .sub{position:absolute;left:24px;bottom:66px;z-index:4;font-family:'DMSerifIt',serif;font-style:italic;color:#b78a5c;font-size:15px;}
+.fpk-neo.play .sub{animation:fpk-fade 1.2s ease 1.6s both;}
+.fpk-neo .grain{opacity:.16;animation:fpk-jit .32s steps(1) infinite;}
+`;
+
+const PACK_ID_TO_ANIM = { 'impact-news':'impact', 'edito-luxe':'edito', 'digital-native':'digital', 'minimal-power':'minimal', 'neo-retro':'neo' };
+
+function packAnimInner(id) {
+  switch (id) {
+    case 'impact-news': return (<>
+      <div className="strip s1"/><div className="strip s2"/><div className="strip s3"/><div className="footer"/>
+      <div className="cat">Breaking</div>
+      <div className="headline"><span className="ln l1"><span>LA FRANCE EN</span></span><span className="ln l2"><span>ALERTE</span></span></div>
+      <div className="grain"/></>);
+    case 'edito-luxe': return (<>
+      <div className="glow"/><div className="hair h1"/>
+      <div className="cat">Culture — Cinéma</div>
+      <div className="headline"><span className="ln l1"><span>L'art de</span></span><span className="ln l2"><span>prendre</span></span><span className="ln l3"><span>le temps</span></span></div>
+      <div className="hair h2"/><div className="sub">Rencontre avec Sofia Coppola</div>
+      <div className="grain"/></>);
+    case 'digital-native': return (<>
+      <div className="grid-bg"/><div className="scan"/>
+      <div className="cat">// tech — 09:41 am</div>
+      <div className="headline"><span className="ln l1"><span>L'IA</span></span><span className="ln l2"><span>change tout.</span></span></div>
+      <div className="cursor"/><div className="grain"/></>);
+    case 'minimal-power': return (<>
+      <div className="cat">Opinion — Finance</div><div className="dot"/><div className="line"/>
+      <div className="headline"><span className="ln l1"><span>Bourse</span></span><span className="ln l2"><span>crash</span></span><span className="ln l3"><span>2026</span></span></div>
+      <div className="grain"/></>);
+    case 'neo-retro': return (<>
+      <div className="warm"/><div className="leak"/>
+      <div className="cat">Société — Enquête</div>
+      <div className="headline"><span className="ln l1"><span>Vivre</span></span><span className="ln l2"><span>autrement, enfin.</span></span></div>
+      <div className="sub">Le grand retour des communs</div><div className="scratch"/><div className="grain"/></>);
+    default: return null;
+  }
+}
+
+// Carte de pack animée — l'animation se rejoue à chaque clic (qui sélectionne aussi le pack)
+const PackAnimatedCard = function(props) {
+  var pack = props.pack, active = props.active, onSelect = props.onSelect;
+  var [tick, setTick] = useState(0);
+  var anim = PACK_ID_TO_ANIM[pack.id] || 'impact';
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
+      <div className="fpk-wrap"
+        onClick={function(){ onSelect(); setTick(tick + 1); }}
+        style={{ boxShadow: active ? '0 0 0 2px var(--app-accent)' : '0 0 0 1px var(--app-line)' }}>
+        <div className={'fpk fpk-' + anim + (tick > 0 ? ' play' : '')} key={tick}>
+          {packAnimInner(pack.id)}
+        </div>
+      </div>
+      <div style={{ fontSize:11, fontWeight:600, color: active ? 'var(--app-accent)' : 'var(--app-fg-2)' }}>{pack.name}</div>
+    </div>
+  );
+};
+
 const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   var [name,            setName]            = useState('');
   var [logoUrl,         setLogoUrl]         = useState('');
@@ -1995,7 +2319,17 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   var [styleRefUploading, setStyleRefUploading] = useState(false);
   var [primaryColor,    setPrimaryColor]    = useState('#6366F1');
   var [accentColor,     setAccentColor]     = useState('#10B981');
-  var [fontPrimary,     setFontPrimary]     = useState('DM Sans');
+  var [fontPrimary,     setFontPrimary]     = useState('Bebas Neue');
+  var [fontBody,        setFontBody]        = useState('Barlow');
+  var [fontId,          setFontId]          = useState('bebas-neue');
+  var [fontSet,         setFontSet]         = useState('impact');
+  var [fontIsCustom,    setFontIsCustom]    = useState(false);
+  var [fontCustomUrl,   setFontCustomUrl]   = useState('');   // titre importé
+  var [fontBodyUrl,     setFontBodyUrl]     = useState('');   // corps importé
+  var [fontMode,        setFontMode]        = useState('packs'); // 'packs' | 'custom'
+  var [fontUploading,   setFontUploading]   = useState('');   // '' | 'title' | 'body'
+  var [fontUploadErr,   setFontUploadErr]   = useState('');
+  var [fontRights,      setFontRights]      = useState(false);
   var [mood,            setMood]            = useState('');
   var [toneTags,        setToneTags]        = useState([]);
   var [graphicStyle,    setGraphicStyle]    = useState('');
@@ -2013,7 +2347,6 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   var [igAnalyzing,       setIgAnalyzing]       = useState(false);
   var [igResult,          setIgResult]          = useState(null);
   var [igErr,             setIgErr]             = useState('');
-  var [fontSecondary,     setFontSecondary]     = useState('');
   var [badgeVisible,      setBadgeVisible]      = useState(true);
   var [barVisible,        setBarVisible]        = useState(true);
   var [confirmingDelete,  setConfirmingDelete]  = useState(false);
@@ -2027,7 +2360,9 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
     var sb = window.__supabase; var user = window.__currentUser;
     // Reset du formulaire à chaque changement de compte
     setName(''); setLogoUrl(''); setStyleRefUrl('');
-    setPrimaryColor('#6366F1'); setAccentColor('#10B981'); setFontPrimary('DM Sans'); setFontSecondary('');
+    setPrimaryColor('#6366F1'); setAccentColor('#10B981'); setFontPrimary('Bebas Neue'); setFontBody('Barlow');
+    setFontId('bebas-neue'); setFontSet('impact'); setFontIsCustom(false); setFontCustomUrl(''); setFontBodyUrl(''); setFontMode('packs');
+    setFontUploading(''); setFontUploadErr(''); setFontRights(false);
     setMood(''); setToneTags([]); setGraphicStyle(''); setTopics([]);
     setInstaHandle(''); setHashtags([]); setPreferredFormat('4:5');
     setBadgeVisible(true); setBarVisible(true); setLogoStyle('badge');
@@ -2045,14 +2380,24 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
           setLogoUrl(d.logo_url || '');
           if (d.brand_colors && d.brand_colors[0]) setPrimaryColor(d.brand_colors[0]);
           if (d.brand_colors && d.brand_colors[1]) setAccentColor(d.brand_colors[1]);
-          setFontPrimary(d.font_primary || 'DM Sans');
-          setFontSecondary(d.font_secondary || '');
+          setFontPrimary(d.font_primary || 'Bebas Neue');
+          setFontBody(d.font_body || d.font_secondary || 'Barlow');
+          setFontId(d.font_id || 'bebas-neue');
+          setFontSet(d.font_set || 'impact');
+          setFontIsCustom(!!d.font_is_custom);
+          setFontCustomUrl(d.font_custom_url || '');
+          setFontBodyUrl(d.font_body_url || '');
           setMood(d.mood || '');
           setToneTags(d.tone_tags || []);
           var gs = d.graphic_style || '';
           var resolvedGs = STYLE_TO_PACK[gs] || gs;
-          if (!resolvedGs && d.font_primary) resolvedGs = 'custom';
+          if (!resolvedGs) resolvedGs = 'impact-news';
           setGraphicStyle(resolvedGs);
+          // Mode = Personnalisé si style custom OU police importée, sinon Packs
+          setFontMode((resolvedGs === 'custom' || d.font_is_custom || d.font_body_url) ? 'custom' : 'packs');
+          // Recharge les polices custom importées pour l'aperçu (persistance après reload)
+          if (d.font_is_custom && d.font_custom_url) loadCustomFontFace(d.font_primary, d.font_custom_url);
+          if (d.font_body_url) loadCustomFontFace(d.font_body, d.font_body_url);
           setTopics(d.topics || []);
           setInstaHandle(d.instagram_handle || '');
           setHashtags(d.hashtags || []);
@@ -2104,6 +2449,107 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
     link.id = key; link.rel = 'stylesheet';
     link.href = 'https://fonts.googleapis.com/css2?family=' + name.trim().replace(/\s+/g, '+') + ':ital,wght@0,400;0,700;1,400&display=swap';
     document.head.appendChild(link);
+  };
+
+  // Injecte le CSS des animations de packs (paper-motion) une seule fois
+  useEffect(function() {
+    var id = 'fpk-anim-css';
+    if (document.getElementById(id)) return;
+    var s = document.createElement('style');
+    s.id = id; s.textContent = PACK_ANIM_CSS;
+    document.head.appendChild(s);
+  }, []);
+
+  // Charge toutes les polices de la bibliothèque ForjeFonts (fichiers locaux) pour l'aperçu
+  useEffect(function() {
+    var lib = (window.ForjeFonts && window.ForjeFonts.FONT_LIBRARY) || [];
+    var id = 'forje-fonts-lib';
+    if (document.getElementById(id) || !lib.length) return;
+    var css = lib.map(function(f) {
+      return "@font-face{font-family:'" + f.name + "';src:url('" + f.urlPath + "') format('woff');font-weight:" + f.weight + ";font-style:" + f.style + ";font-display:swap;}";
+    }).join('');
+    var s = document.createElement('style');
+    s.id = id; s.textContent = css;
+    document.head.appendChild(s);
+  }, []);
+
+  // Charge une police custom (URL Supabase) dans le navigateur pour l'aperçu live
+  var loadCustomFontFace = async function(name, url) {
+    if (!name || !url) return;
+    try {
+      var face = new FontFace(name, "url('" + url + "')");
+      await face.load();
+      document.fonts.add(face);
+    } catch(e) { console.warn('[FontFace]', e.message); }
+  };
+
+  // Import d'une police custom → Supabase Storage + état + aperçu live
+  // slot = 'title' | 'body'
+  var handleFontUpload = async function(file, slot) {
+    setFontUploadErr('');
+    if (!file) return;
+    if (!fontRights) { setFontUploadErr('Confirme que tu détiens les droits d\'usage de cette police.'); return; }
+    var ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+    if (['.ttf', '.otf', '.woff', '.woff2'].indexOf(ext) === -1) {
+      setFontUploadErr('Format non supporté. Utilise .ttf, .otf, .woff ou .woff2'); return;
+    }
+    if (file.size > 5 * 1024 * 1024) { setFontUploadErr('Fichier trop lourd (max 5 Mo)'); return; }
+
+    var sb = window.__supabase; var user = window.__currentUser;
+    if (!sb || !user) { setFontUploadErr('Non authentifié'); return; }
+
+    setFontUploading(slot);
+    try {
+      // La RLS storage exige que le 1er segment du chemin = auth.uid()
+      var safe = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-');
+      var path = user.id + '/fonts/' + slot + '-' + Date.now() + '-' + safe;
+      var up = await sb.storage.from('brand-assets').upload(path, file, { upsert: true, contentType: file.type || 'font/ttf' });
+      if (up.error) throw up.error;
+      var publicUrl = sb.storage.from('brand-assets').getPublicUrl(path).data.publicUrl;
+      var fontName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_.]+/g, ' ').trim();
+
+      await loadCustomFontFace(fontName, publicUrl);
+      if (slot === 'body') {
+        setFontBody(fontName);
+        setFontBodyUrl(publicUrl);
+      } else {
+        setFontPrimary(fontName);
+        setFontCustomUrl(publicUrl);
+        setFontIsCustom(true);
+        setFontId('');
+      }
+      setGraphicStyle('custom');
+    } catch(e) {
+      setFontUploadErr('Échec de l\'upload : ' + (e.message || e));
+    } finally {
+      setFontUploading('');
+    }
+  };
+
+  var fontTitleFileRef = useRef(null);
+  var fontBodyFileRef  = useRef(null);
+
+  // Sélection d'un pack typographique → titre + corps + id bibliothèque, d'un coup
+  var PACK_TO_FONTID = { 'impact-news':'bebas-neue', 'edito-luxe':'playfair-display', 'digital-native':'space-grotesk', 'minimal-power':'syne', 'neo-retro':'dm-serif-display' };
+  var PACK_TO_BODY   = { 'impact-news':'Barlow', 'edito-luxe':'Jost', 'digital-native':'DM Sans', 'minimal-power':'Outfit', 'neo-retro':'Lato' };
+  var PACK_TO_SET    = { 'impact-news':'impact', 'edito-luxe':'premium', 'digital-native':'tech', 'minimal-power':'premium', 'neo-retro':'premium' };
+  var selectPack = function(pack) {
+    setGraphicStyle(pack.id);
+    setFontId(PACK_TO_FONTID[pack.id] || '');
+    setFontPrimary(PACK_FONTS[pack.id] || fontPrimary);
+    setFontSet(PACK_TO_SET[pack.id] || 'impact');
+    setFontBody(PACK_TO_BODY[pack.id] || 'DM Sans');
+    setFontIsCustom(false); setFontCustomUrl(''); setFontBodyUrl('');
+  };
+
+  // Sélection d'une police bibliothèque pour un slot (titre ou corps)
+  var selectLibraryFont = function(font, slot) {
+    if (slot === 'body') { setFontBody(font.name); }
+    else {
+      setFontId(font.id); setFontPrimary(font.name); setFontSet(font.set);
+      setFontIsCustom(false); setFontCustomUrl('');
+    }
+    setGraphicStyle('custom');
   };
 
   var handleRelogo = async function() {
@@ -2242,7 +2688,13 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
       logo_url:         logoUrl,
       brand_colors:     [primaryColor, accentColor],
       font_primary:     fontPrimary,
-      font_secondary:   fontSecondary || null,
+      font_body:        fontBody || null,
+      font_id:          fontId,
+      font_set:         fontSet,
+      font_is_custom:   fontIsCustom,
+      font_custom_url:  fontCustomUrl || null,
+      font_body_url:    fontBodyUrl || null,
+      font_secondary:   fontBody || null,
       badge_visible:    badgeVisible,
       bar_visible:      barVisible,
       logo_style:       logoStyle,
@@ -2542,36 +2994,80 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
             </div>
           </div>
 
-          {/* TILE 5 — Pack typographique (wide 2-col) */}
-          <div className="bento-tile bento-tile--wide">
-            <div className="bento-tile-lbl"><AppIcon name="grid" size={11}/>Pack typographique</div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:8, marginBottom:12 }}>
-              <CustomPackCard active={graphicStyle === 'custom'} fontPrimary={fontPrimary} fontBody={fontSecondary || 'DM Sans'} primaryColor={primaryColor} accentColor={accentColor} onSelect={function(){ setGraphicStyle('custom'); }}/>
-              {FONT_PACKS.map(function(p) {
-                return (<PackMiniCard key={p.id} pack={p} active={graphicStyle === p.id} onSelect={function(){ setGraphicStyle(p.id); setFontPrimary(PACK_FONTS[p.id] || fontPrimary); }}/>);
-              })}
+          {/* TILE 5 — Typographie : Packs (rapide) OU Personnalisé (titre+corps, import) */}
+          <div className={'bento-tile ' + (fontMode === 'packs' ? 'bento-tile--full' : 'bento-tile--wide')}>
+            <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="grid" size={11}/>Typographie</span>
+              <span style={{ display:'inline-flex', background:'var(--app-surface-3)', borderRadius:8, padding:2, gap:2 }}>
+                {[['packs','Packs'],['custom','Personnalisé']].map(function(m){
+                  var active = fontMode === m[0];
+                  return (
+                    <button key={m[0]} onClick={function(){ setFontMode(m[0]); if (m[0]==='custom') setGraphicStyle('custom'); }}
+                      style={{ all:'unset', cursor:'pointer', padding:'4px 11px', borderRadius:6, fontSize:11, fontWeight: active?600:400,
+                        color: active ? '#fff' : 'var(--app-fg-3)', background: active ? 'var(--app-accent)' : 'transparent', transition:'all .15s' }}>
+                      {m[1]}
+                    </button>
+                  );
+                })}
+              </span>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, paddingTop:12, borderTop:'1px solid var(--app-line)' }}>
-              {[
-                ['Titre / Display', fontPrimary, setFontPrimary, 'Bebas Neue, Playfair Display...'],
-                ['Corps / Body',    fontSecondary, setFontSecondary, 'DM Sans, Lato...'],
-              ].map(function(cfg) {
-                return (
-                  <div key={cfg[0]}>
-                    <div style={{ fontSize:10, color:'var(--app-fg-4)', marginBottom:5, textTransform:'uppercase', letterSpacing:'.08em' }}>{cfg[0]}</div>
-                    <input value={cfg[1]} onChange={function(e){ cfg[2](e.target.value); }}
-                      onBlur={function(){ loadCustomFont(cfg[1]); }}
-                      onKeyDown={function(e){ if (e.key === 'Enter') loadCustomFont(cfg[1]); }}
-                      placeholder={cfg[3]}
-                      style={{ width:'100%', boxSizing:'border-box', background:'var(--app-surface-3)', border:'1px solid var(--app-line)', borderRadius:7, padding:'7px 10px', color:'var(--app-fg)', fontFamily:'DM Sans,sans-serif', fontSize:12.5, outline:'none' }}/>
-                    {cfg[1] && (
-                      <div style={{ marginTop:5, fontSize: cfg[0].startsWith('Titre') ? 17 : 12, fontFamily: cfg[1] + ',sans-serif', color:'var(--app-fg-3)', padding:'5px 8px', background:'var(--app-surface-3)', borderRadius:6, lineHeight:1.4 }}>
-                        {cfg[0].startsWith('Titre') ? 'TITRE EXEMPLE' : 'Corps de texte'}
+
+            {fontMode === 'packs' ? (
+              <div>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:14, justifyContent:'flex-start' }}>
+                  {FONT_PACKS.map(function(p) {
+                    return (<PackAnimatedCard key={p.id} pack={p} active={!fontIsCustom && graphicStyle === p.id} onSelect={function(){ selectPack(p); }}/>);
+                  })}
+                </div>
+                <div style={{ fontSize:11, color:'var(--app-fg-4)', marginTop:10, fontStyle:'italic' }}>Clique une carte pour la sélectionner et rejouer son animation.</div>
+              </div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                {[['title','Titre / Display', fontPrimary, fontTitleFileRef],
+                  ['body','Corps / Texte', fontBody, fontBodyFileRef]].map(function(slot){
+                  var key = slot[0], lbl = slot[1], current = slot[2], ref = slot[3];
+                  var LIB = (window.ForjeFonts && window.ForjeFonts.FONT_LIBRARY) || [];
+                  var inLib = LIB.some(function(f){ return f.name === current; });
+                  return (
+                    <div key={key}>
+                      <div style={{ fontSize:10, color:'var(--app-fg-4)', marginBottom:5, textTransform:'uppercase', letterSpacing:'.08em' }}>{lbl}</div>
+                      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                        <select value={inLib ? current : '__custom__'}
+                          onChange={function(e){ var f = LIB.filter(function(x){ return x.name === e.target.value; })[0]; if (f) selectLibraryFont(f, key); }}
+                          style={{ flex:1, boxSizing:'border-box', background:'var(--app-surface-3)', border:'1px solid var(--app-line)', borderRadius:7, padding:'8px 10px', color:'var(--app-fg)', fontSize:12.5, outline:'none' }}>
+                          {!inLib && <option value="__custom__">{current} (importée)</option>}
+                          {LIB.map(function(f){ return <option key={f.id} value={f.name}>{f.name}</option>; })}
+                        </select>
+                        <button onClick={function(){ if (ref.current) ref.current.click(); }}
+                          style={{ all:'unset', cursor:'pointer', fontSize:11.5, fontWeight:600, color:'var(--app-accent)', whiteSpace:'nowrap', padding:'8px 4px' }}>
+                          {fontUploading === key ? '…' : '↑ Importer'}
+                        </button>
+                        <input ref={ref} type="file" accept=".ttf,.otf,.woff,.woff2" style={{ display:'none' }}
+                          onChange={function(e){ if (e.target.files[0]) handleFontUpload(e.target.files[0], key); e.target.value=''; }}/>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+                      <div style={{ marginTop:6, fontFamily: "'" + current + "',Impact,sans-serif", fontSize: key==='title' ? 26 : 14,
+                        color:'var(--app-fg-2)', padding:'6px 10px', background:'var(--app-surface-3)', borderRadius:6, lineHeight:1.3 }}>
+                        {key==='title' ? 'TITRE EXEMPLE' : 'Corps de texte — lecture journalistique.'}
+                      </div>
+                    </div>
+                  );
+                })}
+                <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:11.5, color:'var(--app-fg-3)', cursor:'pointer' }}>
+                  <input type="checkbox" checked={fontRights} onChange={function(e){ setFontRights(e.target.checked); }}/>
+                  Je détiens les droits d'usage des polices importées
+                </label>
+                {fontUploadErr && <div style={{ fontSize:11.5, color:'#ef4444' }}>{fontUploadErr}</div>}
+              </div>
+            )}
+
+            {/* Aperçu — reflète la police titre + corps choisie */}
+            <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid var(--app-line)' }}>
+              <div style={{ fontSize:9, color:'var(--app-fg-4)', marginBottom:6, textTransform:'uppercase', letterSpacing:'.08em' }}>Aperçu</div>
+              <div style={{ background:'#0A0A0A', borderRadius:10, padding:'16px 18px' }}>
+                <span style={{ display:'inline-block', background:accentColor, color:'#fff', fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:4, letterSpacing:'.06em' }}>{(topics[0]||'ACTU').toUpperCase()}</span>
+                <div style={{ fontFamily: "'" + fontPrimary + "',Impact,sans-serif", color:'#fff', fontSize:34, lineHeight:1.05, marginTop:8, textTransform: fontSet==='impact' ? 'uppercase' : 'none' }}>Ton titre ici</div>
+                <div style={{ fontFamily: "'" + fontBody + "',DM Sans,sans-serif", color:'rgba(255,255,255,.7)', fontSize:13, marginTop:5 }}>L'actu en temps réel.</div>
+              </div>
             </div>
           </div>
 
@@ -2660,7 +3156,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
         {/* ── Live Preview (sticky right col) ── */}
         <div style={{ position:'sticky', top:80, display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
           <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2, color:'var(--app-fg-4)', alignSelf:'flex-start' }}>Apercu live</div>
-          <BrandPostPreview name={name} primaryColor={primaryColor} accentColor={accentColor} fontPrimary={fontPrimary} fontSecondary={fontSecondary} mood={mood} logoUrl={logoUrl} graphicStyle={graphicStyle} badgeVisible={badgeVisible} barVisible={barVisible}/>
+          <BrandPostPreview name={name} primaryColor={primaryColor} accentColor={accentColor} fontPrimary={fontPrimary} fontSecondary={fontBody} mood={mood} logoUrl={logoUrl} graphicStyle={graphicStyle} badgeVisible={badgeVisible} barVisible={barVisible}/>
           <div style={{ fontSize:11, color:'var(--app-fg-4)', textAlign:'center', lineHeight:1.5 }}>Mise a jour en temps reel<br/><span style={{ opacity:.6 }}>a chaque changement</span></div>
         </div>
 
@@ -2726,9 +3222,29 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   var [defFormat,  setDefFormat]  = useState(prefs.defaultFormat || 'Actualité');
   var [confirmDel, setConfirmDel] = useState(false);
   var [profile, setProfile] = useState(null);
+  var [checkoutLoading, setCheckoutLoading] = useState(false);
 
   var savePref = function(key, val) {
     if (onPrefsChange) onPrefsChange(Object.assign({}, prefs, { [key]: val }));
+  };
+
+  // Abonnement Stripe : ouvre une session Checkout pour le client actif
+  var startCheckout = async function() {
+    var clientId = window.__activeClientId;
+    if (!sb || !clientId) { alert('Sélectionne d\'abord une identité de marque.'); return; }
+    setCheckoutLoading(true);
+    try {
+      // veilleFetch injecte automatiquement le token Supabase de la session
+      var res = await veilleFetch('/billing/create-checkout', {
+        method: 'POST',
+        body: JSON.stringify({ clientId: clientId }),
+      });
+      var json = await res.json();
+      if (json.url) window.location.href = json.url;
+      else { alert(json.error || 'Paiement indisponible pour le moment.'); setCheckoutLoading(false); }
+    } catch (e) {
+      alert('Erreur : ' + e.message); setCheckoutLoading(false);
+    }
   };
 
   var user = window.__currentUser;
@@ -2742,15 +3258,15 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
 
   useEffect(function() {
     if (!sb || !user) return;
-    sb.from('clients').select('plan,credits').eq('user_id', user.id).maybeSingle()
+    sb.from('clients').select('plan,credits,subscription_status').eq('user_id', user.id).order('created_at').limit(1).maybeSingle()
       .then(function({ data }) { if (data) setProfile(data); });
   }, []);
 
-  var plan = profile?.plan || 'free';
+  var subStatus = profile?.subscription_status || 'trial';
   var credits = profile?.credits ?? 0;
-  var creditsMax = plan === 'pro' ? 150 : plan === 'starter' ? 80 : 30;
+  var creditsMax = window.FORJE_CREDITS ? window.FORJE_CREDITS.cap(subStatus) : (subStatus === 'active' ? 700 : 50);
   var creditsPct = Math.min(100, Math.round(credits / creditsMax * 100));
-  var planLabel = { pro:'Pro', starter:'Starter', free:'Free' }[plan] || 'Free';
+  var planLabel = subStatus === 'active' ? 'Forje Studio' : 'Essai gratuit';
 
   var NAV = [
     { id:'compte',      icon:'target',   label:'Mon compte'     },
@@ -2890,35 +3406,36 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
                 </div>
                 <div style={{ fontFamily:"'Fraunces',serif", fontSize:26, fontWeight:600,
                   letterSpacing:'-0.04em', lineHeight:1.1, color:'var(--app-fg)' }}>
-                  {plan === 'free' ? 'Forfait gratuit' : plan === 'starter' ? 'Forfait Starter' : 'Forfait Pro'}
+                  {subStatus === 'active' ? 'Forje Studio — 69 €/mois' : 'Essai gratuit'}
                 </div>
                 <div style={{ fontSize:13, color:'var(--app-fg-3)', marginTop:6 }}>
-                  {plan === 'free'
-                    ? '30 créations / mois · 1 identité de marque · Qualité standard'
-                    : plan === 'starter'
-                    ? '80 créations / mois · 3 identités · Génération IA incluse'
-                    : 'Illimité · 10 identités · IA premium · Équipe jusqu\'à 5'}
+                  {subStatus === 'active'
+                    ? '700 crédits / mois · Tout inclus, aucune limite de features'
+                    : subStatus === 'past_due'
+                    ? 'Paiement en attente — régularise pour continuer à générer.'
+                    : '50 crédits d\'essai · Teste les 3 formats avant de t\'abonner'}
                 </div>
-                {plan === 'free' && (
-                  <button className="btn btn-primary" style={{ marginTop:20, width:'fit-content' }}>
+                {subStatus !== 'active' && (
+                  <button className="btn btn-primary" style={{ marginTop:20, width:'fit-content' }}
+                    onClick={startCheckout} disabled={checkoutLoading}>
                     <AppIcon name="bolt" size={13}/>
-                    Passer à Pro — 29 €/mois
+                    {checkoutLoading ? 'Redirection…' : 'Passer à Forje Studio — 69 €/mois'}
                   </button>
                 )}
               </div>
 
               <SettingsSection title="Utilisation ce mois-ci"
-                sub="Les crédits se réinitialisent le 1er de chaque mois.">
+                sub="Les crédits se réinitialisent à chaque renouvellement mensuel.">
                 <SettingsRow
-                  label="Créations utilisées"
-                  sub={creditsMax - credits + ' restantes ce mois'}
+                  label="Crédits utilisés"
+                  sub={(creditsMax - credits) + ' restants ce mois'}
                   right={
                     <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                       <div className="settings-credits-bar">
                         <div className="settings-credits-fill" style={{ width: creditsPct + '%' }}/>
                       </div>
                       <span style={{ fontSize:12, fontWeight:600, color:'var(--app-fg-2)',
-                        fontVariantNumeric:'tabular-nums', minWidth:42, textAlign:'right' }}>
+                        fontVariantNumeric:'tabular-nums', minWidth:52, textAlign:'right' }}>
                         {credits} / {creditsMax}
                       </span>
                     </div>
@@ -2926,45 +3443,22 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
                 />
               </SettingsSection>
 
-              <SettingsSection title="Comparer les offres">
+              <SettingsSection title="Coût par création"
+                sub="Chaque génération débite ton solde selon son coût réel.">
                 {[
-                  { id:'free',    name:'Free',    price:'0 €',  features:['30 créations / mois','1 identité de marque','Actu · Citation · Deep Dive','Export JPEG'] },
-                  { id:'starter', name:'Starter', price:'12 €', features:['80 créations / mois','3 identités de marque','Génération IA cinématique','Planification Instagram'] },
-                  { id:'pro',     name:'Pro',     price:'29 €', features:['Illimité','10 identités de marque','IA image premium','Équipe jusqu\'à 5 membres','API access'] },
+                  { name:'Citation',            cost:'1 crédit',            desc:'Photo Serper + mise en page' },
+                  { name:'Actu',                cost:'2 crédits',           desc:'Génération IA + photo' },
+                  { name:'Deep Dive (léger)',   cost:'3 crédits',           desc:'Fonds Serper sur les slides' },
+                  { name:'Deep Dive (premium)', cost:'8 crédits',           desc:'Slides générées en IA' },
                 ].map(function(p) {
-                  var isCurrent = plan === p.id;
                   return (
-                    <div key={p.id} className={'settings-plan-compare-row' + (isCurrent ? ' spc--current' : '')}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-                        <span style={{ fontSize:13.5, fontWeight:600, color: isCurrent ? 'var(--app-accent)' : 'var(--app-fg)' }}>
-                          {p.name}
-                        </span>
-                        {isCurrent && <span className="settings-tag settings-tag--accent">Actuel</span>}
-                      </div>
-                      <div style={{ display:'flex', gap:24, alignItems:'flex-end' }}>
-                        <div style={{ flex:1 }}>
-                          {p.features.map(function(f, i) {
-                            return (
-                              <div key={i} style={{ display:'flex', alignItems:'center', gap:6,
-                                fontSize:12, color:'var(--app-fg-3)', lineHeight:1.9 }}>
-                                <span style={{ color:'var(--app-accent)', opacity: isCurrent ? 1 : .5, fontSize:10 }}>◆</span>
-                                {f}
-                              </div>
-                            );
-                          })}
+                    <div key={p.name} className="settings-plan-compare-row">
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:16 }}>
+                        <div>
+                          <div style={{ fontSize:13.5, fontWeight:600, color:'var(--app-fg)' }}>{p.name}</div>
+                          <div style={{ fontSize:12, color:'var(--app-fg-3)', marginTop:2 }}>{p.desc}</div>
                         </div>
-                        <div style={{ textAlign:'right', flexShrink:0 }}>
-                          <div style={{ fontFamily:"'Fraunces',serif", fontSize:20, fontWeight:600,
-                            letterSpacing:'-0.03em', lineHeight:1 }}>
-                            {p.price}
-                            <span style={{ fontSize:11, fontWeight:400, color:'var(--app-fg-4)' }}>/mois</span>
-                          </div>
-                          {!isCurrent && (
-                            <button className="btn btn-ghost btn-sm" style={{ marginTop:8 }}>
-                              Choisir
-                            </button>
-                          )}
-                        </div>
+                        <span className="settings-tag settings-tag--accent" style={{ flexShrink:0 }}>{p.cost}</span>
                       </div>
                     </div>
                   );

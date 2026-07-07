@@ -53,6 +53,14 @@
   })();
 
   window.__forjeUnified = true;
+
+  // ─── Crédits (doit refléter lib/credits.js côté serveur) ───
+  window.FORJE_CREDITS = {
+    costs: { actu: 2, citation: 1, deep_dive_light: 3, deep_dive_premium: 8 },
+    // Plafond mensuel affiché dans la barre : 700 abonné / 50 essai
+    cap: function (status) { return status === 'active' ? 700 : 50; },
+  };
+
   window.TWEAKS = {
     heroObject: 'Normal',
     hueShift: 0,
@@ -83,6 +91,9 @@
         integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
         crossorigin="anonymous"></script>
 
+<!-- Bibliothèque typographique partagée (window.ForjeFonts) — avant le chargement des JSX -->
+<script src="lib/fonts.js?v=7"></script>
+
 <script>
 (async () => {
   const files = [
@@ -102,7 +113,7 @@
     'root.jsx',
   ];
 
-  const V = '?v=7';
+  const V = '?v=9';
   for (const src of files) {
     try {
       const res  = await fetch(src + V);

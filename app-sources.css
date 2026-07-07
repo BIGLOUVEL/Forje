@@ -247,7 +247,26 @@
 }
 .timer-remaining { color: #8B2A2A; font-weight: 600; font-variant-numeric: tabular-nums; }
 .timer-advice { color: rgba(42,16,20,0.5); }
-.breaking-actions { display: flex; gap: 6px; }
+.breaking-actions { display: flex; gap: 6px; align-items: center; }
+
+/* Flèches de navigation manuelle des breaking */
+.breaking-nav {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #B91C1C;
+  background: rgba(185,28,28,.10);
+  border: 1px solid rgba(185,28,28,.22);
+  box-sizing: border-box;
+  transition: background .15s ease, transform .15s ease;
+}
+.breaking-nav:hover { background: rgba(185,28,28,.20); }
+.breaking-nav:active { transform: scale(.9); }
 
 /* ═══ LAYOUT ══════════════════════════════════════════════════════════ */
 .sources-layout {

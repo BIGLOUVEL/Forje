@@ -16,7 +16,43 @@ try { openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); } catch
 const haiku = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const { supabase }  = require('../lib/supabase');
-const { fontDefs, PACK_FONTS_GF } = require('../lib/fontLoader');
+const { buildFontDefs, resolveFont } = require('../lib/fontLoader');
+const { getCreditCost } = require('../lib/credits');
+
+// ─── Crédits ──────────────────────────────────────────────────────────────────
+// Consomme des crédits de façon ATOMIQUE avant une génération (RPC consume_credits).
+// - clientId absent (dev / anonyme) ou erreur infra → on laisse passer (charged:false).
+// - solde insuffisant → { ok:false } → la route renvoie 402.
+async function chargeCredits(clientId, postType, variant) {
+  const cost = getCreditCost(postType, variant);
+  if (!clientId) return { ok: true, cost, charged: false };
+  const { data, error } = await supabase.rpc('consume_credits', {
+    p_client_id: clientId, p_amount: cost, p_post_id: null,
+    p_post_type: postType, p_variant: variant,
+  });
+  if (error) { console.error('[Credits] consume:', error.message); return { ok: true, cost, charged: false }; }
+  if (data === -1) return { ok: false, cost, charged: false };
+  return { ok: true, cost, balance: data, charged: true };
+}
+
+// Rembourse des crédits déjà consommés (échec de génération après débit).
+async function refundCredits(ctx) {
+  if (!ctx || !ctx.charged) return;
+  try {
+    await supabase.rpc('consume_credits', {
+      p_client_id: ctx.clientId, p_amount: -ctx.cost, p_post_id: null,
+      p_post_type: ctx.postType, p_variant: 'refund',
+    });
+  } catch (e) { console.error('[Credits] refund:', e.message); }
+}
+
+function insufficientCredits(res, cost) {
+  return res.status(402).json({
+    error: 'Crédits insuffisants',
+    message: `Cette génération nécessite ${cost} crédit${cost > 1 ? 's' : ''}. Ton solde est épuisé pour ce mois.`,
+    creditsNeeded: cost,
+  });
+}
 
 async function gemini(prompt) {
   const model  = genai.getGenerativeModel({ model: GEMINI_MODEL });
@@ -68,7 +104,7 @@ async function geminiExtractLogo(imgBuf) {
 async function getClientBrand(userId, clientId) {
   if (!userId) return null;
   let q = supabase.from('clients').select(
-    'name,logo_url,brand_colors,font_primary,font_body,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
+    'id,name,logo_url,brand_colors,font_primary,font_body,font_id,font_set,font_custom_url,font_is_custom,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
   ).eq('user_id', userId);
   if (clientId) q = q.eq('id', clientId);
   const { data } = await q.order('created_at').limit(1).maybeSingle();
@@ -194,7 +230,7 @@ async function serperImages(query, { hq = false } = {}) {
 }
 
 function isImageBuffer(buf) {
-  if (!buf || buf.length < 8) return false;
+  if (!buf || buf.length < 12) return false;
   // JPEG: FF D8 FF
   if (buf[0] === 0xFF && buf[1] === 0xD8) return true;
   // PNG: 89 50 4E 47
@@ -203,7 +239,56 @@ function isImageBuffer(buf) {
   if (buf[0] === 0x52 && buf[1] === 0x49 && buf[8] === 0x57 && buf[9] === 0x45) return true;
   // GIF: 47 49 46
   if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return true;
+  // AVIF / HEIC : boîte "ftyp" à l'offset 4 (formats de plus en plus fréquents sur Google Images)
+  if (buf.slice(4, 8).toString('latin1') === 'ftyp') return true;
   return false;
+}
+
+// Vérifie qu'une image est réellement exploitable : décodable, assez grande,
+// et NI trop sombre NI trop uniforme (évite les fonds noirs / placeholders vides).
+async function isUsablePhoto(buf) {
+  if (!buf || !sharp) return false;
+  try {
+    const img  = sharp(buf, { failOn: 'none' });
+    const meta = await img.metadata();
+    if (!meta.width || !meta.height || meta.width < 400 || meta.height < 400) return false;
+    const stats = await img.stats();
+    const ch = stats.channels || [];
+    if (ch.length >= 3) {
+      const lum = 0.299 * ch[0].mean + 0.587 * ch[1].mean + 0.114 * ch[2].mean;
+      if (lum < 24) return false; // quasi-noir → rejeté
+      const sd = (ch[0].stdev + ch[1].stdev + ch[2].stdev) / 3;
+      if (sd < 7) return false;   // image plate / placeholder uni → rejeté
+    }
+    return true;
+  } catch (_) { return false; }
+}
+
+// Filtre une liste de buffers pour ne garder que les photos exploitables (ordre préservé).
+async function keepUsablePhotos(buffers) {
+  const checks = await Promise.all(buffers.map(b => isUsablePhoto(b)));
+  return buffers.filter((_, i) => checks[i]);
+}
+
+// Fond de secours "de marque" — dégradé diagonal aux couleurs du client
+// (jamais un aplat noir : un post sans photo doit rester intentionnel).
+function brandGradientBuffer(W, H, primary, accent) {
+  const c1 = primary || '#1a1a2e';
+  const c2 = accent  || '#6366F1';
+  return Buffer.from(
+    `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs>` +
+    `<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0%" stop-color="${c1}"/>` +
+    `<stop offset="100%" stop-color="${c2}"/>` +
+    `</linearGradient>` +
+    `<radialGradient id="gl" cx="30%" cy="25%" r="80%">` +
+    `<stop offset="0%" stop-color="#ffffff" stop-opacity="0.12"/>` +
+    `<stop offset="60%" stop-color="#ffffff" stop-opacity="0"/>` +
+    `</radialGradient></defs>` +
+    `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
+    `<rect width="${W}" height="${H}" fill="url(#gl)"/>` +
+    `</svg>`
+  );
 }
 
 async function tryDownloadFirst(urls) {
@@ -515,8 +600,10 @@ async function generateCaption(type, content, client) {
 
 // ─── POST /api/generate/actu ──────────────────────────────────────────────────
 router.post('/actu', async (req, res) => {
+  let creditCtx = null; // { clientId, postType, cost, charged } — pour remboursement si échec
   const hardDeadline = setTimeout(() => {
     if (!res.headersSent) res.status(504).json({ error: 'Génération trop longue — réessaie (les serveurs IA sont lents en ce moment)' });
+    refundCredits(creditCtx); creditCtx = null; // timeout = pas de post livré → rembourse
   }, 180000);
 
   if (!sharp) { clearTimeout(hardDeadline); return res.status(500).json({ error: 'Sharp non installe (npm install sharp)' }); }
@@ -526,8 +613,16 @@ router.post('/actu', async (req, res) => {
 
   try {
     const client       = await getClientBrand(userId, clientId);
+
+    // Crédits : débit atomique AVANT la génération coûteuse (IA + Serper)
+    const creditClientId = client?.id || clientId || null;
+    const charge = await chargeCredits(creditClientId, 'actu', 'standard');
+    if (!charge.ok) { clearTimeout(hardDeadline); return insufficientCredits(res, charge.cost); }
+    creditCtx = { clientId: creditClientId, postType: 'actu', cost: charge.cost, charged: charge.charged };
+
     const brandCtx     = buildBrandContext(client);
     const packId       = getPackId(client?.graphic_style, client?.font_primary);
+    const clientFont   = resolveFont(client); // police effective (bibliothèque ou custom)
     const primaryColor = client?.brand_colors?.[0] || null;
     const accentColor  = client?.brand_colors?.[1] || null;
 
@@ -572,9 +667,12 @@ router.post('/actu', async (req, res) => {
       const images = await serperImages(search_query, { hq: true }); // toujours HQ — qualité + filtres anti-watermark
       const urls   = images.map(img => img.imageUrl).filter(Boolean).slice(0, isGooglePhoto ? 8 : 3);
       const results = await Promise.all(urls.map(u => downloadBuffer(u).catch(() => null)));
-      serperBuffers = results
+      const sane = results
         .filter(b => b && b.length > 5000 && isImageBuffer(b))
         .sort((a, b) => isGooglePhoto ? b.length - a.length : 0);
+      // Rejette les images non décodables / trop sombres / vides (cause des "fonds noirs")
+      serperBuffers = await keepUsablePhotos(sane);
+      if (!serperBuffers.length) console.warn('[Actu] aucune photo Serper exploitable → dégradé de marque');
     }
     // 3. Style ref : one-shot (request) > persistent (brand)
     let styleRefBuffer = null;
@@ -606,15 +704,14 @@ router.post('/actu', async (req, res) => {
     let base;
     if (photoBuffer) {
       try {
-        base = await sharp(photoBuffer).resize(W, H, { fit: 'cover', position: 'center' }).toBuffer();
+        base = await sharp(photoBuffer, { failOn: 'none' }).resize(W, H, { fit: 'cover', position: 'center' }).toBuffer();
       } catch (_) {
         photoBuffer = null;
       }
     }
     if (!base) {
-      base = await sharp({
-        create: { width: W, height: H, channels: 4, background: { r: 15, g: 15, b: 25, alpha: 1 } },
-      }).png().toBuffer();
+      // Pas de photo exploitable → dégradé aux couleurs de la marque (jamais un aplat noir)
+      base = await sharp(brandGradientBuffer(W, H, primaryColor, accentColor)).png().toBuffer();
     }
 
     const gradient = Buffer.from(
@@ -676,19 +773,38 @@ router.post('/actu', async (req, res) => {
     const caption = await captionPromise;
     clearTimeout(hardDeadline);
 
+    // Aucune photo exploitable → on a rendu le dégradé de marque : invite à ajouter une image
+    const photoFallback = !photoBuffer;
+    const notice = photoFallback
+      ? 'Aucune photo pertinente trouvée — ajoute ta propre image pour un rendu plus fort.'
+      : null;
+
     // Return background + text data — client Canvas renders the text with real fonts
     res.json({
       bgImage: 'data:image/jpeg;base64,' + out.toString('base64'),
       title, subtitle, category, packId,
+      photoFallback, notice,
+      // Police effective du client → le Canvas front charge CETTE police (effectivité)
+      font: {
+        name:          clientFont.fontName,
+        url:           clientFont.urlPath,
+        weight:        clientFont.weight,
+        style:         clientFont.style,
+        transform:     clientFont.transform,
+        letterSpacing: clientFont.letterSpacing,
+      },
       primaryColor: primaryColor || BADGE_COLORS[category] || '#6366F1',
       accentColor:  accentColor  || '#10B981',
       caption,
+      creditsLeft: charge.charged ? charge.balance : undefined,
     });
+    creditCtx = null; // post livré → surtout pas de remboursement
 
   } catch (err) {
     console.error('[Generate/Actu]', err.message);
     clearTimeout(hardDeadline);
-    if (!res.headersSent) res.status(500).json({ error: err.message });
+    await refundCredits(creditCtx); creditCtx = null; // génération échouée → rembourse
+    if (!res.headersSent) res.status(500).json({ error: err.message, refunded: true });
   }
 });
 
@@ -696,102 +812,132 @@ router.post('/actu', async (req, res) => {
 router.post('/citation', async (req, res) => {
   if (!sharp) return res.status(500).json({ error: 'Sharp non installe' });
 
-  const { quoteText, authorName, authorTitle, userId } = req.body;
+  // photoUrl / photoData : optionnels — le CM peut fournir sa propre photo au lieu de Serper
+  const { quoteText, authorName, authorTitle, userId, clientId, photoUrl, photoData } = req.body;
   if (!quoteText || !authorName) return res.status(400).json({ error: 'quoteText et authorName requis' });
 
+  // Garde-fou : au-delà d'~6 lignes le post devient illisible (le form limite déjà à 200)
+  const quote = String(quoteText).trim().slice(0, 220);
+
   try {
-    const client  = await getClientBrand(userId);
-    const packId  = getPackId(client?.graphic_style, client?.font_primary);
-    const pack    = getPack(client?.graphic_style, client?.font_primary);
-    const fDefs   = fontDefs(packId);
-    const fontFam = PACK_FONTS_GF[packId]?.name || pack.headFont;
-    const W = 1080, H = 1080;
+    // clientId respecté → charte + police du client ACTIF (et non du premier client trouvé)
+    const client     = await getClientBrand(userId, clientId);
 
-    const captionPromise = generateCaption('citation', { quoteText, authorName, authorTitle }, client).catch(() => '');
+    // Crédits : débit atomique AVANT Serper + Sharp
+    var creditClientId = client?.id || clientId || null;
+    var charge = await chargeCredits(creditClientId, 'citation', 'standard');
+    if (!charge.ok) return insufficientCredits(res, charge.cost);
+    var creditCtx = { clientId: creditClientId, postType: 'citation', cost: charge.cost, charged: charge.charged };
 
-    // 1. Serper -> photo de l'auteur
+    // Police effective (bibliothèque ou custom) — le TEXTE est rendu côté client sur Canvas :
+    // Sharp/librsvg ignore les @font-face base64 (rendu serif systématique quelle que soit la
+    // police), donc on ne peut PAS composer le texte au serveur. Même approche que l'Actu.
+    const clientFont = resolveFont(client);
+    const accent     = client?.brand_colors?.[1] || '#FFFFFF';
+    const W = 1080, H = 1350; // portrait 4:5 — cohérent avec Actu / Deep Dive
+
+    const captionPromise = generateCaption('citation', { quoteText: quote, authorName, authorTitle }, client).catch(() => '');
+
+    // ── 1. Photo de fond : override CM (photoData base64 > photoUrl) sinon Serper ──
     let photoBuffer = null;
-    if (process.env.SERPER_API_KEY) {
-      const images = await serperImages(authorName + ' portrait officiel');
-      const urls   = images.map(i => i.imageUrl).filter(Boolean);
-      photoBuffer  = await tryDownloadFirst(urls);
+    let photoUsed   = null;
+    if (photoData) {
+      const b64 = photoData.split(',')[1] || photoData;
+      if (b64) photoBuffer = Buffer.from(b64, 'base64');
+    } else if (photoUrl) {
+      try { photoBuffer = await downloadBuffer(photoUrl); photoUsed = photoUrl; } catch (_) {}
+    }
+    if (!photoBuffer && process.env.SERPER_API_KEY) {
+      const images  = await serperImages(authorName + ' portrait officiel');
+      const urls    = images.map(i => i.imageUrl).filter(Boolean).slice(0, 6);
+      // Télécharge plusieurs candidates et garde la première réellement exploitable
+      const results = await Promise.all(urls.map((u, i) => downloadBuffer(u).then(b => ({ b, url: urls[i] })).catch(() => null)));
+      const sane    = results.filter(r => r && r.b && r.b.length > 5000 && isImageBuffer(r.b));
+      const usable  = await keepUsablePhotos(sane.map(r => r.b));
+      if (usable.length) {
+        photoBuffer = usable[0];
+        photoUsed   = sane.find(r => r.b === usable[0])?.url || null;
+      }
     }
 
     let base;
     if (photoBuffer) {
       try {
-        base = await sharp(photoBuffer).resize(W, H, { fit: 'cover', position: 'center' }).toBuffer();
-      } catch (_) {}
+        // 'attention' cadre automatiquement sur le visage / zone d'intérêt
+        base = await sharp(photoBuffer, { failOn: 'none' }).resize(W, H, { fit: 'cover', position: 'attention' }).toBuffer();
+      } catch (_) { photoBuffer = null; }
     }
     if (!base) {
-      base = await sharp({
-        create: { width: W, height: H, channels: 4, background: { r: 20, g: 20, b: 30, alpha: 1 } },
-      }).png().toBuffer();
+      // Pas de portrait exploitable → dégradé aux couleurs de la marque plutôt qu'un aplat noir
+      base = await sharp(brandGradientBuffer(W, H, client?.brand_colors?.[0], client?.brand_colors?.[1])).png().toBuffer();
     }
 
-    // 2. Double vignettage
+    // ── 2. Vignettage 3 stops : haut sombre / milieu clair / bas très sombre ──
     const vignette = Buffer.from(
       `<svg width="${W}" height="${H}"><defs>` +
-      `<radialGradient id="r" cx="50%" cy="40%" r="65%">` +
+      `<radialGradient id="r" cx="50%" cy="38%" r="70%">` +
       `<stop offset="0%" stop-color="black" stop-opacity="0"/>` +
-      `<stop offset="100%" stop-color="black" stop-opacity="0.65"/>` +
+      `<stop offset="100%" stop-color="black" stop-opacity="0.55"/>` +
       `</radialGradient>` +
       `<linearGradient id="l" x1="0" y1="0" x2="0" y2="1">` +
-      `<stop offset="20%" stop-color="black" stop-opacity="0"/>` +
-      `<stop offset="100%" stop-color="black" stop-opacity="0.88"/>` +
+      `<stop offset="0%" stop-color="black" stop-opacity="0.55"/>` +
+      `<stop offset="35%" stop-color="black" stop-opacity="0.30"/>` +
+      `<stop offset="100%" stop-color="black" stop-opacity="0.90"/>` +
       `</linearGradient></defs>` +
       `<rect width="${W}" height="${H}" fill="url(#r)"/>` +
       `<rect width="${W}" height="${H}" fill="url(#l)"/>` +
       `</svg>`
     );
 
-    const qMark = Buffer.from(
-      `<svg width="72" height="72">` +
-      `<text x="0" y="60" font-family="Georgia,serif" font-size="100" font-weight="700" fill="white" opacity="0.45">"</text>` +
-      `</svg>`
-    );
+    // ── 3. Fond = photo + vignette + logo. Le texte (citation/auteur) est ajouté
+    //        côté client sur Canvas avec la vraie police (voir renderCitationCanvas). ──
+    const composites = [{ input: vignette }];
 
-    const qLines = wrapText(quoteText, 22);
-    const qSvg = Buffer.from(
-      `<svg width="${W - 120}" height="${qLines.length * 74 + 20}">` +
-      fDefs +
-      qLines.map((l, i) =>
-        `<text x="${(W - 120) / 2}" y="${60 + i * 74}" font-family="${fontFam}" font-size="52" font-weight="${pack.headWeight}" font-style="${pack.headStyle}" fill="white" text-anchor="middle">${escapeXml(l)}</text>`
-      ).join('') +
-      `</svg>`
-    );
+    // Logo du média (haut à droite)
+    if (client?.logo_url) {
+      try {
+        const logoBuf  = await downloadBuffer(client.logo_url);
+        const logoPng  = await sharp(logoBuf).resize(null, 56, { fit: 'inside' }).png().toBuffer();
+        const logoMeta = await sharp(logoPng).metadata();
+        const logoX    = W - 56 - logoMeta.width;
+        // Ombre douce pour lisibilité sur photo claire
+        const shadow   = await sharp(logoPng).modulate({ brightness: 0 }).blur(12).toBuffer();
+        composites.push({ input: shadow,  top: 62, left: logoX + 4 });
+        composites.push({ input: logoPng, top: 56, left: logoX });
+      } catch (_) { /* logo optionnel */ }
+    }
 
-    const authLine2 = authorTitle
-      ? `<text x="${(W - 120) / 2}" y="73" font-family="Arial,Helvetica,sans-serif" font-size="20" fill="rgba(255,255,255,0.52)" text-anchor="middle">${escapeXml(authorTitle)}</text>`
-      : '';
-    const authSvg = Buffer.from(
-      `<svg width="${W - 120}" height="80">` +
-      `<line x1="${(W - 120) / 2 - 50}" y1="18" x2="${(W - 120) / 2 + 50}" y2="18" stroke="white" stroke-opacity="0.28" stroke-width="1"/>` +
-      `<text x="${(W - 120) / 2}" y="50" font-family="Arial,Helvetica,sans-serif" font-size="26" font-weight="600" fill="white" text-anchor="middle" letter-spacing="1">${escapeXml(authorName.toUpperCase())}</text>` +
-      authLine2 +
-      `</svg>`
-    );
-
-    const qH    = qLines.length * 74 + 20;
-    const total = 72 + 12 + qH + 20 + 80;
-    const startY = Math.round((H - total) / 2);
-
-    const out = await sharp(base)
-      .composite([
-        { input: vignette },
-        { input: qMark,   left: 60, top: startY },
-        { input: qSvg,    left: 60, top: startY + 72 + 12 },
-        { input: authSvg, left: 60, top: startY + 72 + 12 + qH + 20 },
-      ])
+    const bg = await sharp(base)
+      .composite(composites)
       .jpeg({ quality: 92 })
       .toBuffer();
 
     const caption = await captionPromise;
-    res.json({ image: 'data:image/jpeg;base64,' + out.toString('base64'), caption });
+    res.json({
+      bgImage:     'data:image/jpeg;base64,' + bg.toString('base64'),
+      quoteText:   quote,
+      authorName,
+      authorTitle: authorTitle || null,
+      accentColor: accent,
+      // Police effective du client → le Canvas front charge CETTE police (effectivité réelle)
+      font: {
+        name:          clientFont.fontName,
+        url:           clientFont.urlPath,
+        weight:        clientFont.weight,
+        style:         clientFont.style,
+        transform:     clientFont.transform,
+        letterSpacing: clientFont.letterSpacing,
+      },
+      caption,
+      photoUsed, // permet au CM de valider / changer la photo
+      creditsLeft: charge.charged ? charge.balance : undefined,
+    });
+    creditCtx = null; // post livré → pas de remboursement
 
   } catch (err) {
     console.error('[Generate/Citation]', err.message);
-    res.status(500).json({ error: err.message });
+    await refundCredits(typeof creditCtx !== 'undefined' ? creditCtx : null);
+    res.status(500).json({ error: err.message, refunded: true });
   }
 });
 
@@ -1063,6 +1209,14 @@ router.post('/deepdive', async (req, res) => {
 
   try {
     const client = await getClientBrand(userId, clientId);
+
+    // Crédits : Deep Dive premium (slides IA) = 8, léger (Serper / aucun fond) = 3
+    var ddVariant = require('../lib/credits').deepDiveVariant(imageMode);
+    var creditClientId = client?.id || clientId || null;
+    var charge = await chargeCredits(creditClientId, 'deep_dive', ddVariant);
+    if (!charge.ok) return insufficientCredits(res, charge.cost);
+    var creditCtx = { clientId: creditClientId, postType: 'deep_dive', cost: charge.cost, charged: charge.charged };
+
     const brand  = buildDeepDiveBrand(client);
 
     // 1. Template auto-selection
@@ -1119,11 +1273,13 @@ router.post('/deepdive', async (req, res) => {
     const caption = carousel.caption || await generateCaption('deepdive', { topic, hookTitle: content.topic, hookBody: content.subtitle }, client).catch(() => '');
 
     const images = slideBuffers.map(b => 'data:image/jpeg;base64,' + b.toString('base64'));
-    res.json({ images, content, meta: { ...meta, template_id: effectiveTpl }, caption, hashtags: carousel.hashtags || [] });
+    res.json({ images, content, meta: { ...meta, template_id: effectiveTpl }, caption, hashtags: carousel.hashtags || [], creditsLeft: charge.charged ? charge.balance : undefined });
+    creditCtx = null; // carousel livré → pas de remboursement
 
   } catch (err) {
     console.error('[Generate/DeepDive]', err.message);
-    res.status(500).json({ error: err.message });
+    await refundCredits(typeof creditCtx !== 'undefined' ? creditCtx : null);
+    res.status(500).json({ error: err.message, refunded: true });
   }
 });
 
@@ -1412,7 +1568,7 @@ router.post('/brand-identity', async (req, res) => {
     // Extraire palette/fonts/tagline DEPUIS l image générée — garantit la cohérence
     let config = await extractBrandConfigFromImage(imageUrl, name);
     if (!config) {
-      config = { brand_colors: ['#111111','#FF3B30','#FFFFFF'], font_primary: 'Bebas Neue',
+      config = { brand_colors: ['#111111','#FF3B30','#FFFFFF'],
                  mood: 'energique', graphic_style: 'breaking', tone_tags: ['Direct','Percutant','Informatif'],
                  topics: topics||[], tagline: '' };
     } else {
@@ -1420,6 +1576,12 @@ router.post('/brand-identity', async (req, res) => {
       config.mood = config.mood || 'energique';
       config.graphic_style = config.graphic_style || 'breaking';
     }
+    // Pack typographique imposé à la création : Impact News (Bebas Neue) — modifiable ensuite
+    config.font_primary  = 'Bebas Neue';
+    config.font_id       = 'bebas-neue';
+    config.font_set      = 'impact';
+    config.font_body     = config.font_body || 'Barlow';
+    config.font_is_custom = false;
     return { imageUrl, config };
   }))).filter(Boolean);
 
@@ -1544,7 +1706,11 @@ router.post('/brand-identity/confirm', async (req, res) => {
   const updatePayload = {
     id: clientId, user_id: user.id, name,
     brand_colors:  finalConfig.brand_colors,
-    font_primary:  finalConfig.font_primary,
+    font_primary:  finalConfig.font_primary || 'Bebas Neue',
+    font_id:       finalConfig.font_id      || 'bebas-neue',
+    font_set:      finalConfig.font_set     || 'impact',
+    font_body:     finalConfig.font_body    || 'Barlow',
+    font_is_custom: false,
     mood:          finalConfig.mood,
     graphic_style: finalConfig.graphic_style,
     tone_tags:     finalConfig.tone_tags,

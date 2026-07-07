@@ -672,11 +672,23 @@ const HEAT_TOPICS = [
 
 const BreakingBar = ({ items, onGenerate }) => {
   const [idx, setIdx] = useState(0);
-  useEffect(() => {
+  const timerRef = useRef(null);
+
+  const startTimer = () => {
+    clearInterval(timerRef.current);
     if (items.length <= 1) return;
-    const iv = setInterval(() => setIdx(i => (i + 1) % items.length), 8000);
-    return () => clearInterval(iv);
+    timerRef.current = setInterval(() => setIdx(i => (i + 1) % items.length), 8000);
+  };
+  useEffect(() => {
+    startTimer();
+    return () => clearInterval(timerRef.current);
   }, [items.length]);
+
+  // Navigation manuelle : on relance le timer pour ne pas sauter juste après
+  const go = (dir) => {
+    setIdx(i => (i + dir + items.length) % items.length);
+    startTimer();
+  };
 
   const data = items[idx] || items[0];
   if (!data) return null;
@@ -719,10 +731,18 @@ const BreakingBar = ({ items, onGenerate }) => {
         </div>
         <div className="breaking-actions">
           {items.length > 1 && (
-            <div style={{ display:'flex', gap:5, marginRight:'auto', alignItems:'center' }}>
-              {items.map((_, i) => (
-                <button key={i} onClick={() => setIdx(i)} style={{ all:'unset', cursor:'pointer', width:6, height:6, borderRadius:'50%', background: i === idx ? '#fff' : 'rgba(255,255,255,.35)', transition:'background .2s' }}/>
-              ))}
+            <div style={{ display:'flex', gap:8, marginRight:'auto', alignItems:'center' }}>
+              <button className="breaking-nav" onClick={() => go(-1)} title="Précédent" aria-label="Breaking précédent">
+                <AppIcon name="chevLeft" size={14}/>
+              </button>
+              <div style={{ display:'flex', gap:5, alignItems:'center' }}>
+                {items.map((_, i) => (
+                  <button key={i} onClick={() => { setIdx(i); startTimer(); }} style={{ all:'unset', cursor:'pointer', width:6, height:6, borderRadius:'50%', background: i === idx ? '#B91C1C' : 'rgba(185,28,28,.30)', transition:'background .2s' }}/>
+                ))}
+              </div>
+              <button className="breaking-nav" onClick={() => go(1)} title="Suivant" aria-label="Breaking suivant">
+                <AppIcon name="chevRight" size={14}/>
+              </button>
             </div>
           )}
           {data.url && <Btn variant="ghost" size="sm" icon="eye" onClick={() => window.open(data.url, '_blank')}>Voir</Btn>}

@@ -43,12 +43,12 @@ const App = () => {
     const sb = window.__supabase;
     const user = window.__currentUser;
     if (!sb || !user) return;
-    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, graphic_style, tone_tags, mood, topics, onboarding_completed, onboarding_step, profile_type, preferences')
+    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, subscription_status, graphic_style, tone_tags, mood, topics, onboarding_completed, onboarding_step, profile_type, preferences')
       .eq('user_id', user.id).order('created_at')
       .then(({ data }) => {
         const list = data || [];
         setClients(list);
-        if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits });
+        if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status });
         if (onDone) onDone(list);
       });
   };
@@ -96,6 +96,8 @@ const App = () => {
     };
     window.__setGenToast = (toast) => setGenToast(toast);
     window.__goToScreen  = (s) => { setScreen(s === 'home' ? 'generate' : s); setPreset(null); };
+    // Mise à jour du solde de crédits après une génération (le serveur renvoie creditsLeft)
+    window.__applyCredits = (n) => { if (typeof n === 'number') setProfile(p => ({ ...(p || {}), credits: n })); };
   }, []);
 
   const handleSelectClient = (id) => {
@@ -148,7 +150,7 @@ const App = () => {
       if (user && newActive) localStorage.setItem('forje_active_client_' + user.id, newActive);
       else if (user) localStorage.removeItem('forje_active_client_' + user.id);
       setBrandScore(computeBrandScore(list[0] || null));
-      if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits });
+      if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status });
       setScreen('generate');
     });
   };
@@ -163,7 +165,7 @@ const App = () => {
     loadClients((list) => {
       const c = list.find(x => x.id === clientId) || list[0] || null;
       setBrandScore(computeBrandScore(c));
-      if (c) setProfile({ plan: c.plan, credits: c.credits });
+      if (c) setProfile({ plan: c.plan, credits: c.credits, subscription_status: c.subscription_status });
     });
     setScreen('generate');
   };

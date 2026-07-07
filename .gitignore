@@ -18,3 +18,10 @@ veille/server_err.log
 ### Local temp/state
 supabase/.temp/
 .claude/worktrees/
+
+### Runtime artefacts Higgsfield/skills (jamais commit, jamais surveillés en --watch)
+_k.json
+_k.err
+assets/packs/_*
+
+.vercel

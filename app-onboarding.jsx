@@ -218,6 +218,17 @@ function aFontPrimary(gStyle) {
             lifestyle:'DM Serif Display', sport:'Bebas Neue' })[gStyle] || 'Bebas Neue';
 }
 
+// Pack typographique par défaut selon le style graphique (titre + corps + id bibliothèque)
+function aFontDefaults(gStyle) {
+  return ({
+    breaking:    { id:'bebas-neue',       title:'Bebas Neue',       body:'Barlow', set:'impact'  },
+    magazine:    { id:'playfair-display', title:'Playfair Display', body:'Jost',   set:'premium' },
+    minimaliste: { id:'syne',             title:'Syne',             body:'Outfit', set:'premium' },
+    lifestyle:   { id:'dm-serif-display', title:'DM Serif Display', body:'Lato',   set:'premium' },
+    sport:       { id:'bebas-neue',       title:'Bebas Neue',       body:'Barlow', set:'impact'  },
+  })[gStyle] || { id:'bebas-neue', title:'Bebas Neue', body:'Barlow', set:'impact' };
+}
+
 function aBrandColors(mood) {
   return ({ Dramatique:['#0F0F0F','#6F42FF','#F5F5F5'], 'Énergique':['#0F0F0F','#C6FF00','#FF3B30'],
             Premium:['#1A1A2E','#6F42FF','#FFD700'],     Populaire:['#0F0F0F','#FF3B30','#FFFFFF'],
@@ -239,10 +250,6 @@ const StepIdentityA = ({ onNext, onBack }) => {
   var [handle,    setHandle]    = useState('');
   var [mood,      setMood]      = useState('');
   var [topics,    setTopics]    = useState([]);
-  var [fontTitle,     setFontTitle]     = useState('');
-  var [fontBody,      setFontBody]      = useState('');
-  var [fontTitleFile, setFontTitleFile] = useState(null);
-  var [fontBodyFile,  setFontBodyFile]  = useState(null);
   var [saving,        setSaving]        = useState(false);
   var [error,         setError]         = useState(null);
   var fileRef = useRef(null);
@@ -276,15 +283,8 @@ const StepIdentityA = ({ onNext, onBack }) => {
         }
       }
 
-      var uploadFont = async (file, slot) => {
-        if (!file) return;
-        var ext = file.name.split('.').pop();
-        var path = 'fonts/' + user.id + '/' + slot + '.' + ext;
-        await sb.storage.from('brand-assets').upload(path, file, { upsert: true, contentType: 'font/' + ext });
-      };
-      await Promise.all([uploadFont(fontTitleFile, 'title'), uploadFont(fontBodyFile, 'body')]);
-
       var gs = aGraphicStyle(mood, topics);
+      var ft = aFontDefaults(gs); // pack typographique par défaut (Impact News, etc.)
       var clientId = await upsertClient({
         name:             name.trim(),
         logo_url:         finalLogoUrl || null,
@@ -292,8 +292,12 @@ const StepIdentityA = ({ onNext, onBack }) => {
         mood:             mood,
         topics:           topics,
         graphic_style:    gs,
-        font_primary:     fontTitle || aFontPrimary(gs),
-        font_body:        fontBody  || 'DM Sans',
+        // Pack typographique imposé selon le profil — modifiable ensuite dans l'Identité.
+        font_primary:     ft.title,
+        font_id:          ft.id,
+        font_set:         ft.set,
+        font_is_custom:   false,
+        font_body:        ft.body,
         brand_colors:     aBrandColors(mood),
         tone_tags:        aToneTags(mood),
         profile_type:     'A',
@@ -366,10 +370,7 @@ const StepIdentityA = ({ onNext, onBack }) => {
           <ObTagsInput tags={topics} setTags={setTopics} placeholder="Football, PSG, Transferts..."/>
         </div>
 
-        <ObFontPicker label="Police de titre" labelOpt="(optionnel)" fonts={TITLE_FONTS} value={fontTitle} onChange={setFontTitle}
-          allowUpload onFileSelect={(file) => setFontTitleFile(file)}/>
-        <ObFontPicker label="Police de texte" labelOpt="(optionnel)" fonts={BODY_FONTS}  value={fontBody}  onChange={setFontBody}
-          allowUpload onFileSelect={(file) => setFontBodyFile(file)}/>
+        {/* Police imposée à la création : set Impact (Anton). Modifiable ensuite dans l'Identité de marque. */}
 
         {error && <p className="ob-error">{error}</p>}
 
@@ -743,14 +744,6 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
 
   // Résultat final
   if (sub === 7) {
-    var kitFont = config?.font_primary || null;
-    var titleFontsKit = kitFont && !TITLE_FONTS.find(function(f) { return f.name === kitFont; })
-      ? [{ name: kitFont, sample: kitFont + ' — Brand Kit' }, ...TITLE_FONTS]
-      : TITLE_FONTS;
-    var bodyFontsKit = kitFont && !BODY_FONTS.find(function(f) { return f.name === kitFont; }) && !TITLE_FONTS.find(function(f) { return f.name === kitFont; })
-      ? [{ name: kitFont, sample: kitFont + ' — Brand Kit' }, ...BODY_FONTS]
-      : BODY_FONTS;
-
     return (
       <div key="result" className="ob-kit-result ob-step-enter">
         <div className="ob-bento">
@@ -839,27 +832,27 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
             )}
           </div>
 
-          {/* Police de titre tile */}
+          {/* Typographie tile — pack par défaut imposé, modifiable dans l'Identité */}
           <div className="ob-bt ob-bt--fh">
-            <ObFontPicker label="Police de titre" fonts={titleFontsKit} value={fontTitle} onChange={setFontTitle}/>
+            <span className="ob-bt__label">Typographie</span>
+            <div style={{ fontFamily:"'" + (config?.font_primary || 'Bebas Neue') + "',Impact,sans-serif", fontSize:26, color:'#fff', lineHeight:1, marginTop:2 }}>
+              {(config?.font_primary || 'Bebas Neue')}
+            </div>
+            <span style={{ fontSize:10, color:'rgba(150,190,255,.55)', marginTop:4 }}>Pack par défaut — modifiable ensuite</span>
           </div>
 
-          {/* Police de texte tile */}
-          <div className="ob-bt ob-bt--fb">
-            <ObFontPicker label="Police de texte" fonts={bodyFontsKit} value={fontBody} onChange={setFontBody}/>
+          {/* Note tile */}
+          <div className="ob-bt ob-bt--fb" style={{ justifyContent:'center' }}>
+            <span style={{ fontSize:11, color:'rgba(150,190,255,.55)', lineHeight:1.5 }}>
+              Tu pourras changer de police à tout moment dans <strong style={{ color:'rgba(200,220,255,.85)' }}>Identité de marque</strong>.
+            </span>
           </div>
 
           {/* Actions tile */}
           <div className="ob-bt ob-bt--act">
             {error && <p className="ob-error" style={{ margin:0, flex:1, fontSize:12 }}>{error}</p>}
             <button className="ob-btn-secondary" onClick={() => { setSelected(null); setSub(5); }}>← Changer</button>
-            <button className="ob-btn-primary" disabled={!fontTitle || !fontBody} onClick={async () => {
-              var sb = window.__supabase;
-              if (sb && clientId) {
-                await sb.from('clients').update({ font_primary: fontTitle, font_body: fontBody }).eq('id', clientId);
-              }
-              onNext(clientId);
-            }}>Entrer dans le studio →</button>
+            <button className="ob-btn-primary" onClick={() => { onNext(clientId); }}>Entrer dans le studio →</button>
           </div>
 
         </div>
