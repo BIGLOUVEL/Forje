@@ -155,6 +155,18 @@ router.post('/generate', async (req, res) => {
   const ipHash    = hashIp(getIp(req));
 
   try {
+    // Identité réelle du média démo (table clients) — jamais débitée :
+    // la démo n'appelle pas chargeCredits, le quota visiteur fait office de crédit.
+    const client = await loadDemoClient(preset);
+    if (!client) {
+      return res.status(503).json({ error: 'daily_limit', message: 'La démo est indisponible — crée ton compte pour générer.' });
+    }
+    // Empreinte de l'identité : un cache généré avec une ancienne charte est ignoré
+    const identity = crypto.createHash('sha1').update(JSON.stringify([
+      client.logo_url, client.brand_colors, client.font_id, client.font_primary,
+      client.font_custom_url, client.mood, client.graphic_style,
+    ])).digest('hex').slice(0, 12);
+
     if (news_id) {
       const { data } = await supabase
         .from('demo_veille')
@@ -166,7 +178,7 @@ router.post('/generate', async (req, res) => {
       if (!news) return res.status(404).json({ error: 'Cette actu n\'est plus sur le board — choisis-en une autre.' });
     }
 
-    // Cache 6h : même actu + même preset → servi instantanément, coût zéro
+    // Cache 6h : même actu + même preset + même identité → servi instantanément
     // (uniquement pour les actus du board — un prompt libre n'est jamais identique)
     if (news_id) {
       const { data: cached } = await supabase
@@ -175,7 +187,9 @@ router.post('/generate', async (req, res) => {
         .eq('preset', preset)
         .eq('news_id', news_id)
         .maybeSingle();
-      if (cached && Date.now() - new Date(cached.created_at).getTime() < CACHE_TTL_MS) {
+      if (cached
+          && cached.payload?.identity === identity
+          && Date.now() - new Date(cached.created_at).getTime() < CACHE_TTL_MS) {
         supabase.from('demo_generations').insert({
           ip_hash: ipHash, visitor_id: visitorId, preset, news_id, cached: true,
         }).then(() => {}, () => {});
@@ -215,23 +229,16 @@ router.post('/generate', async (req, res) => {
       .single();
     if (genErr) throw genErr;
 
-    // Identité réelle du média démo (table clients) — jamais débité :
-    // la démo n'appelle pas chargeCredits, le quota visiteur fait office de crédit.
-    const client = await loadDemoClient(preset);
-    if (!client) {
-      await supabase.from('demo_generations').delete().eq('id', genRow.id);
-      return res.status(503).json({ error: 'daily_limit', message: 'La démo est indisponible — crée ton compte pour générer.' });
-    }
-
     let payload;
     try {
       const newsText = news
         ? news.titre + (news.description ? ' — ' + news.description : '')
         : promptText;
-      // Garde-fou 3 : watermark composité côté serveur (Sharp)
+      // Même workflow que l'app : imageMode 'ai' (visuel GPT guidé par les
+      // photos Serper, fallback photo si échec) + watermark démo (garde-fou 3).
       payload = await runActuPipeline(client, {
         newsText: newsText.slice(0, 600),
-        imageMode: 'classic',
+        imageMode: 'ai',
         watermark: WATERMARK_TEXT,
       });
     } catch (pipeErr) {
@@ -241,6 +248,7 @@ router.post('/generate', async (req, res) => {
 
     // Le payload ne sert à rien sans caption pour la démo → on l'allège un peu
     delete payload.caption;
+    payload.identity = identity;
 
     if (news_id) {
       supabase.from('demo_cache').upsert({

@@ -182,10 +182,10 @@ const LiveBoard = () => {
 // ───── 4. L'OUTIL, EN VRAI ──────────────────────────────────────────────
 // Les 4 étapes affichées pendant la génération — durées estimées réalistes.
 const PIPELINE_STEPS = [
-  { label: 'Analyse de l\'actu', est: 4000 },
-  { label: 'Recherche de la photo', est: 5000 },
-  { label: 'Génération du visuel', est: 13000 },
-  { label: 'Composition dans la charte', est: 7000 },
+  { label: 'Analyse de l\'actu', est: 6000 },
+  { label: 'Recherche des photos de référence', est: 8000 },
+  { label: 'Génération du visuel', est: 38000 },
+  { label: 'Composition dans la charte', est: 10000 },
 ];
 
 const PipelineProgress = ({ stepIdx, done }) => (
