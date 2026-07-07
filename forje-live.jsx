@@ -2,7 +2,8 @@
 /* ═══════════════════════════════════════════════════════════════════════
    FORJE LANDING — SECTIONS SIGNATURE
    3. Board de veille en direct   4. L'outil de génération, en vrai
-   Données lazy-loadées à l'approche du viewport ; funnel tracké.
+   Les identités affichées/utilisées sont les VRAIS comptes démo (table
+   clients, servis par /api/demo/media) — rien d'inventé côté front.
    ═══════════════════════════════════════════════════════════════════════ */
 const { useState: useSL, useEffect: useEL, useRef: useRL, useCallback: useCL } = React;
 
@@ -18,36 +19,11 @@ window.__forjeTrack = (event, props) => {
   } catch (e) { /* le tracking ne casse jamais la page */ }
 };
 
-// ───── Médias démo (miroir des configs serveur routes/demo.js) ──────────
-const DEMO_MEDIA = [
-  {
-    key: 'ballon_bleu',
-    name: 'Ballon Bleu',
-    handle: '@ballonbleu',
-    domain: 'Football',
-    followers: '42 000 abonnés',
-    avatar: 'assets/demo/ballon-bleu-logo.png',
-    description: 'Média foot indépendant — l\'actu traitée à chaud, côté terrain et vestiaire. Ligue 1, mercato, sélections.',
-    palette: ['#0A1E5E', '#1447B8', '#2E7BE8', '#EEF4FF'],
-    font: 'Archivo Black',
-    tone: 'direct · graphique · terrain',
-    placeholder: 'Mbappé forfait pour le Clásico, blessure à l\'entraînement ce matin…',
-  },
-  {
-    key: 'frame',
-    name: 'Frame',
-    handle: '@frame.media',
-    domain: 'Médias & culture',
-    followers: '38 000 abonnés',
-    avatar: 'assets/demo/frame-logo.png',
-    description: 'Décrypte comment les images et les plateformes façonnent la culture. Cinéma, streaming, presse, création.',
-    palette: ['#0D0B09', '#2A1D0C', '#C8943A', '#F5EEDC'],
-    font: 'Playfair Display',
-    tone: 'éditorial · contrasté · précis',
-    placeholder: 'Netflix ouvre sa plateforme aux vidéos de BuzzFeed et Condé Nast…',
-  },
+// Fallback minimal avant le chargement de /api/demo/media
+const MEDIA_FALLBACK = [
+  { key: 'ballon_bleu', name: 'Ballon Bleu', palette: [], tone: [], topics: [], placeholder: '' },
+  { key: 'frame', name: 'FRAME', palette: [], tone: [], topics: [], placeholder: '' },
 ];
-const mediaByKey = (k) => DEMO_MEDIA.find(m => m.key === k) || DEMO_MEDIA[0];
 
 // ───── Helpers ──────────────────────────────────────────────────────────
 const relTime = (iso) => {
@@ -66,6 +42,12 @@ const CheckIcon = (p) => (
   </svg>
 );
 
+const MediaAvatar = ({ media, size = 52, className }) => (
+  media && media.avatar
+    ? <img className={className} src={media.avatar} alt={'Logo ' + media.name} style={{ width: size, height: size }} />
+    : <span className={className + ' media-avatar-fallback'} style={{ width: size, height: size }}>{(media?.name || '?')[0]}</span>
+);
+
 // Lazy-load : déclenche onVisible ~400px avant l'entrée dans le viewport.
 const useNearViewport = (ref, onVisible) => {
   useEL(() => {
@@ -78,20 +60,24 @@ const useNearViewport = (ref, onVisible) => {
   }, []);
 };
 
-// Fetch partagé du board (utilisé par les deux sections)
+// Fetchs partagés
 const fetchVeille = async () => {
   const res = await fetch('/api/demo/veille');
   if (!res.ok) return null;
   const data = await res.json();
-  const next = {};
-  for (const p of data.profiles || []) next[p.key] = p.items || [];
-  return next;
+  return data.profiles || null; // [{key, name, topic, items}]
+};
+const fetchMedia = async () => {
+  const res = await fetch('/api/demo/media');
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.media && data.media.length ? data.media : null;
 };
 
 // ───── 3. BOARD DE VEILLE EN DIRECT ─────────────────────────────────────
 const LiveBoard = () => {
   const sectionRef = useRL(null);
-  const [profiles, setProfiles] = useSL(null);
+  const [profiles, setProfiles] = useSL(null); // [{key, name, topic, items}]
   const [tab, setTab] = useSL('ballon_bleu');
   const [, forceTick] = useSL(0);
   const knownIds = useRL(new Set());
@@ -103,8 +89,8 @@ const LiveBoard = () => {
     try {
       const next = await fetchVeille();
       if (!next) return;
-      for (const items of Object.values(next)) {
-        for (const it of items) {
+      for (const p of next) {
+        for (const it of p.items) {
           if (knownIds.current.size && !knownIds.current.has(it.id)) freshIds.current.add(it.id);
           knownIds.current.add(it.id);
         }
@@ -134,8 +120,8 @@ const LiveBoard = () => {
     document.getElementById('demo-generate')?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const media = mediaByKey(tab);
-  const items = profiles?.[tab] || [];
+  const list = profiles || MEDIA_FALLBACK.map(m => ({ key: m.key, name: m.name, topic: '', items: [] }));
+  const active = list.find(p => p.key === tab) || list[0];
 
   return (
     <section className="section section-live" id="demo-live" ref={sectionRef}>
@@ -152,13 +138,13 @@ const LiveBoard = () => {
             <span className="live-dot" />
             <span className="live-status-label">En direct</span>
             <span className="live-status-sep">·</span>
-            <span>La veille de {media.name} — {media.domain.toLowerCase()}</span>
+            <span>La veille de {active.name}{active.topic ? ' — ' + active.topic : ''}</span>
           </div>
           <div className="live-tabs">
-            {DEMO_MEDIA.map(m => (
-              <button key={m.key} className={'live-tab' + (tab === m.key ? ' active' : '')}
-                      onClick={() => { setTab(m.key); window.__forjeTrack?.('demo_board_tab', { preset: m.key }); }}>
-                {m.name}
+            {list.map(p => (
+              <button key={p.key} className={'live-tab' + (tab === p.key ? ' active' : '')}
+                      onClick={() => { setTab(p.key); window.__forjeTrack?.('demo_board_tab', { preset: p.key }); }}>
+                {p.name}
               </button>
             ))}
           </div>
@@ -170,10 +156,10 @@ const LiveBoard = () => {
               {[0, 1, 2, 3].map(i => <div key={i} className="live-skeleton" style={{ animationDelay: (i * 0.12) + 's' }} />)}
             </div>
           )}
-          {profiles && items.length === 0 && (
+          {profiles && active.items.length === 0 && (
             <div className="live-empty">La veille se réchauffe — reviens dans quelques minutes.</div>
           )}
-          {items.map(item => (
+          {active.items.map(item => (
             <div key={item.id} className={'live-row' + (freshIds.current.has(item.id) ? ' fresh' : '')}>
               <div className={'live-score' + (item.score >= 80 ? ' hot' : '')}>{item.score}</div>
               <div className="live-main">
@@ -220,6 +206,7 @@ const PipelineProgress = ({ stepIdx, done }) => (
 
 const InteractiveDemo = () => {
   const sectionRef = useRL(null);
+  const [mediaList, setMediaList] = useSL(MEDIA_FALLBACK);
   const [mediaKey, setMediaKey] = useSL('ballon_bleu');
   const [news, setNews] = useSL({});
   const [prompt, setPrompt] = useSL('');
@@ -230,17 +217,22 @@ const InteractiveDemo = () => {
   const timers = useRL([]);
   const started = useRL(false);
 
-  const loadNews = useCL(async () => {
+  const loadData = useCL(async () => {
     try {
-      const next = await fetchVeille();
-      if (next) setNews(next);
+      const [profiles, media] = await Promise.all([fetchVeille(), fetchMedia()]);
+      if (profiles) {
+        const next = {};
+        for (const p of profiles) next[p.key] = p.items;
+        setNews(next);
+      }
+      if (media) setMediaList(media);
     } catch (e) { /* silencieux */ }
   }, []);
 
   useNearViewport(sectionRef, () => {
     if (started.current) return;
     started.current = true;
-    loadNews();
+    loadData();
     window.__forjeTrack?.('demo_section_viewed');
   });
 
@@ -255,7 +247,7 @@ const InteractiveDemo = () => {
         window.__forjeTrack?.('demo_news_selected', { news_id: id, from: 'board' });
       }
       if (phase === 'result' || phase === 'error') setPhase('idle');
-      if (!started.current) { started.current = true; loadNews(); }
+      if (!started.current) { started.current = true; loadData(); }
     };
     window.addEventListener('forje-demo-select', handler);
     return () => window.removeEventListener('forje-demo-select', handler);
@@ -344,7 +336,7 @@ const InteractiveDemo = () => {
 
   useEL(() => clearTimers, []);
 
-  const media = mediaByKey(mediaKey);
+  const media = mediaList.find(m => m.key === mediaKey) || mediaList[0];
   const boardItems = (news[mediaKey] || []).slice(0, 3);
   const signupCta = (label, event) => (
     <a href="Forje App.html" className="btn btn-primary btn-lg" style={{ textDecoration: 'none' }}
@@ -358,17 +350,18 @@ const InteractiveDemo = () => {
       <div className="section-label"><span className="bar" /> Démo</div>
       <h2>Essaie. <span className="accent">Là, maintenant, sans compte.</span></h2>
       <p className="lede">
-        C'est l'outil de l'app, branché sur deux médias démo. Écris une actu — ou
-        prends-en une sur le board — et regarde le post sortir dans leur charte.
+        C'est le vrai outil, branché sur les vrais comptes de deux médias démo.
+        Écris une actu — ou prends-en une sur le board — et regarde le post
+        sortir dans leur charte.
       </p>
 
       <div className="demo-shell">
         <div className="demo-left">
           <div className="media-tabs">
-            {DEMO_MEDIA.map(m => (
+            {mediaList.map(m => (
               <button key={m.key} className={'media-tab' + (mediaKey === m.key ? ' active' : '')}
                       onClick={() => selectMedia(m.key)}>
-                <img src={m.avatar} alt="" />
+                <MediaAvatar media={m} size={22} className="media-tab-avatar" />
                 <span>{m.name}</span>
               </button>
             ))}
@@ -376,23 +369,25 @@ const InteractiveDemo = () => {
 
           <div className="media-card">
             <div className="media-id">
-              <img className="media-avatar" src={media.avatar} alt={'Logo ' + media.name} />
+              <MediaAvatar media={media} size={52} className="media-avatar" />
               <div>
                 <div className="media-name">{media.name}</div>
-                <div className="media-handle">{media.handle}</div>
-              </div>
-              <div className="media-facts">
-                <span className="media-domain">{media.domain}</span>
-                <span className="media-followers">{media.followers}</span>
+                {media.handle && <div className="media-handle">{media.handle}</div>}
               </div>
             </div>
-            <p className="media-desc">{media.description}</p>
-            <div className="media-identity">
-              <div className="media-swatches">
-                {media.palette.map((c, i) => <span key={i} style={{ background: c }} />)}
+            {media.topics && media.topics.length > 0 && (
+              <div className="media-topics">
+                {media.topics.slice(0, 5).map((t, i) => <span key={i} className="media-topic">{t}</span>)}
               </div>
-              <span className="media-font">{media.font}</span>
-              <span className="media-tone">{media.tone}</span>
+            )}
+            <div className="media-identity">
+              {media.palette && media.palette.length > 0 && (
+                <div className="media-swatches">
+                  {media.palette.map((c, i) => <span key={i} style={{ background: c }} />)}
+                </div>
+              )}
+              {media.font && <span className="media-font">{media.font}</span>}
+              {media.tone && media.tone.length > 0 && <span className="media-tone">{media.tone.join(' · ')}</span>}
             </div>
           </div>
 
@@ -403,7 +398,7 @@ const InteractiveDemo = () => {
               className="prompt-input"
               rows={3}
               maxLength={300}
-              placeholder={media.placeholder}
+              placeholder={media.placeholder || 'Colle une actu, une déclaration, une idée de post…'}
               value={prompt}
               onChange={onPromptChange}
             />

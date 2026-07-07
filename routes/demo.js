@@ -24,44 +24,39 @@ const { runActuPipeline } = require('./generate');
 const router = express.Router();
 
 // ─── Profils démo ─────────────────────────────────────────────────────────────
-// Les comptes de veille existent en base (UUID fixes — migration demo_landing_tables).
-// Les identités de marque sont hardcodées : la démo ne touche pas à la table clients.
+// compteId → profil de veille (table comptes, seedé par migration).
+// clientId → identité de marque RÉELLE (table clients) : la démo utilise le
+// vrai compte du média, exactement comme s'il générait depuis l'app.
 const DEMO_PROFILES = {
   ballon_bleu: {
     compteId: 'a0000000-0000-4000-8000-000000000001',
-    name: 'Ballon Bleu',
+    clientId: '52abba92-0e16-43d2-adac-a373b3ee829d',
     topic: 'football',
-    client: {
-      name: 'Ballon Bleu',
-      logo_local_path: path.join(__dirname, '..', 'assets', 'demo', 'ballon-bleu-logo.png'),
-      brand_colors: ['#1447B8', '#2E7BE8'],
-      font_primary: 'Archivo Black',
-      font_id: 'archivo-black',
-      font_body: 'Inter',
-      mood: 'energique',
-      graphic_style: 'sport',
-      tone_tags: ['direct', 'passionné', 'supporter'],
-      topics: ['football', 'ligue 1', 'mercato'],
-    },
+    placeholder: 'Mbappé forfait pour le Clásico, blessure à l\'entraînement ce matin…',
   },
   frame: {
     compteId: 'a0000000-0000-4000-8000-000000000002',
-    name: 'Frame',
-    topic: 'médias & culture',
-    client: {
-      name: 'Frame',
-      logo_local_path: path.join(__dirname, '..', 'assets', 'demo', 'frame-logo.png'),
-      brand_colors: ['#12100C', '#C8943A'],
-      font_primary: 'Playfair Display',
-      font_id: 'playfair-display',
-      font_body: 'DM Sans',
-      mood: 'premium',
-      graphic_style: 'magazine',
-      tone_tags: ['éditorial', 'précis', 'curieux'],
-      topics: ['cinéma', 'médias', 'streaming'],
-    },
+    clientId: 'bf611af2-5ec3-4839-a36d-28f0b9d64b24',
+    topic: 'culture & entertainment',
+    placeholder: 'Netflix annonce une série adaptée de Zelda avec Nintendo…',
   },
 };
+
+// Identités clients : mêmes colonnes que getClientBrand (routes/generate.js),
+// cache mémoire 60s — une modif du compte dans l'app se reflète vite ici.
+const _clientCache = new Map();
+async function loadDemoClient(key) {
+  const p = DEMO_PROFILES[key];
+  if (!p) return null;
+  const hit = _clientCache.get(key);
+  if (hit && Date.now() - hit.at < 60000) return hit.client;
+  const { data, error } = await supabase.from('clients').select(
+    'id,name,instagram_handle,logo_url,avatar_url,brand_colors,font_primary,font_body,font_id,font_set,font_custom_url,font_is_custom,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
+  ).eq('id', p.clientId).maybeSingle();
+  if (error) console.error('[Demo/client]', key, error.message);
+  if (data) { _clientCache.set(key, { at: Date.now(), client: data }); return data; }
+  return hit ? hit.client : null;
+}
 
 const DAILY_LIMIT      = parseInt(process.env.DEMO_DAILY_LIMIT || '300', 10);
 const VISITOR_LIMIT    = 2;                      // générations réelles / visiteur / 24h
@@ -108,17 +103,20 @@ router.get('/veille', async (_req, res) => {
       .order('published_at', { ascending: false });
     if (error) throw error;
 
-    const profiles = Object.entries(DEMO_PROFILES).map(([key, p]) => ({
-      key,
-      name: p.name,
-      topic: p.topic,
-      items: (data || [])
-        .filter(r => r.profile_key === key)
-        .slice(0, 8)
-        .map(r => ({
-          id: r.id, title: r.titre, source: r.source,
-          score: r.score, published_at: r.published_at,
-        })),
+    const profiles = await Promise.all(Object.entries(DEMO_PROFILES).map(async ([key, p]) => {
+      const client = await loadDemoClient(key);
+      return {
+        key,
+        name: client?.name || key,
+        topic: p.topic,
+        items: (data || [])
+          .filter(r => r.profile_key === key)
+          .slice(0, 8)
+          .map(r => ({
+            id: r.id, title: r.titre, source: r.source,
+            score: r.score, published_at: r.published_at,
+          })),
+      };
     }));
 
     const payload = { profiles };
@@ -217,13 +215,21 @@ router.post('/generate', async (req, res) => {
       .single();
     if (genErr) throw genErr;
 
+    // Identité réelle du média démo (table clients) — jamais débité :
+    // la démo n'appelle pas chargeCredits, le quota visiteur fait office de crédit.
+    const client = await loadDemoClient(preset);
+    if (!client) {
+      await supabase.from('demo_generations').delete().eq('id', genRow.id);
+      return res.status(503).json({ error: 'daily_limit', message: 'La démo est indisponible — crée ton compte pour générer.' });
+    }
+
     let payload;
     try {
       const newsText = news
         ? news.titre + (news.description ? ' — ' + news.description : '')
         : promptText;
       // Garde-fou 3 : watermark composité côté serveur (Sharp)
-      payload = await runActuPipeline(profile.client, {
+      payload = await runActuPipeline(client, {
         newsText: newsText.slice(0, 600),
         imageMode: 'classic',
         watermark: WATERMARK_TEXT,
@@ -259,6 +265,36 @@ async function remainingFor(ipHash, visitorId) {
     .or(`ip_hash.eq.${ipHash},visitor_id.eq.${visitorId}`);
   return Math.max(0, VISITOR_LIMIT - (count || 0));
 }
+
+// ─── GET /api/demo/media ──────────────────────────────────────────────────────
+// Fiche publique des médias démo — les VRAIES infos du compte (table clients),
+// filtrées aux champs affichables sur la landing.
+router.get('/media', async (_req, res) => {
+  try {
+    const media = [];
+    for (const [key, p] of Object.entries(DEMO_PROFILES)) {
+      const c = await loadDemoClient(key);
+      if (!c) continue;
+      media.push({
+        key,
+        name: c.name,
+        handle: c.instagram_handle || null,
+        avatar: c.avatar_url || c.logo_url || null,
+        logo: c.logo_url || null,
+        palette: c.brand_colors || [],
+        font: c.font_primary || null,
+        tone: (c.tone_tags || []).map(t => String(t).toLowerCase()),
+        topics: c.topics || [],
+        domain: p.topic,
+        placeholder: p.placeholder,
+      });
+    }
+    res.json({ media });
+  } catch (e) {
+    console.error('[Demo/media]', e.message);
+    res.status(500).json({ error: 'indisponible' });
+  }
+});
 
 // ─── POST /api/demo/track ─────────────────────────────────────────────────────
 const TRACK_EVENTS = new Set([
