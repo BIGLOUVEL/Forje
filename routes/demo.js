@@ -30,7 +30,6 @@ const DEMO_PROFILES = {
   ballon_bleu: {
     compteId: 'a0000000-0000-4000-8000-000000000001',
     name: 'Ballon Bleu',
-    emoji: '⚽',
     topic: 'football',
     client: {
       name: 'Ballon Bleu',
@@ -48,7 +47,6 @@ const DEMO_PROFILES = {
   frame: {
     compteId: 'a0000000-0000-4000-8000-000000000002',
     name: 'Frame',
-    emoji: '📰',
     topic: 'médias & culture',
     client: {
       name: 'Frame',
@@ -113,7 +111,6 @@ router.get('/veille', async (_req, res) => {
     const profiles = Object.entries(DEMO_PROFILES).map(([key, p]) => ({
       key,
       name: p.name,
-      emoji: p.emoji,
       topic: p.topic,
       items: (data || [])
         .filter(r => r.profile_key === key)
@@ -134,40 +131,58 @@ router.get('/veille', async (_req, res) => {
 });
 
 // ─── POST /api/demo/generate ──────────────────────────────────────────────────
+// Deux entrées possibles : une actu du board (news_id, cacheable) ou un prompt
+// libre court (l'utilisateur teste l'outil comme dans l'app).
 router.post('/generate', async (req, res) => {
-  const { preset, news_id } = req.body || {};
+  const { preset, news_id, prompt } = req.body || {};
   const profile = DEMO_PROFILES[preset];
 
-  // Garde-fou 1 : preset connu + actu du board uniquement (jamais de texte libre)
   if (!profile) return res.status(400).json({ error: 'preset inconnu' });
-  if (!news_id || !/^[a-f0-9-]{36}$/.test(String(news_id))) {
-    return res.status(400).json({ error: 'news_id invalide' });
+
+  let news = null;
+  let promptText = null;
+  if (news_id) {
+    if (!/^[a-f0-9-]{36}$/.test(String(news_id))) {
+      return res.status(400).json({ error: 'news_id invalide' });
+    }
+  } else {
+    promptText = String(prompt || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (promptText.length < 10) {
+      return res.status(400).json({ error: 'Écris au moins une phrase — une actu, une déclaration, une idée de post.' });
+    }
+    if (promptText.length > 300) promptText = promptText.slice(0, 300);
   }
 
   const visitorId = ensureVisitor(req, res);
   const ipHash    = hashIp(getIp(req));
 
   try {
-    const { data: news } = await supabase
-      .from('demo_veille')
-      .select('id, titre, description')
-      .eq('id', news_id)
-      .eq('profile_key', preset)
-      .maybeSingle();
-    if (!news) return res.status(404).json({ error: 'Cette actu n\'est plus sur le board — choisis-en une autre.' });
+    if (news_id) {
+      const { data } = await supabase
+        .from('demo_veille')
+        .select('id, titre, description')
+        .eq('id', news_id)
+        .eq('profile_key', preset)
+        .maybeSingle();
+      news = data;
+      if (!news) return res.status(404).json({ error: 'Cette actu n\'est plus sur le board — choisis-en une autre.' });
+    }
 
     // Cache 6h : même actu + même preset → servi instantanément, coût zéro
-    const { data: cached } = await supabase
-      .from('demo_cache')
-      .select('payload, created_at')
-      .eq('preset', preset)
-      .eq('news_id', news_id)
-      .maybeSingle();
-    if (cached && Date.now() - new Date(cached.created_at).getTime() < CACHE_TTL_MS) {
-      supabase.from('demo_generations').insert({
-        ip_hash: ipHash, visitor_id: visitorId, preset, news_id, cached: true,
-      }).then(() => {}, () => {});
-      return res.json({ ...cached.payload, cached: true, remaining: await remainingFor(ipHash, visitorId) });
+    // (uniquement pour les actus du board — un prompt libre n'est jamais identique)
+    if (news_id) {
+      const { data: cached } = await supabase
+        .from('demo_cache')
+        .select('payload, created_at')
+        .eq('preset', preset)
+        .eq('news_id', news_id)
+        .maybeSingle();
+      if (cached && Date.now() - new Date(cached.created_at).getTime() < CACHE_TTL_MS) {
+        supabase.from('demo_generations').insert({
+          ip_hash: ipHash, visitor_id: visitorId, preset, news_id, cached: true,
+        }).then(() => {}, () => {});
+        return res.json({ ...cached.payload, cached: true, remaining: await remainingFor(ipHash, visitorId) });
+      }
     }
 
     // Garde-fou 2 : 2 générations réelles / 24h par visiteur (IP OU cookie)
@@ -197,14 +212,16 @@ router.post('/generate', async (req, res) => {
     // supprimé si le pipeline échoue.
     const { data: genRow, error: genErr } = await supabase
       .from('demo_generations')
-      .insert({ ip_hash: ipHash, visitor_id: visitorId, preset, news_id, cached: false })
+      .insert({ ip_hash: ipHash, visitor_id: visitorId, preset, news_id: news_id || null, cached: false })
       .select('id')
       .single();
     if (genErr) throw genErr;
 
     let payload;
     try {
-      const newsText = news.titre + (news.description ? ' — ' + news.description : '');
+      const newsText = news
+        ? news.titre + (news.description ? ' — ' + news.description : '')
+        : promptText;
       // Garde-fou 3 : watermark composité côté serveur (Sharp)
       payload = await runActuPipeline(profile.client, {
         newsText: newsText.slice(0, 600),
@@ -219,9 +236,11 @@ router.post('/generate', async (req, res) => {
     // Le payload ne sert à rien sans caption pour la démo → on l'allège un peu
     delete payload.caption;
 
-    supabase.from('demo_cache').upsert({
-      preset, news_id, payload, created_at: new Date().toISOString(),
-    }).then(() => {}, (e) => console.warn('[Demo/cache]', e?.message));
+    if (news_id) {
+      supabase.from('demo_cache').upsert({
+        preset, news_id, payload, created_at: new Date().toISOString(),
+      }).then(() => {}, (e) => console.warn('[Demo/cache]', e?.message));
+    }
 
     res.json({ ...payload, cached: false, remaining: remaining - 1 });
   } catch (e) {
@@ -245,7 +264,7 @@ async function remainingFor(ipHash, visitorId) {
 const TRACK_EVENTS = new Set([
   'landing_cta_hero_essayer', 'landing_cta_voir_demo', 'landing_cta_pricing', 'landing_cta_final',
   'demo_board_viewed', 'demo_board_tab', 'demo_board_forge_clicked',
-  'demo_section_viewed', 'demo_preset_selected', 'demo_news_selected',
+  'demo_section_viewed', 'demo_preset_selected', 'demo_news_selected', 'demo_prompt_used',
   'demo_generate_started', 'demo_post_displayed', 'demo_rate_limited', 'demo_daily_limit',
   'demo_cta_clicked', 'demo_cta_post_result', 'demo_cta_rate_limited', 'demo_cta_daily_limit',
 ]);

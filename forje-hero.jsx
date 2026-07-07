@@ -1,4 +1,4 @@
-/* global React, Icon, Sparkle */
+/* global React, Icon */
 const { useState: useStateH, useEffect: useEffectH } = React;
 
 // ───── Posts flottants autour du mockup dashboard ─────────────────────────
@@ -73,16 +73,12 @@ const Hero = () => {
 
       <div className="hero-visual-col">
         <div className="hero-mockup-stage">
-          <Sparkle size={13} style={{ position: 'absolute', top: '4%', left: '6%', opacity: 0.9, zIndex: 4 }} color="#ffe6b0" />
-          <Sparkle size={9}  style={{ position: 'absolute', top: '16%', right: '2%', opacity: 0.85, zIndex: 4 }} color="#c6d8ff" />
-          <Sparkle size={11} style={{ position: 'absolute', bottom: '10%', left: '12%', opacity: 0.8, zIndex: 4 }} color="#ff9ed3" />
-
           <div className="hero-mockup">
             <div className="hero-mockup-chrome">
               <span /><span /><span />
               <div className="hero-mockup-url">app.forje.studio</div>
             </div>
-            <img src="assets/dashboard-veille.png" alt="Dashboard Forje Studio — veille en temps réel" loading="eager" />
+            <img src="assets/demo/dashboard-4k.webp" alt="Dashboard Forje Studio — veille en temps réel" loading="eager" />
           </div>
 
           {FLOAT_POSTS.map((p) => (

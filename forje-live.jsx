@@ -1,7 +1,7 @@
-/* global React, Icon, Sparkle */
+/* global React, Icon */
 /* ═══════════════════════════════════════════════════════════════════════
    FORJE LANDING — SECTIONS SIGNATURE
-   3. Board de veille LIVE   4. Démo de génération INTERACTIVE
+   3. Board de veille en direct   4. L'outil de génération, en vrai
    Données lazy-loadées à l'approche du viewport ; funnel tracké.
    ═══════════════════════════════════════════════════════════════════════ */
 const { useState: useSL, useEffect: useEL, useRef: useRL, useCallback: useCL } = React;
@@ -18,42 +18,36 @@ window.__forjeTrack = (event, props) => {
   } catch (e) { /* le tracking ne casse jamais la page */ }
 };
 
-// ───── Presets démo (miroir des configs serveur routes/demo.js) ─────────
-const DEMO_PRESETS = [
+// ───── Médias démo (miroir des configs serveur routes/demo.js) ──────────
+const DEMO_MEDIA = [
   {
     key: 'ballon_bleu',
     name: 'Ballon Bleu',
-    emoji: '⚽',
-    topic: 'football',
     handle: '@ballonbleu',
+    domain: 'Football',
+    followers: '42 000 abonnés',
+    avatar: 'assets/demo/ballon-bleu-logo.png',
+    description: 'Média foot indépendant — l\'actu traitée à chaud, côté terrain et vestiaire. Ligue 1, mercato, sélections.',
     palette: ['#0A1E5E', '#1447B8', '#2E7BE8', '#EEF4FF'],
     font: 'Archivo Black',
-    mood: 'direct · graphique · terrain',
-    logoLetter: 'B',
-    logoBg: 'linear-gradient(140deg, #1447B8, #2E7BE8)',
-    samples: [
-      { bg: 'linear-gradient(165deg, #0A1E5E, #1447B8 70%, #2E7BE8)', title: 'Le Clásico en 5 chiffres' },
-      { bg: 'linear-gradient(165deg, #081A4E, #0E2F86)', title: '« On jouera pour gagner »' },
-    ],
+    tone: 'direct · graphique · terrain',
+    placeholder: 'Mbappé forfait pour le Clásico, blessure à l\'entraînement ce matin…',
   },
   {
     key: 'frame',
     name: 'Frame',
-    emoji: '📰',
-    topic: 'médias & culture',
     handle: '@frame.media',
+    domain: 'Médias & culture',
+    followers: '38 000 abonnés',
+    avatar: 'assets/demo/frame-logo.png',
+    description: 'Décrypte comment les images et les plateformes façonnent la culture. Cinéma, streaming, presse, création.',
     palette: ['#0D0B09', '#2A1D0C', '#C8943A', '#F5EEDC'],
     font: 'Playfair Display',
-    mood: 'éditorial · contrasté · précis',
-    logoLetter: 'F',
-    logoBg: 'linear-gradient(140deg, #2A1D0C, #C8943A)',
-    samples: [
-      { bg: 'linear-gradient(165deg, #0D0B09, #2A1D0C 70%, #4A3210)', title: 'Le streaming rebat les cartes' },
-      { bg: 'linear-gradient(165deg, #14100A, #3A2A10)', title: '« L\'info mérite mieux »' },
-    ],
+    tone: 'éditorial · contrasté · précis',
+    placeholder: 'Netflix ouvre sa plateforme aux vidéos de BuzzFeed et Condé Nast…',
   },
 ];
-const presetByKey = (k) => DEMO_PRESETS.find(p => p.key === k) || DEMO_PRESETS[0];
+const mediaByKey = (k) => DEMO_MEDIA.find(m => m.key === k) || DEMO_MEDIA[0];
 
 // ───── Helpers ──────────────────────────────────────────────────────────
 const relTime = (iso) => {
@@ -65,6 +59,12 @@ const relTime = (iso) => {
   if (h < 24) return 'il y a ' + h + ' h';
   return 'il y a ' + Math.floor(h / 24) + ' j';
 };
+
+const CheckIcon = (p) => (
+  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" {...p}>
+    <path d="M2 6.2 4.8 9 10 3.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 // Lazy-load : déclenche onVisible ~400px avant l'entrée dans le viewport.
 const useNearViewport = (ref, onVisible) => {
@@ -78,60 +78,68 @@ const useNearViewport = (ref, onVisible) => {
   }, []);
 };
 
-// ───── 3. BOARD DE VEILLE LIVE ──────────────────────────────────────────
+// Fetch partagé du board (utilisé par les deux sections)
+const fetchVeille = async () => {
+  const res = await fetch('/api/demo/veille');
+  if (!res.ok) return null;
+  const data = await res.json();
+  const next = {};
+  for (const p of data.profiles || []) next[p.key] = p.items || [];
+  return next;
+};
+
+// ───── 3. BOARD DE VEILLE EN DIRECT ─────────────────────────────────────
 const LiveBoard = () => {
   const sectionRef = useRL(null);
-  const [profiles, setProfiles] = useSL(null);   // { ballon_bleu: [...], frame: [...] }
+  const [profiles, setProfiles] = useSL(null);
   const [tab, setTab] = useSL('ballon_bleu');
-  const [, forceTick] = useSL(0);                 // re-render → timestamps relatifs à jour
+  const [, forceTick] = useSL(0);
   const knownIds = useRL(new Set());
   const freshIds = useRL(new Set());
   const started = useRL(false);
+  const timersRef = useRL([]);
 
-  const fetchBoard = useCL(async () => {
+  const refresh = useCL(async () => {
     try {
-      const res = await fetch('/api/demo/veille');
-      if (!res.ok) return;
-      const data = await res.json();
-      const next = {};
-      for (const p of data.profiles || []) {
-        next[p.key] = p.items || [];
-        for (const it of p.items || []) {
+      const next = await fetchVeille();
+      if (!next) return;
+      for (const items of Object.values(next)) {
+        for (const it of items) {
           if (knownIds.current.size && !knownIds.current.has(it.id)) freshIds.current.add(it.id);
           knownIds.current.add(it.id);
         }
       }
       setProfiles(next);
-      // l'animation d'entrée ne joue qu'une fois par actu
       setTimeout(() => { freshIds.current.clear(); }, 4000);
     } catch (e) { /* réseau : on garde l'état courant */ }
   }, []);
 
-  const timersRef = useRL([]);
   const start = useCL(() => {
     if (started.current) return;
     started.current = true;
-    fetchBoard();
-    timersRef.current.push(setInterval(fetchBoard, 30000));
+    refresh();
+    timersRef.current.push(setInterval(refresh, 30000));
     timersRef.current.push(setInterval(() => forceTick(n => n + 1), 20000));
     window.__forjeTrack?.('demo_board_viewed');
-  }, [fetchBoard]);
+  }, [refresh]);
 
   useNearViewport(sectionRef, start);
   useEL(() => () => timersRef.current.forEach(clearInterval), []);
 
   const forgePost = (item) => {
     window.__forjeTrack?.('demo_board_forge_clicked', { news_id: item.id, preset: tab });
-    window.dispatchEvent(new CustomEvent('forje-demo-select', { detail: { preset: tab, newsId: item.id } }));
+    window.dispatchEvent(new CustomEvent('forje-demo-select', {
+      detail: { preset: tab, newsId: item.id, title: item.title },
+    }));
     document.getElementById('demo-generate')?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const activePreset = presetByKey(tab);
+  const media = mediaByKey(tab);
   const items = profiles?.[tab] || [];
 
   return (
     <section className="section section-live" id="demo-live" ref={sectionRef}>
-      <div className="section-label"><span className="bar" /> Veille · En direct</div>
+      <div className="section-label"><span className="bar" /> Veille</div>
       <h2>Pendant que tu lis cette page,<br /><span className="accent">Forje surveille l'actu.</span></h2>
       <p className="lede">
         Ce board est branché sur la vraie veille de deux comptes démo.
@@ -140,14 +148,17 @@ const LiveBoard = () => {
 
       <div className="live-board">
         <div className="live-head">
-          <div className="live-badge">
-            <span className="live-dot" /> EN DIRECT — La veille de {activePreset.name} ({activePreset.topic})
+          <div className="live-status">
+            <span className="live-dot" />
+            <span className="live-status-label">En direct</span>
+            <span className="live-status-sep">·</span>
+            <span>La veille de {media.name} — {media.domain.toLowerCase()}</span>
           </div>
           <div className="live-tabs">
-            {DEMO_PRESETS.map(p => (
-              <button key={p.key} className={'live-tab' + (tab === p.key ? ' active' : '')}
-                      onClick={() => { setTab(p.key); window.__forjeTrack?.('demo_board_tab', { preset: p.key }); }}>
-                {p.name} {p.emoji}
+            {DEMO_MEDIA.map(m => (
+              <button key={m.key} className={'live-tab' + (tab === m.key ? ' active' : '')}
+                      onClick={() => { setTab(m.key); window.__forjeTrack?.('demo_board_tab', { preset: m.key }); }}>
+                {m.name}
               </button>
             ))}
           </div>
@@ -164,21 +175,16 @@ const LiveBoard = () => {
           )}
           {items.map(item => (
             <div key={item.id} className={'live-row' + (freshIds.current.has(item.id) ? ' fresh' : '')}>
-              <div className={'live-score' + (item.score >= 80 ? ' hot' : '')}>
-                <span className="ls-dot" />{item.score}
-              </div>
+              <div className={'live-score' + (item.score >= 80 ? ' hot' : '')}>{item.score}</div>
               <div className="live-main">
                 <div className="live-title">{item.title}</div>
-                <div className="live-meta">{item.source}</div>
+                <div className="live-meta">{item.source} · {relTime(item.published_at)}</div>
               </div>
-              <div className="live-right">
-                <span className="live-time">{relTime(item.published_at)}</span>
-                {item.score >= 80 && (
-                  <button className="live-forge" onClick={() => forgePost(item)}>
-                    ⚡ Forger ce post <Icon.Arrow />
-                  </button>
-                )}
-              </div>
+              {item.score >= 80 && (
+                <button className="live-forge" onClick={() => forgePost(item)}>
+                  Forger ce post <Icon.Arrow />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -187,38 +193,14 @@ const LiveBoard = () => {
   );
 };
 
-// ───── 4. DÉMO INTERACTIVE ──────────────────────────────────────────────
+// ───── 4. L'OUTIL, EN VRAI ──────────────────────────────────────────────
 // Les 4 étapes affichées pendant la génération — durées estimées réalistes.
 const PIPELINE_STEPS = [
-  { label: 'Claude analyse l\'actu…', est: 4000 },
-  { label: 'Recherche de la photo…', est: 5000 },
-  { label: 'Génération du visuel…', est: 13000 },
-  { label: 'Composition dans la charte…', est: 7000 },
+  { label: 'Analyse de l\'actu', est: 4000 },
+  { label: 'Recherche de la photo', est: 5000 },
+  { label: 'Génération du visuel', est: 13000 },
+  { label: 'Composition dans la charte', est: 7000 },
 ];
-
-const PresetCard = ({ p, selected, onSelect }) => (
-  <button className={'preset-card' + (selected ? ' selected' : '')} onClick={onSelect}>
-    <div className="preset-id">
-      <div className="preset-logo" style={{ background: p.logoBg }}>{p.logoLetter}</div>
-      <div>
-        <div className="preset-name">{p.emoji} {p.name}</div>
-        <div className="preset-handle">{p.handle}</div>
-      </div>
-    </div>
-    <div className="preset-swatches">
-      {p.palette.map((c, i) => <span key={i} style={{ background: c }} />)}
-    </div>
-    <div className="preset-font">{p.font} · {p.mood}</div>
-    <div className="preset-samples">
-      {p.samples.map((s, i) => (
-        <div key={i} className="preset-sample" style={{ background: s.bg }}>
-          <span>{s.title}</span>
-        </div>
-      ))}
-    </div>
-    <div className="preset-check">{selected ? '✓ Identité sélectionnée' : 'Choisir ce style'}</div>
-  </button>
-);
 
 const PipelineProgress = ({ stepIdx, done }) => (
   <div className="pipeline">
@@ -227,7 +209,7 @@ const PipelineProgress = ({ stepIdx, done }) => (
       return (
         <div key={i} className={'pipe-step ' + state}>
           <span className="pipe-ico">
-            {state === 'done' ? '✓' : state === 'active' ? <span className="pipe-spin" /> : '○'}
+            {state === 'done' ? <CheckIcon /> : state === 'active' ? <span className="pipe-spin" /> : null}
           </span>
           <span className="pipe-label">{s.label}</span>
         </div>
@@ -238,23 +220,20 @@ const PipelineProgress = ({ stepIdx, done }) => (
 
 const InteractiveDemo = () => {
   const sectionRef = useRL(null);
-  const [presetKey, setPresetKey] = useSL(null);
-  const [news, setNews] = useSL({});             // par preset : items du board (score ≥ 60)
-  const [newsId, setNewsId] = useSL(null);
-  const [phase, setPhase] = useSL('idle');       // idle | generating | result | limited | busy | error
+  const [mediaKey, setMediaKey] = useSL('ballon_bleu');
+  const [news, setNews] = useSL({});
+  const [prompt, setPrompt] = useSL('');
+  const [sourceNewsId, setSourceNewsId] = useSL(null); // renseigné si le texte vient du board
+  const [phase, setPhase] = useSL('idle');             // idle | generating | result | limited | busy | error
   const [stepIdx, setStepIdx] = useSL(0);
-  const [result, setResult] = useSL(null);       // { image_url, cached, remaining }
+  const [result, setResult] = useSL(null);
   const timers = useRL([]);
   const started = useRL(false);
 
   const loadNews = useCL(async () => {
     try {
-      const res = await fetch('/api/demo/veille');
-      if (!res.ok) return;
-      const data = await res.json();
-      const next = {};
-      for (const p of data.profiles || []) next[p.key] = (p.items || []).slice(0, 5);
-      setNews(next);
+      const next = await fetchVeille();
+      if (next) setNews(next);
     } catch (e) { /* silencieux */ }
   }, []);
 
@@ -268,20 +247,37 @@ const InteractiveDemo = () => {
   // Pré-sélection depuis le board ("Forger ce post")
   useEL(() => {
     const handler = (e) => {
-      const { preset, newsId: id } = e.detail || {};
-      if (preset) selectPreset(preset, true);
-      if (id) { setNewsId(id); window.__forjeTrack?.('demo_news_selected', { news_id: id, from: 'board' }); }
+      const { preset, newsId: id, title } = e.detail || {};
+      if (preset) selectMedia(preset, true);
+      if (id) {
+        setSourceNewsId(id);
+        setPrompt(title || '');
+        window.__forjeTrack?.('demo_news_selected', { news_id: id, from: 'board' });
+      }
+      if (phase === 'result' || phase === 'error') setPhase('idle');
       if (!started.current) { started.current = true; loadNews(); }
     };
     window.addEventListener('forje-demo-select', handler);
     return () => window.removeEventListener('forje-demo-select', handler);
-  }, []);
+  }, [phase]);
 
-  const selectPreset = (key, silent) => {
-    setPresetKey(key);
-    setNewsId(null);
+  const selectMedia = (key, silent) => {
+    setMediaKey(key);
+    setSourceNewsId(null);
+    setPrompt('');
     if (phase === 'result' || phase === 'error') setPhase('idle');
     if (!silent) window.__forjeTrack?.('demo_preset_selected', { preset: key });
+  };
+
+  const pickNews = (item) => {
+    setPrompt(item.title);
+    setSourceNewsId(item.id);
+    window.__forjeTrack?.('demo_news_selected', { news_id: item.id });
+  };
+
+  const onPromptChange = (e) => {
+    setPrompt(e.target.value);
+    setSourceNewsId(null); // texte modifié → génération sur prompt libre
   };
 
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
@@ -300,31 +296,36 @@ const InteractiveDemo = () => {
 
   const finishPipeline = (payload) => {
     clearTimers();
-    // accélère la fin des étapes restantes avant de révéler le post
     setStepIdx(PIPELINE_STEPS.length - 1);
     timers.current.push(setTimeout(() => {
       setResult(payload);
       setPhase('result');
-      window.__forjeTrack?.('demo_post_displayed', { preset: presetKey, cached: !!payload.cached });
+      window.__forjeTrack?.('demo_post_displayed', { preset: mediaKey, cached: !!payload.cached });
     }, payload.cached ? 900 : 600));
   };
 
+  const canGenerate = prompt.trim().length >= 10 && phase !== 'generating';
+
   const generate = async () => {
-    if (!presetKey || !newsId || phase === 'generating') return;
+    if (!canGenerate) return;
     setPhase('generating');
     setResult(null);
-    window.__forjeTrack?.('demo_generate_started', { preset: presetKey, news_id: newsId });
+    window.__forjeTrack?.('demo_generate_started', { preset: mediaKey, from: sourceNewsId ? 'board' : 'prompt' });
+    if (!sourceNewsId) window.__forjeTrack?.('demo_prompt_used', { preset: mediaKey });
     playPipeline();
     try {
+      const body = sourceNewsId
+        ? { preset: mediaKey, news_id: sourceNewsId }
+        : { preset: mediaKey, prompt: prompt.trim() };
       const res = await fetch('/api/demo/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preset: presetKey, news_id: newsId }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.bgImage) {
         // Rendu final identique à l'app : fond serveur + texte composé sur
-        // Canvas avec la vraie police du preset (window.__renderActuCanvas).
+        // Canvas avec la vraie police du média (window.__renderActuCanvas).
         let image = data.bgImage;
         try {
           if (window.__renderActuCanvas) image = await window.__renderActuCanvas(data);
@@ -343,68 +344,102 @@ const InteractiveDemo = () => {
 
   useEL(() => clearTimers, []);
 
-  const preset = presetKey ? presetByKey(presetKey) : null;
-  const items = presetKey ? (news[presetKey] || []) : [];
+  const media = mediaByKey(mediaKey);
+  const boardItems = (news[mediaKey] || []).slice(0, 3);
   const signupCta = (label, event) => (
     <a href="Forje App.html" className="btn btn-primary btn-lg" style={{ textDecoration: 'none' }}
-       onClick={() => window.__forjeTrack?.(event || 'demo_cta_clicked', { preset: presetKey })}>
+       onClick={() => window.__forjeTrack?.(event || 'demo_cta_clicked', { preset: mediaKey })}>
       {label} <Icon.Arrow />
     </a>
   );
 
   return (
     <section className="section section-demo" id="demo-generate" ref={sectionRef}>
-      <div className="section-label"><span className="bar" /> Démo · Sans compte</div>
+      <div className="section-label"><span className="bar" /> Démo</div>
       <h2>Essaie. <span className="accent">Là, maintenant, sans compte.</span></h2>
       <p className="lede">
-        Choisis une identité, choisis une actu du board — Forje génère un vrai post,
-        avec le vrai pipeline. Deux essais par visiteur.
+        C'est l'outil de l'app, branché sur deux médias démo. Écris une actu — ou
+        prends-en une sur le board — et regarde le post sortir dans leur charte.
       </p>
 
       <div className="demo-shell">
         <div className="demo-left">
-          <div className="demo-step-title"><span className="demo-step-num">1</span> Choisis un style</div>
-          <div className="preset-grid">
-            {DEMO_PRESETS.map(p => (
-              <PresetCard key={p.key} p={p} selected={presetKey === p.key} onSelect={() => selectPreset(p.key)} />
+          <div className="media-tabs">
+            {DEMO_MEDIA.map(m => (
+              <button key={m.key} className={'media-tab' + (mediaKey === m.key ? ' active' : '')}
+                      onClick={() => selectMedia(m.key)}>
+                <img src={m.avatar} alt="" />
+                <span>{m.name}</span>
+              </button>
             ))}
           </div>
 
-          <div className={'demo-news' + (presetKey ? '' : ' disabled')}>
-            <div className="demo-step-title"><span className="demo-step-num">2</span> Choisis une actu</div>
-            {!presetKey && <div className="demo-hint">Sélectionne d'abord un style au-dessus.</div>}
-            {presetKey && items.length === 0 && <div className="demo-hint">Chargement des actus du board…</div>}
-            {presetKey && items.map(item => (
-              <label key={item.id} className={'news-option' + (newsId === item.id ? ' selected' : '')}>
-                <input type="radio" name="demo-news" checked={newsId === item.id}
-                       onChange={() => { setNewsId(item.id); window.__forjeTrack?.('demo_news_selected', { news_id: item.id }); }} />
-                <span className="news-radio" />
-                <span className="news-title">{item.title}</span>
-                <span className={'news-score' + (item.score >= 80 ? ' hot' : '')}>{item.score}</span>
-              </label>
-            ))}
+          <div className="media-card">
+            <div className="media-id">
+              <img className="media-avatar" src={media.avatar} alt={'Logo ' + media.name} />
+              <div>
+                <div className="media-name">{media.name}</div>
+                <div className="media-handle">{media.handle}</div>
+              </div>
+              <div className="media-facts">
+                <span className="media-domain">{media.domain}</span>
+                <span className="media-followers">{media.followers}</span>
+              </div>
+            </div>
+            <p className="media-desc">{media.description}</p>
+            <div className="media-identity">
+              <div className="media-swatches">
+                {media.palette.map((c, i) => <span key={i} style={{ background: c }} />)}
+              </div>
+              <span className="media-font">{media.font}</span>
+              <span className="media-tone">{media.tone}</span>
+            </div>
           </div>
 
-          <button className="btn btn-primary btn-lg demo-generate-btn"
-                  disabled={!presetKey || !newsId || phase === 'generating'}
-                  onClick={generate}>
-            ⚡ Générer mon post
+          <div className="prompt-block">
+            <label className="prompt-label" htmlFor="demo-prompt">L'actu à forger</label>
+            <textarea
+              id="demo-prompt"
+              className="prompt-input"
+              rows={3}
+              maxLength={300}
+              placeholder={media.placeholder}
+              value={prompt}
+              onChange={onPromptChange}
+            />
+            {boardItems.length > 0 && (
+              <div className="prompt-suggestions">
+                <span className="prompt-suggestions-label">Sur le board :</span>
+                {boardItems.map(item => (
+                  <button key={item.id}
+                          className={'prompt-chip' + (sourceNewsId === item.id ? ' active' : '')}
+                          onClick={() => pickNews(item)}
+                          title={item.title}>
+                    {item.title.length > 48 ? item.title.slice(0, 48) + '…' : item.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button className="btn btn-primary btn-lg demo-generate-btn" disabled={!canGenerate} onClick={generate}>
+            Générer le post <Icon.Arrow />
           </button>
+          <div className="demo-note">Deux essais par visiteur · vrai pipeline, vraie charte</div>
         </div>
 
         <div className="demo-right">
           {phase === 'idle' && (
             <div className="demo-placeholder">
               <div className="demo-placeholder-frame">
-                <Sparkle size={12} style={{ position: 'absolute', top: 18, right: 22, opacity: 0.7 }} color="#c6d8ff" />
-                <span>Ton post apparaîtra ici</span>
+                <span>Le post de {media.name} apparaîtra ici</span>
               </div>
             </div>
           )}
 
           {phase === 'generating' && (
             <div className="demo-generating">
-              <div className="demo-gen-title">Forje travaille — regarde le pipeline.</div>
+              <div className="demo-gen-title">Forje compose le post de {media.name}</div>
               <PipelineProgress stepIdx={stepIdx} done={false} />
             </div>
           )}
@@ -412,11 +447,11 @@ const InteractiveDemo = () => {
           {phase === 'result' && result && (
             <div className="demo-result">
               <div className="demo-post-wrap">
-                <img className="demo-post" src={result.image} alt={'Post généré avec l\'identité de ' + preset.name} />
+                <img className="demo-post" src={result.image} alt={'Post généré avec l\'identité de ' + media.name} />
               </div>
-              {result.cached && <div className="demo-cached-note">Servi depuis la forge — cette actu avait déjà été générée.</div>}
+              {result.cached && <div className="demo-cached-note">Cette actu avait déjà été forgée — servie depuis le cache.</div>}
               <div className="demo-punchline">
-                Ça, c'était avec l'identité de <strong>{preset.name}</strong>.<br />Imagine avec la tienne.
+                Ça, c'était avec l'identité de <strong>{media.name}</strong>.<br />Imagine avec la tienne.
               </div>
               {signupCta('Forger mon identité — 50 crédits offerts', 'demo_cta_post_result')}
               {typeof result.remaining === 'number' && result.remaining > 0 && (

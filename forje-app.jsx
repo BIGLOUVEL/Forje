@@ -40,12 +40,7 @@ const App = () => {
     document.querySelectorAll('.chromatic-rotate').forEach(n => n.style.filter = `hue-rotate(${tweaks.hueShift}deg)`);
   }, [tweaks.hueShift]);
 
-  // starfield density
-  useEffect_(() => {
-    document.querySelectorAll('.stars, .stars-2, .stars-sparkle').forEach((n, i) => {
-      n.style.opacity = String([0.9,0.55,1][i] * tweaks.starfieldDensity);
-    });
-  }, [tweaks.starfieldDensity]);
+  // starfield supprimé — le réglage starfieldDensity du panneau tweaks est sans effet
 
   // rotation speed — no-op (hero is static now)
 
@@ -56,10 +51,6 @@ const App = () => {
           <div className="blob b1" /><div className="blob b2" /><div className="blob b3" />
           <div className="blob b4" /><div className="blob b5" />
         </div>
-        <div className="stars" />
-        <div className="stars-2" />
-        <div className="stars-sparkle" />
-        <Streaks />
       </div>
       <div className="horizon" />
       <div className="cursor-halo" />

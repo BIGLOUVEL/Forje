@@ -23,7 +23,7 @@
 <link id="css-l1" rel="stylesheet" href="forje.css" media="none"/>
 <link id="css-l2" rel="stylesheet" href="forje-lux.css" media="none"/>
 <link id="css-l3" rel="stylesheet" href="forje-mark.css" media="none"/>
-<link id="css-l4" rel="stylesheet" href="forje-live.css?v=1" media="none"/>
+<link id="css-l4" rel="stylesheet" href="forje-live.css?v=2" media="none"/>
 
 <!-- App CSS — désactivé par défaut -->
 <link id="css-a1" rel="stylesheet" href="app.css?v=8" media="none"/>
@@ -136,6 +136,13 @@
     } catch (e) {
       console.error(`[Forje] Erreur chargement ${src}:`, e);
     }
+  }
+
+  // Deep-link : le contenu arrive après le load → on rejoue l'ancre de l'URL
+  if (location.hash) {
+    setTimeout(() => {
+      try { document.querySelector(location.hash)?.scrollIntoView(); } catch (e) {}
+    }, 900);
   }
 })();
 </script>

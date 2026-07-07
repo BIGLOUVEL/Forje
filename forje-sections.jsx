@@ -1,4 +1,4 @@
-/* global React, Icon, Sparkle */
+/* global React, Icon */
 const { useState: useS, useEffect: useE, useRef: useR } = React;
 
 // ───── 2. Bandeau preuve ────────────────────────────────────────────────
@@ -115,7 +115,6 @@ const HowItWorks = () => (
 // ───── 6. Les 3 formats ─────────────────────────────────────────────────
 const FORMATS = [
   {
-    icon: '⚡',
     name: 'Actu',
     cost: '2 crédits',
     tagline: 'Du breaking au post en 90 secondes',
@@ -124,7 +123,6 @@ const FORMATS = [
     exampleKey: 'actu',
   },
   {
-    icon: '❝',
     name: 'Citation',
     cost: '1 crédit',
     tagline: 'Une déclaration, un visuel, zéro friction',
@@ -133,7 +131,6 @@ const FORMATS = [
     exampleKey: 'citation',
   },
   {
-    icon: '📚',
     name: 'Deep Dive',
     cost: '3–8 crédits',
     tagline: 'Le carousel 7-10 slides le plus sauvegardé d\'Instagram, documenté par une vraie recherche web',
@@ -153,7 +150,6 @@ const FormatCard = ({ f, example }) => (
       )}
     </div>
     <div className="format-head">
-      <span className="format-ico">{f.icon}</span>
       <h3>{f.name}</h3>
       <span className="format-cost">{f.cost}</span>
     </div>
