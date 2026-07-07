@@ -72,11 +72,11 @@ const App = () => {
             <span className="brand-suffix">Studio</span>
           </div>
           <div className="nav-links">
-            <a href="#">Produit</a>
-            <a href="#">Clients</a>
-            <a href="#">Processus</a>
-            <a href="#">Tarifs</a>
-            <a href="#">Manifeste</a>
+            <a href="#demo-live">Démo</a>
+            <a href="#how">Comment ça marche</a>
+            <a href="#formats">Formats</a>
+            <a href="#pricing">Tarifs</a>
+            <a href="#faq">FAQ</a>
           </div>
           <div className="nav-right">
             <a href="Forje App.html" style={{ color: 'rgba(210,225,255,0.82)', textDecoration:'none', fontSize:14, fontWeight:500 }}>Se connecter</a>
@@ -84,13 +84,15 @@ const App = () => {
           </div>
         </nav>
 
-        <div data-screen-label="01 Hero"><Hero tweaks={tweaks} /></div>
+        <div data-screen-label="01 Hero"><Hero /></div>
         <div data-screen-label="02 Social Proof"><SocialProof /></div>
-        <div data-screen-label="03 Product Demo"><DemoCarousel /></div>
-        <div data-screen-label="04 How It Works"><HowItWorks /></div>
-        <div data-screen-label="05 Features"><Features /></div>
-        <div data-screen-label="06 Pricing"><Pricing /></div>
-        <div data-screen-label="07 Closing"><Closing /></div>
+        <div data-screen-label="03 Veille Live"><LiveBoard /></div>
+        <div data-screen-label="04 Démo Interactive"><InteractiveDemo /></div>
+        <div data-screen-label="05 How It Works"><HowItWorks /></div>
+        <div data-screen-label="06 Formats"><Formats /></div>
+        <div data-screen-label="07 Pricing"><Pricing /></div>
+        <div data-screen-label="08 FAQ"><Faq /></div>
+        <div data-screen-label="09 Closing"><Closing /></div>
         <Foot />
       </div>
 

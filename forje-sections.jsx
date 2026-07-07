@@ -1,407 +1,302 @@
 /* global React, Icon, Sparkle */
 const { useState: useS, useEffect: useE, useRef: useR } = React;
 
-// ───── Social Proof ─────────────────────────────────────────────────────
-// Original typographic marks — not replicating any real brand's logo.
-const ProofMark = ({ kind, name }) => {
-  const marks = {
-    raplume: <><span className="sq" /> RAPLUME</>,
-    foot:    <><span className="dot-sm" /><span style={{fontStyle:'italic'}}>footmercato</span></>,
-    sofoot:  <span style={{letterSpacing:'-0.06em'}}>SO/FOOT</span>,
-    brut:    <span style={{fontWeight:900,letterSpacing:'0.02em'}}>BRUT.</span>,
-    konbini: <span style={{fontWeight:800,textTransform:'uppercase',letterSpacing:'0.04em'}}>konbini</span>,
-    equipe:  <span style={{fontStyle:'italic',fontWeight:900}}>L'Équipe</span>,
-    trax:    <><span className="ring" /> TRAX</>,
-    melty:   <span style={{letterSpacing:'-0.03em'}}>melty°</span>,
-  };
-  return <div className={"mark"}>{marks[kind]}</div>;
-};
-
+// ───── 2. Bandeau preuve ────────────────────────────────────────────────
+// Marques typographiques originales — comptes types, pas de logos réels.
 const SocialProof = () => (
   <section className="proof">
-    <div className="label">Utilisé par 50+ équipes éditoriales</div>
+    <div className="label">Conçu pour les médias qui publient vite et bien</div>
     <div className="proof-logos">
-      <ProofMark kind="raplume" />
-      <ProofMark kind="foot" />
-      <ProofMark kind="sofoot" />
-      <ProofMark kind="brut" />
-      <ProofMark kind="konbini" />
-      <ProofMark kind="equipe" />
-      <ProofMark kind="trax" />
-      <ProofMark kind="melty" />
+      <div className="mark"><span className="dot-sm" /> BALLON BLEU</div>
+      <div className="mark"><span className="sq" /> FRAME</div>
+      <div className="mark" style={{ fontStyle: 'italic' }}>pulseactu</div>
+      <div className="mark" style={{ letterSpacing: '-0.05em' }}>LA/RELÈVE</div>
+      <div className="mark" style={{ fontWeight: 900 }}>NOVA.</div>
+      <div className="mark"><span className="ring" /> KIOSQ</div>
     </div>
   </section>
 );
 
-// ───── Product Demo Carousel ────────────────────────────────────────────
-const CLIENTS = [
+// ───── 5. Comment ça marche ─────────────────────────────────────────────
+const HOW_STEPS = [
   {
-    logo: <><span style={{width:12,height:12,background:'#fff',display:'inline-block',transform:'rotate(45deg)',marginRight:8}} /> RAPLUME</>,
-    name: 'Raplume',
-    accent: 'rgba(80,60,200,0.14)',
-    desc: 'Média football & culture · 2.4M followers',
-    stats: [['+34%','engagement'], ['4.2min','setup/post'], ['92','score viral moy.']],
-    posts: [
-      { bg: 'linear-gradient(160deg,#1a1f6b,#4a1a5e)', hd: 'RAPLUME', title: 'Mbappé casse le record historique', meta: ['ACTU · 14:22', '2.1M'] },
-      { bg: 'linear-gradient(160deg,#2a1050,#a0395c)', hd: 'RAPLUME', title: 'Les 5 stats folles de la soirée', meta: ['CAROUSEL · 6p', '987K'] },
-      { bg: 'linear-gradient(160deg,#0a1560,#6a3ab5)', hd: 'RAPLUME', title: '« Je ne joue plus pour l\'argent »', meta: ['CITATION', '1.4M'] },
-    ],
+    num: '1',
+    label: 'FORGE',
+    icon: 'Hammer',
+    title: 'Ton identité, encodée une fois',
+    text: 'Logo, couleurs, police, mood — Forje apprend ta charte exacte à l\'onboarding. Cinq minutes, une seule fois.',
+    art: 'identity',
   },
   {
-    logo: <><span style={{width:10,height:10,background:'#fff',borderRadius:'50%',display:'inline-block',marginRight:10}} /><span style={{fontStyle:'italic'}}>footmercato</span></>,
-    name: 'Footmercato',
-    accent: 'rgba(20,80,200,0.14)',
-    desc: 'Transferts & marché · 3.1M followers',
-    stats: [['90s','post → publication'], ['+52%','reach vs. 2025'], ['84','score viral moy.']],
-    posts: [
-      { bg: 'linear-gradient(160deg,#0b1540,#2a6ab5)', hd: 'FOOTMERCATO', title: 'Bellingham signe pour 6 ans', meta: ['BREAKING · 09:04', '3.4M'] },
-      { bg: 'linear-gradient(160deg,#0a3060,#4090c0)', hd: 'FOOTMERCATO', title: 'Les salaires de l\'été', meta: ['CAROUSEL · 8p', '1.2M'] },
-      { bg: 'linear-gradient(160deg,#052040,#2080c0)', hd: 'FOOTMERCATO', title: 'Le mercato en 5 chiffres', meta: ['DIGEST · quotidien', '640K'] },
-    ],
+    num: '2',
+    label: 'VEILLE',
+    icon: 'Eye',
+    title: 'L\'IA surveille tes sujets',
+    text: 'Chaque actu de ton univers est scorée de 0 à 100. Au-dessus de 80, tu reçois une alerte : c\'est chaud, c\'est pour toi.',
+    art: 'board',
   },
   {
-    logo: <span style={{letterSpacing:'-0.06em',fontSize:44}}>SO/FOOT</span>,
-    name: 'So Foot',
-    accent: 'rgba(80,80,80,0.18)',
-    desc: 'Magazine football premium · 1.1M followers',
-    stats: [['6 formats','génération native'], ['+41%','saves/post'], ['88','score viral moy.']],
-    posts: [
-      { bg: 'linear-gradient(160deg,#1a1a22,#444450)', hd: 'SO FOOT', title: 'Portrait : le dernier romantique du foot', meta: ['COULISSES', '420K'] },
-      { bg: 'linear-gradient(160deg,#221a1a,#6b4040)', hd: 'SO FOOT', title: '« Le ballon doit rester un jeu »', meta: ['CITATION', '712K'] },
-      { bg: 'linear-gradient(160deg,#1a2228,#407080)', hd: 'SO FOOT', title: 'Top 10 des buts de la décennie', meta: ['CAROUSEL · 10p', '890K'] },
-    ],
-  },
-  {
-    logo: <><span style={{display:'inline-block',width:13,height:13,border:'1.5px solid #C8943A',marginRight:9,flexShrink:0,verticalAlign:'middle'}} /><span style={{letterSpacing:'0.16em',fontWeight:700}}>FRAME</span></>,
-    name: 'FRAME',
-    accent: 'rgba(200,148,58,0.15)',
-    line: 'rgba(200,148,58,0.65)',
-    desc: 'Média culture visuelle & cinéma · 180K followers',
-    stats: [['+48%','engagement'], ['2.6min','setup/post'], ['94','score viral moy.']],
-    posts: [
-      { bg: 'linear-gradient(160deg,#0d0b09,#3a2408)', hd: 'FRAME', title: 'Le plan séquence qui a tout changé', meta: ['CINÉMA · 11:00', '84K'] },
-      { bg: 'linear-gradient(160deg,#0a0a0a,#1e1208)', hd: 'FRAME', title: '« La lumière, c\'est la vérité »', meta: ['CITATION', '62K'] },
-      { bg: 'linear-gradient(160deg,#080c0e,#0e2420)', hd: 'FRAME', title: 'Les 7 photographes de 2025', meta: ['CAROUSEL · 7p', '118K'] },
-    ],
-  },
-  {
-    logo: <span style={{letterSpacing:'-0.04em',fontSize:36,color:'rgba(200,220,255,0.9)'}}>Votre Média</span>,
-    name: 'Votre marque ?',
-    desc: 'Forje s\'adapte à chaque identité visuelle',
-    stats: [['20 posts','pour entraîner'], ['48h','setup total'], ['∞','générations']],
-    posts: [
-      { bg: 'linear-gradient(160deg,#20306a,#3a5ec0)', hd: 'VOTRE MÉDIA', title: 'Votre contenu, votre style', meta: ['FORGE', 'custom'] },
-      { bg: 'linear-gradient(160deg,#3a2060,#7040b0)', hd: 'VOTRE MÉDIA', title: 'On-brand, à chaque post', meta: ['STUDIO', 'fine-tuned'] },
-      { bg: 'linear-gradient(160deg,#602030,#c05070)', hd: 'VOTRE MÉDIA', title: 'Scalable. Infiniment.', meta: ['LIVE', '24/7'] },
-    ],
+    num: '3',
+    label: 'GÉNÈRE',
+    icon: 'Spark',
+    title: 'Un clic. Un post dans ta charte.',
+    text: 'Actu, citation ou carousel — le post sort dans ton identité exacte. Tu valides, tu ajustes, tu publies.',
+    art: 'compose',
   },
 ];
 
-const ClientCard = ({ c }) => (
-  <div className="client-card" style={{...(c.accent && {'--card-accent': c.accent}), ...(c.line && {'--card-line': c.line})}}>
-    <div className="client-left">
-      <div>
-        <div className="client-logo-slot">
-          <div className="client-logo">{c.logo}</div>
+const StepArt = ({ kind }) => {
+  if (kind === 'identity') return (
+    <div className="how-art">
+      <div className="how-identity">
+        <div className="hi-logo">B</div>
+        <div className="hi-swatches">
+          <span style={{ background: '#1447B8' }} />
+          <span style={{ background: '#2E7BE8' }} />
+          <span style={{ background: '#EEF4FF' }} />
+          <span style={{ background: '#0A1E5E' }} />
         </div>
-        <div className="client-name">{c.name}</div>
-        <div className="client-desc">{c.desc}</div>
-        <div className="client-tag">
-          <span className="check">✓</span> Modèle entraîné
-        </div>
+        <div className="hi-font">Archivo Black · Inter</div>
+        <div className="hi-mood">direct · graphique · terrain</div>
       </div>
-      <div className="client-stats">
-        {c.stats.map(([n, l], i) => (
-          <div key={i} className="client-stat">
-            <div className="n">{n}</div>
-            <div className="l">{l}</div>
+    </div>
+  );
+  if (kind === 'board') return (
+    <div className="how-art">
+      <div className="how-board">
+        {[['94', 'Mbappé forfait pour le Clásico', true], ['87', 'Le mercato d\'hiver s\'emballe', true], ['71', 'Les audiences de la Ligue 1 grimpent', false]].map(([s, t, hot], i) => (
+          <div key={i} className="hb-row">
+            <span className={'hb-score' + (hot ? ' hot' : '')}>{s}</span>
+            <span className="hb-title">{t}</span>
           </div>
         ))}
       </div>
     </div>
-    <div className="client-right">
-      <div className="thumbs">
-        {c.posts.map((p, i) => (
-          <div key={i} className={"thumb t"+(i+1)} style={{ '--thumb-bg': p.bg }}>
-            <div className="thumb-inner">
-              <div className="hd"><span className="av" /><span className="txt">{p.hd}</span></div>
-              <div className="title">{p.title}</div>
-              <div className="meta"><span>{p.meta[0]}</span><span>❤ {p.meta[1]}</span></div>
-            </div>
-          </div>
-        ))}
+  );
+  return (
+    <div className="how-art">
+      <div className="how-compose">
+        <div className="hc-post">
+          <div className="hc-band" />
+          <div className="hc-title">MBAPPÉ<br />FORFAIT</div>
+          <div className="hc-brand">BALLON BLEU</div>
+        </div>
+        <div className="hc-check">✓ Dans la charte</div>
       </div>
-      <button className="lock-cta">
-        Tester le modèle <span className="arr"><Icon.Arrow /></span>
-      </button>
+    </div>
+  );
+};
+
+const HowItWorks = () => (
+  <section className="section" id="how">
+    <div className="section-label"><span className="bar" /> Comment ça marche</div>
+    <h2>Forge une fois. <span className="accent">Poste pour toujours.</span></h2>
+
+    <div className="how-grid">
+      {HOW_STEPS.map((s) => {
+        const StepIcon = Icon[s.icon] || Icon.Spark;
+        return (
+          <div key={s.num} className="how-card">
+            <div className="how-top">
+              <div className="how-num">{s.num}</div>
+              <div className="how-ico"><StepIcon /></div>
+            </div>
+            <div className="how-label">{s.label}</div>
+            <h3>{s.title}</h3>
+            <p>{s.text}</p>
+            <StepArt kind={s.art} />
+          </div>
+        );
+      })}
+    </div>
+  </section>
+);
+
+// ───── 6. Les 3 formats ─────────────────────────────────────────────────
+const FORMATS = [
+  {
+    icon: '⚡',
+    name: 'Actu',
+    cost: '2 crédits',
+    tagline: 'Du breaking au post en 90 secondes',
+    video: 'assets/actu-loop.mp4',
+    poster: 'assets/actu.webp',
+    exampleKey: 'actu',
+  },
+  {
+    icon: '❝',
+    name: 'Citation',
+    cost: '1 crédit',
+    tagline: 'Une déclaration, un visuel, zéro friction',
+    video: 'assets/citation-loop.mp4',
+    poster: 'assets/citation.webp',
+    exampleKey: 'citation',
+  },
+  {
+    icon: '📚',
+    name: 'Deep Dive',
+    cost: '3–8 crédits',
+    tagline: 'Le carousel 7-10 slides le plus sauvegardé d\'Instagram, documenté par une vraie recherche web',
+    video: 'assets/deep-dive-loop.mp4',
+    poster: 'assets/deep-dive.webp',
+    exampleKey: 'deep_dive',
+  },
+];
+
+const FormatCard = ({ f, example }) => (
+  <div className="format-card">
+    <div className="format-visual">
+      {example ? (
+        <img src={example} alt={'Exemple de post ' + f.name + ' généré par Forje'} loading="lazy" />
+      ) : (
+        <video src={f.video} poster={f.poster} autoPlay loop muted playsInline />
+      )}
+    </div>
+    <div className="format-head">
+      <span className="format-ico">{f.icon}</span>
+      <h3>{f.name}</h3>
+      <span className="format-cost">{f.cost}</span>
+    </div>
+    <p>{f.tagline}</p>
+  </div>
+);
+
+const Formats = () => {
+  // Exemples réels générés avec les presets démo — remplis quand disponibles.
+  const [examples, setExamples] = useS({});
+  useE(() => {
+    fetch('/api/demo/examples')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d && d.examples) setExamples(d.examples); })
+      .catch(() => {});
+  }, []);
+
+  return (
+    <section className="section" id="formats">
+      <div className="section-label"><span className="bar" /> Formats</div>
+      <h2>Trois formats. <span className="accent">Une seule charte : la tienne.</span></h2>
+      <div className="formats-grid">
+        {FORMATS.map(f => <FormatCard key={f.name} f={f} example={examples[f.exampleKey]} />)}
+      </div>
+    </section>
+  );
+};
+
+// ───── 7. Pricing ───────────────────────────────────────────────────────
+const Pricing = () => (
+  <section className="section" id="pricing">
+    <div className="section-label"><span className="bar" /> Tarifs</div>
+    <h2>Un prix. <span className="accent">Tout inclus.</span></h2>
+
+    <div className="pricing-solo">
+      <div className="price-card featured">
+        <div className="price-kind">FORJE STUDIO</div>
+        <div className="price-amount">
+          <span className="num">69 €</span>
+          <span className="per">/ mois</span>
+        </div>
+        <div className="price-sub">700 crédits · tout inclus · sans engagement</div>
+        <div className="price-mix">≈ 350 actus, ou 700 citations, ou un mix des trois formats.</div>
+        <ul className="price-list">
+          <li><span className="tick">✓</span>Veille en temps réel sur tes sujets, scorée de 0 à 100</li>
+          <li><span className="tick">✓</span>Actu (2 cr) · Citation (1 cr) · Deep Dive 7-10 slides (3-8 cr)</li>
+          <li><span className="tick">✓</span>Ta charte exacte : logo, couleurs, police, mood</li>
+          <li><span className="tick">✓</span>Éditeur post par post — texte, image, slides</li>
+          <li><span className="tick">✓</span>Résiliable à tout moment depuis ton espace</li>
+        </ul>
+        <a href="Forje App.html" className="btn btn-primary btn-lg" style={{ textDecoration: 'none' }}
+           onClick={() => window.__forjeTrack?.('landing_cta_pricing')}>
+          Commencer avec 50 crédits offerts <Icon.Arrow />
+        </a>
+        <div className="price-compare">Un designer freelance : 30-50 € le visuel. Forje : ~0,10 €.</div>
+      </div>
+    </div>
+  </section>
+);
+
+// ───── 8. FAQ ───────────────────────────────────────────────────────────
+const FAQ_ITEMS = [
+  {
+    q: 'Est-ce que les posts ressemblent vraiment à ma charte ?',
+    a: 'Oui — c\'est tout le principe. À l\'onboarding, Forje encode ton logo, tes couleurs, ta police et ton mood. Chaque post est composé dans cette charte, pas "inspiré de". Teste la démo plus haut : les deux identités preset sortent des posts fidèles à leur charte, la tienne fonctionnera pareil.',
+  },
+  {
+    q: 'D\'où viennent les photos ?',
+    a: 'De la recherche d\'images Google (via Serper). Tu valides chaque photo avant génération, et tu peux uploader tes propres visuels — photos AFP incluses si tu as les droits.',
+  },
+  {
+    q: 'Je peux modifier un post généré ?',
+    a: 'Oui. Chaque post s\'ouvre dans l\'éditeur : tu modifies le texte, changes l\'image, réorganises les slides d\'un carousel. Rien ne part sans ta validation.',
+  },
+  {
+    q: 'C\'est quoi un crédit ?',
+    a: 'L\'unité de génération. Citation : 1 crédit. Actu : 2 crédits. Deep Dive : 3 crédits (léger) à 8 crédits (recherche web complète). Ton abonnement en inclut 700 par mois — environ 350 actus, ou 700 citations, ou un mix.',
+  },
+  {
+    q: 'Je peux annuler quand ?',
+    a: 'À tout moment, en deux clics, depuis le portail Stripe dans ton espace. Pas d\'engagement, pas de préavis.',
+  },
+  {
+    q: 'Vous publiez directement sur Instagram ?',
+    a: 'Bientôt. Aujourd\'hui, tu exportes chaque post en un clic (image 4K ou ZIP du carousel) et tu publies depuis ton outil habituel.',
+  },
+];
+
+const FaqItem = ({ item, open, onToggle }) => (
+  <div className={'faq-item' + (open ? ' open' : '')}>
+    <button className="faq-q" onClick={onToggle} aria-expanded={open}>
+      <span>{item.q}</span>
+      <span className="faq-chev">{open ? '−' : '+'}</span>
+    </button>
+    <div className="faq-a" style={{ maxHeight: open ? 240 : 0 }}>
+      <p>{item.a}</p>
     </div>
   </div>
 );
 
-const DemoCarousel = () => {
-  const [i, setI] = useS(0);
-  const max = CLIENTS.length - 1;
+const Faq = () => {
+  const [openIdx, setOpenIdx] = useS(0);
   return (
-    <section className="section">
-      <div className="demo-head">
-        <div>
-          <div className="section-label"><span className="bar" /> Clients · Studio</div>
-          <h2>Des marques réelles. <br /><span className="accent">Leur style, forgé.</span></h2>
-          <p className="lede">
-            Chaque client entre dans Forje avec une identité vide et en ressort avec un modèle IA entraîné
-            sur 20 posts sur mesure. Voici ce que le studio génère pour eux, tous les jours.
-          </p>
-        </div>
-        <div className="demo-nav">
-          <button className="nav-btn" onClick={() => setI(Math.max(0, i-1))} disabled={i === 0}><Icon.ChevL /></button>
-          <button className="nav-btn" onClick={() => setI(Math.min(max, i+1))} disabled={i === max}><Icon.ChevR /></button>
-        </div>
-      </div>
-
-      <div className="carousel-wrap">
-        <div className="carousel-track" style={{ transform: `translateX(calc(${-i} * (1296px + 24px)))` }}>
-          {CLIENTS.map((c, idx) => <ClientCard key={idx} c={c} />)}
-        </div>
-      </div>
-
-      <div className="dots">
-        {CLIENTS.map((_, idx) => (
-          <div key={idx} className={"dot" + (idx === i ? " active" : "")} onClick={() => setI(idx)} />
+    <section className="section section-faq" id="faq">
+      <div className="section-label"><span className="bar" /> FAQ</div>
+      <h2>Les questions <span className="accent">qu'on nous pose vraiment.</span></h2>
+      <div className="faq-list">
+        {FAQ_ITEMS.map((item, i) => (
+          <FaqItem key={i} item={item} open={openIdx === i} onToggle={() => setOpenIdx(openIdx === i ? -1 : i)} />
         ))}
       </div>
     </section>
   );
 };
 
-// ───── How It Works ─────────────────────────────────────────────────────
-const HowItWorks = () => (
-  <section className="section">
-    <div className="section-label"><span className="bar" /> Processus</div>
-    <h2>De l'identité zéro à la <span className="accent">génération infinie</span>.</h2>
-    <p className="lede">Trois phases. Une fois. Pour toujours.</p>
-
-    <div className="steps">
-      <div className="step">
-        <div className="step-node"><div className="inner" /></div>
-        <div className="step-icon" style={{color:'#c6d8ff'}}><Icon.Hammer /></div>
-        <div className="step-num">PHASE 01 · LA FORGE</div>
-        <h3>Le designer forge ton identité</h3>
-        <p>Notre directeur artistique partenaire crée 20 posts Instagram sur mesure,
-           conçus pour entraîner l'IA sur ton style visuel exact — palette, typographie,
-           composition, ton éditorial. Ces posts deviennent aussi tes premiers contenus publiables.</p>
-      </div>
-      <div className="step">
-        <div className="step-node"><div className="inner" /></div>
-        <div className="step-icon" style={{color:'#c6d8ff'}}><Icon.Cpu /></div>
-        <div className="step-num">PHASE 02 · FINE-TUNING</div>
-        <h3>L'IA apprend en 20 minutes</h3>
-        <p>On entraîne un modèle LoRA dédié sur tes posts. Le modèle apprend
-           à reproduire ton style exact — et reste dans notre infrastructure.
-           C'est ton modèle, personnel et non duplicable.</p>
-      </div>
-      <div className="step">
-        <div className="step-node"><div className="inner" /></div>
-        <div className="step-icon" style={{color:'#c6d8ff'}}><Icon.Infinity /></div>
-        <div className="step-num">PHASE 03 · LE STUDIO</div>
-        <h3>Tu génères à l'infini</h3>
-        <p>Posts actu, carousels, citations, coulisses — dans ton style exact, à chaque fois.
-           Le système apprend de chaque post publié et s'améliore continuellement.</p>
-      </div>
-    </div>
-  </section>
-);
-
-// ───── Features ─────────────────────────────────────────────────────────
-const FeedArt = () => (
-  <div className="feature-art art-feed">
-    <div className="feed-row">
-      <div>
-        <div className="t">Mbappé blessé : forfait pour le match de ce soir</div>
-        <div className="src">afp.fr · il y a 2 min</div>
-      </div>
-      <div className="score-pill hot">92 · HOT</div>
-    </div>
-    <div className="feed-row">
-      <div>
-        <div className="t">Transfert record en Ligue 1 — 85M€</div>
-        <div className="src">rmcsport.fr · il y a 8 min</div>
-      </div>
-      <div className="score-pill hot">88 · HOT</div>
-    </div>
-    <div className="feed-row">
-      <div>
-        <div className="t">Le PSG annonce un nouveau sponsor maillot</div>
-        <div className="src">lequipe.fr · il y a 14 min</div>
-      </div>
-      <div className="score-pill">72</div>
-    </div>
-    <div className="feed-row">
-      <div>
-        <div className="t">Coupe du monde 2030 : le calendrier officiel</div>
-        <div className="src">fifa.com · il y a 22 min</div>
-      </div>
-      <div className="score-pill">64</div>
-    </div>
-  </div>
-);
-
-const GenArt = () => {
-  const tiles = [
-    { t: 'ACTU',      g: 'linear-gradient(140deg,#1a1f6b,#4a1a5e)' },
-    { t: 'CAROUSEL',  g: 'linear-gradient(140deg,#2a1050,#a0395c)' },
-    { t: 'DIGEST',    g: 'linear-gradient(140deg,#0a1560,#6a3ab5)' },
-    { t: 'CITATION',  g: 'linear-gradient(140deg,#0b1540,#2a6ab5)' },
-    { t: 'COULISSES', g: 'linear-gradient(140deg,#1a2228,#407080)' },
-    { t: 'TREND',     g: 'linear-gradient(140deg,#602030,#c05070)' },
-  ];
-  return (
-    <div className="feature-art art-gen">
-      {tiles.map((t, i) => (
-        <div key={i} className="gen-tile" style={{ '--tile': t.g }}>
-          <div className="lbl"><span>{t.t}</span><span>✓</span></div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const MemArt = () => (
-  <div className="feature-art art-mem">
-    <div className="mem-chart">
-      <svg viewBox="0 0 300 100" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="chrom" x1="0" x2="1">
-            <stop offset="0" stopColor="#6A5BFF" />
-            <stop offset="0.3" stopColor="#3EC7FF" />
-            <stop offset="0.6" stopColor="#F5F0CB" />
-            <stop offset="1" stopColor="#FF9ED3" />
-          </linearGradient>
-          <linearGradient id="chromFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="#3EC7FF" stopOpacity="0.3" />
-            <stop offset="1" stopColor="#3EC7FF" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d="M0,80 C40,76 60,72 90,62 C120,52 140,50 170,38 C200,26 230,24 260,16 C280,12 295,10 300,8 L300,100 L0,100 Z"
-              fill="url(#chromFill)" />
-        <path d="M0,80 C40,76 60,72 90,62 C120,52 140,50 170,38 C200,26 230,24 260,16 C280,12 295,10 300,8"
-              stroke="url(#chrom)" strokeWidth="2" fill="none" />
-        {[[30,76],[90,62],[170,38],[260,16]].map(([x,y],i) => (
-          <circle key={i} cx={x} cy={y} r="3" fill="#fff" />
-        ))}
-      </svg>
-    </div>
-    <div className="mem-legend">
-      <span>SEMAINE 1</span>
-      <span>MOIS 1</span>
-      <span>MOIS 2</span>
-      <span>MOIS 3+</span>
-    </div>
-    <div style={{ marginTop: 14, color: 'rgba(210,225,255,0.9)', fontSize: 13, fontWeight: 500 }}>
-      Score de pertinence du modèle <span style={{color:'#F5F0CB'}}>+287%</span>
-    </div>
-  </div>
-);
-
-const Features = () => (
-  <section className="section">
-    <div className="section-label"><span className="bar" /> Capacités</div>
-    <h2>Le studio complet, <br /><span className="accent">un seul abonnement.</span></h2>
-
-    <div className="features">
-      <div className="feature">
-        <FeedArt />
-        <div className="feature-tag">Veille Actu</div>
-        <h3>Du breaking au post publié : 90 secondes.</h3>
-        <p>Agent IA qui surveille des dizaines de sources en temps réel et score chaque histoire
-           selon sa pertinence pour TON compte. Les actus à 85+ déclenchent une alerte « Actu Chaude ».</p>
-      </div>
-      <div className="feature">
-        <GenArt />
-        <div className="feature-tag">Génération brand-native</div>
-        <h3>6 formats. Ton style. Zéro écart.</h3>
-        <p>Actu, carousel explicatif, digest quotidien, citation, coulisses, trend injection —
-           chaque post est généré dans ton identité visuelle exacte, et jamais ailleurs.</p>
-      </div>
-      <div className="feature">
-        <MemArt />
-        <div className="feature-tag">Mémoire éditoriale</div>
-        <h3>Après 3 mois, Forje connaît ton compte mieux que ton CM.</h3>
-        <p>Le système apprend de chaque post publié — formats, horaires, hooks, angles.
-           Chaque génération suivante est plus précise que la précédente.</p>
-      </div>
-    </div>
-  </section>
-);
-
-// ───── Pricing ──────────────────────────────────────────────────────────
-const Pricing = () => (
-  <section className="section">
-    <div className="section-label"><span className="bar" /> Tarifs</div>
-    <h2>Une forge. <span className="accent">Un studio.</span></h2>
-    <p className="lede">Un investissement unique pour construire le modèle. Un abonnement pour l'exploiter.</p>
-
-    <div className="pricing-grid">
-      <div className="price-card">
-        <div className="price-kind">ONE-TIME · SETUP</div>
-        <div className="price-name">La Forge</div>
-        <div className="price-amount">
-          <span className="num">800 – 1 500 €</span>
-          <span className="per">paiement unique</span>
-        </div>
-        <div className="price-sub">Création complète de l'identité visuelle et du modèle IA personnel.</div>
-        <ul className="price-list">
-          <li><span className="tick">✓</span>Direction artistique partenaire dédiée</li>
-          <li><span className="tick">✓</span>20 posts Instagram conçus sur mesure</li>
-          <li><span className="tick">✓</span>Fine-tuning d'un modèle LoRA personnel</li>
-          <li><span className="tick">✓</span>20 posts prêts à publier dès J+2</li>
-          <li><span className="tick">✓</span>Setup complet en 48 heures</li>
-        </ul>
-        <button className="btn btn-ghost btn-lg">Parler à un designer</button>
-      </div>
-
-      <div className="price-card featured">
-        <div className="price-kind">SUBSCRIPTION · STUDIO</div>
-        <div className="price-name">Le <span className="accent">Studio</span></div>
-        <div className="price-amount">
-          <span className="num">150 €</span>
-          <span className="per">/ mois — à partir de</span>
-        </div>
-        <div className="price-sub">Accès illimité au studio de génération une fois ton modèle forgé.</div>
-        <ul className="price-list">
-          <li><span className="tick">✓</span>Génération illimitée dans ton style exact</li>
-          <li><span className="tick">✓</span>Veille actu en temps réel + alertes « Hot »</li>
-          <li><span className="tick">✓</span>Score viral prédictif avant publication</li>
-          <li><span className="tick">✓</span>Mémoire éditoriale évolutive</li>
-          <li><span className="tick">✓</span>Calendrier et programmation intégrés</li>
-        </ul>
-        <a href="Forje App.html" className="btn btn-primary btn-lg" style={{textDecoration:'none'}}>Rejoindre le studio <Icon.Arrow /></a>
-      </div>
-    </div>
-  </section>
-);
-
-// ───── Closing CTA ──────────────────────────────────────────────────────
+// ───── 9. CTA final ─────────────────────────────────────────────────────
 const Closing = () => (
   <section className="closing">
-    <h2>Ta marque.<br /><span className="accent">Forgée par l'IA.</span></h2>
-    <p>Rejoignez les 50+ équipes éditoriales qui génèrent leur contenu Instagram
-       dans leur identité visuelle exacte — chaque jour, à l'infini.</p>
-    <a href="Forje App.html" className="btn btn-primary btn-lg" style={{textDecoration:'none'}}>Rejoindre le studio <Icon.Arrow /></a>
-    <div className="meta">SETUP 48H · SANS ENGAGEMENT · RÉSILIABLE À TOUT MOMENT</div>
+    <h2>Ton prochain post est<br /><span className="accent">déjà dans la forge.</span></h2>
+    <a href="Forje App.html" className="btn btn-primary btn-lg" style={{ textDecoration: 'none' }}
+       onClick={() => window.__forjeTrack?.('landing_cta_final')}>
+      Essayer gratuitement — 50 crédits offerts <Icon.Arrow />
+    </a>
+    <div className="meta">SANS ENGAGEMENT · SANS CARTE BANCAIRE · RÉSILIABLE À TOUT MOMENT</div>
   </section>
 );
 
 // ───── Footer ───────────────────────────────────────────────────────────
 const Foot = () => (
   <footer className="foot">
-    <div>© 2026 Forje Studio · forje.studio · Forged in Paris, rendered everywhere.</div>
+    <div className="foot-brand">
+      <img src="assets/forje-logo.png" alt="Forje" className="foot-logo" />
+      <span>© 2026 Forje Studio</span>
+    </div>
     <div className="links">
-      <a href="#">Mentions</a>
+      <a href="#pricing">Tarifs</a>
+      <a href="#faq">FAQ</a>
+      <a href="mailto:contact@forje.studio">Contact</a>
+      <a href="#">CGU</a>
       <a href="#">Confidentialité</a>
-      <a href="#">Contact</a>
-      <a href="#">X / Twitter</a>
+      <a href="#">Mentions légales</a>
     </div>
   </footer>
 );
 
-Object.assign(window, { SocialProof, DemoCarousel, HowItWorks, Features, Pricing, Closing, Foot });
+Object.assign(window, { SocialProof, HowItWorks, Formats, Pricing, Faq, Closing, Foot });

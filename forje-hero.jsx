@@ -1,86 +1,103 @@
 /* global React, Icon, Sparkle */
 const { useState: useStateH, useEffect: useEffectH } = React;
 
-const HeroObject = ({ variant = 'F' }) => {
+// ───── Posts flottants autour du mockup dashboard ─────────────────────────
+// Mini-posts stylisés Ballon Bleu / Frame — mêmes codes que les vrais presets démo.
+const FLOAT_POSTS = [
+  {
+    cls: 'fp-1',
+    bg: 'linear-gradient(165deg, #0A1E5E 0%, #1447B8 68%, #2E7BE8 100%)',
+    brand: 'BALLON BLEU',
+    title: 'Mbappé forfait pour le Clásico',
+    tag: 'ACTU · 2 crédits',
+  },
+  {
+    cls: 'fp-2',
+    bg: 'linear-gradient(165deg, #0D0B09 0%, #2A1D0C 62%, #4A3210 100%)',
+    brand: 'FRAME',
+    title: '« La lumière, c\'est la vérité »',
+    tag: 'CITATION · 1 crédit',
+  },
+  {
+    cls: 'fp-3',
+    bg: 'linear-gradient(165deg, #081A4E 0%, #0E2F86 100%)',
+    brand: 'BALLON BLEU',
+    title: 'Mercato d\'hiver : ce qui change',
+    tag: 'DEEP DIVE · 7 slides',
+  },
+];
+
+const Hero = () => {
+  const scrollToDemo = (e) => {
+    e.preventDefault();
+    document.getElementById('demo-live')?.scrollIntoView({ behavior: 'smooth' });
+    window.__forjeTrack?.('landing_cta_voir_demo');
+  };
+
   return (
-    <div className="hero-stage">
-      <Sparkle size={14} style={{ position: 'absolute', top: '10%', left: '12%', opacity: 0.9, zIndex: 3 }} color="#ffe6b0" />
-      <Sparkle size={10} style={{ position: 'absolute', top: '22%', right: '8%', opacity: 0.85, zIndex: 3 }} color="#c6d8ff" />
-      <Sparkle size={8}  style={{ position: 'absolute', bottom: '18%', left: '20%', opacity: 0.7, zIndex: 3 }} color="#ffb0d4" />
-      <Sparkle size={12} style={{ position: 'absolute', bottom: '30%', right: '16%', opacity: 0.85, zIndex: 3 }} color="#ffffff" />
-
-      <div className="rays" />
-
-      <div className="forge-mark-wrap">
-        <div className="forge-assembly">
-          <img src="assets/hero-landing-cinematic.png" alt="Forje" className="forge-mark-spin" />
-        </div>
-        <div className="forge-floor" />
-      </div>
-    </div>
-  );
-};
-
-const Hero = ({ tweaks }) => {
-  const [demoOpen, setDemoOpen] = useStateH(false);
-  return (
-    <section className="hero">
+    <section className="hero hero-v2">
       <div className="hero-text-col">
         <div className="eyebrow">
           <span className="eyebrow-dot" />
-          Moteur Instagram <span className="sep">·</span> Propulsé par l'IA
+          Studio Instagram <span className="sep">·</span> Propulsé par l'IA
         </div>
 
         <h1 className="hero-title">
-          {tweaks.headline}<br />
-          <span className="accent">{tweaks.headlineAccent}</span>
+          Forge ton identité une fois.<br />
+          <span className="accent">Poste pour toujours.</span>
         </h1>
 
         <p className="hero-sub">
-          Forje apprend l'identité visuelle exacte de votre marque, puis génère
-          du contenu Instagram on-brand à l'infini — actus, carousels, citations,
-          coulisses. Un designer vous forge. Une IA vous publie.
+          Le studio IA qui surveille l'actu et génère tes posts Instagram
+          dans ta charte exacte. Du breaking au post publié : 90 secondes.
         </p>
 
         <div className="hero-cta">
-          <a href="Forje App.html" className="btn btn-primary btn-lg" style={{textDecoration:'none'}}>
-            Rejoindre le studio <Icon.Arrow />
+          <a href="Forje App.html" className="btn btn-primary btn-lg" style={{ textDecoration: 'none' }}
+             onClick={() => window.__forjeTrack?.('landing_cta_hero_essayer')}>
+            Essayer gratuitement <Icon.Arrow />
           </a>
-          <button className="btn btn-ghost btn-lg" onClick={() => setDemoOpen(true)}>
-            <Icon.Play /> Voir une démo
-          </button>
+          <a href="#demo-live" className="btn btn-ghost btn-lg" style={{ textDecoration: 'none' }} onClick={scrollToDemo}>
+            Voir la démo <span className="cta-down">↓</span>
+          </a>
         </div>
 
         <div className="hero-meta">
-          <span>Setup 48h</span>
+          <span>50 crédits offerts</span>
           <span className="dot" />
           <span>Sans engagement</span>
           <span className="dot" />
-          <span>50+ équipes éditoriales</span>
+          <span>Sans carte bancaire</span>
         </div>
       </div>
 
-      <div className="hero-visual-col" />
+      <div className="hero-visual-col">
+        <div className="hero-mockup-stage">
+          <Sparkle size={13} style={{ position: 'absolute', top: '4%', left: '6%', opacity: 0.9, zIndex: 4 }} color="#ffe6b0" />
+          <Sparkle size={9}  style={{ position: 'absolute', top: '16%', right: '2%', opacity: 0.85, zIndex: 4 }} color="#c6d8ff" />
+          <Sparkle size={11} style={{ position: 'absolute', bottom: '10%', left: '12%', opacity: 0.8, zIndex: 4 }} color="#ff9ed3" />
 
-      {demoOpen && (
-        <div onClick={() => setDemoOpen(false)} style={{
-          position: 'fixed', inset: 0, background: 'rgba(3,8,24,0.82)', backdropFilter: 'blur(8px)',
-          zIndex: 100, display: 'grid', placeItems: 'center', cursor: 'pointer'
-        }}>
-          <div style={{
-            width: 720, height: 420, borderRadius: 20, border: '1px solid rgba(110,160,255,0.3)',
-            background: 'linear-gradient(180deg,#0a1440,#05102c)', position: 'relative',
-            boxShadow: '0 40px 120px rgba(0,0,0,0.6)'
-          }}>
-            <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center',
-              color: 'rgba(200,220,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, letterSpacing: 0.04 }}>
-              [ démo vidéo — cliquez pour fermer ]
+          <div className="hero-mockup">
+            <div className="hero-mockup-chrome">
+              <span /><span /><span />
+              <div className="hero-mockup-url">app.forje.studio</div>
             </div>
+            <img src="assets/dashboard-veille.png" alt="Dashboard Forje Studio — veille en temps réel" loading="eager" />
           </div>
+
+          {FLOAT_POSTS.map((p) => (
+            <div key={p.cls} className={'float-post ' + p.cls} style={{ '--fp-bg': p.bg }}>
+              <div className="fp-head"><span className="fp-av" />{p.brand}</div>
+              <div className="fp-title">{p.title}</div>
+              <div className="fp-tag">{p.tag}</div>
+            </div>
+          ))}
+
+          <div className="hero-mockup-floor" />
         </div>
-      )}
+      </div>
     </section>
   );
 };
 
-Object.assign(window, { Hero, HeroObject });
+Object.assign(window, { Hero });

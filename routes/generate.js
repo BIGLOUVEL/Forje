@@ -4,6 +4,7 @@ const OpenAI         = require('openai');
 const { toFile }     = require('openai');
 const https   = require('https');
 const http    = require('http');
+const fs      = require('fs');
 const { URL } = require('url');
 
 const Anthropic = require('@anthropic-ai/sdk');
@@ -598,6 +599,212 @@ async function generateCaption(type, content, client) {
   return response.content.find(b => b.type === 'text')?.text?.trim() || '';
 }
 
+// ─── Pipeline actu réutilisable ───────────────────────────────────────────────
+// Utilisé par la route standard ET par la démo publique de la landing
+// (routes/demo.js) avec une config client hardcodée. Champs supplémentaires
+// acceptés sur `client` : logo_local_path (fichier disque au lieu de logo_url).
+// `watermark` : texte discret composé en haut à gauche du fond (démo publique).
+async function runActuPipeline(client, {
+  newsText, photoUrl, photoData, imageMode = 'classic', styleRefData, watermark = null,
+} = {}) {
+  if (!sharp) throw new Error('Sharp non installe (npm install sharp)');
+  if (!newsText) throw new Error('newsText manquant');
+
+  const brandCtx     = buildBrandContext(client);
+  const packId       = getPackId(client?.graphic_style, client?.font_primary);
+  const clientFont   = resolveFont(client); // police effective (bibliothèque ou custom)
+  const primaryColor = client?.brand_colors?.[0] || null;
+  const accentColor  = client?.brand_colors?.[1] || null;
+
+  // 1. Gemini -> brief éditorial + visuel
+  const needsVisual = imageMode === 'ai';
+  const raw = await gemini(
+    'Tu es directeur artistique d\'un media Instagram.' + brandCtx + '\n\n' +
+    'Actu : "' + newsText + '"\n\n' +
+    'Genere un JSON :\n' +
+    '{\n' +
+    '  "search_query": "requete Google Images en anglais pour trouver la meilleure photo",\n' +
+    (needsVisual ? '  "visual_brief": "description cinematique de l\'image a generer, 2-3 phrases style shot description",\n' : '') +
+    (needsVisual ? '  "emotion": "dramatique | energique | premium | populaire | factuel",\n' : '') +
+    '  "title": "titre percutant en MAJUSCULES, 4-6 mots max",\n' +
+    '  "subtitle": "sous-titre factuel, 8-12 mots",\n' +
+    '  "category": "SPORT | POLITIQUE | ECONOMIE | CULTURE | TECH | SOCIETE"\n' +
+    '}\n\n' +
+    'Retourne UNIQUEMENT le JSON.'
+  );
+
+  let brief;
+  try { brief = parseAIJson(raw); } catch (_) { brief = {}; }
+  const {
+    search_query, title = 'BREAKING', subtitle = newsText.slice(0, 60),
+    category = 'ACTU', visual_brief,
+  } = brief;
+
+  // Caption lancée en parallèle — Haiku est rapide, pas de latence ajoutée
+  const captionPromise = generateCaption('actu', { newsText, title, subtitle }, client).catch(() => '');
+
+  // 2. Serper reference photos (used as classic/fallback background)
+  let serperBuffers = [];
+  if (photoData) {
+    const b64 = photoData.split(',')[1];
+    if (b64) serperBuffers.push(Buffer.from(b64, 'base64'));
+  }
+  if (serperBuffers.length === 0 && photoUrl) {
+    try { serperBuffers.push(await downloadBuffer(photoUrl)); } catch (_) {}
+  }
+  if (serperBuffers.length === 0 && search_query && process.env.SERPER_API_KEY) {
+    const isGooglePhoto = imageMode !== 'ai';
+    const images = await serperImages(search_query, { hq: true }); // toujours HQ — qualité + filtres anti-watermark
+    const urls   = images.map(img => img.imageUrl).filter(Boolean).slice(0, isGooglePhoto ? 8 : 3);
+    const results = await Promise.all(urls.map(u => downloadBuffer(u).catch(() => null)));
+    const sane = results
+      .filter(b => b && b.length > 5000 && isImageBuffer(b))
+      .sort((a, b) => isGooglePhoto ? b.length - a.length : 0);
+    // Rejette les images non décodables / trop sombres / vides (cause des "fonds noirs")
+    serperBuffers = await keepUsablePhotos(sane);
+    if (!serperBuffers.length) console.warn('[Actu] aucune photo Serper exploitable → dégradé de marque');
+  }
+  // 3. Style ref : one-shot (request) > persistent (brand)
+  let styleRefBuffer = null;
+  if (styleRefData) {
+    const b64 = styleRefData.split(',')[1] || styleRefData;
+    if (b64) styleRefBuffer = Buffer.from(b64, 'base64');
+  } else if (client?.style_ref_url) {
+    try { styleRefBuffer = await downloadBuffer(client.style_ref_url); } catch (_) {}
+  }
+
+  // 4. Image : AI mode ou classic
+  let photoBuffer = null;
+  if (imageMode === 'ai' && visual_brief) {
+    const prompt = buildImagePrompt(brief, client);
+    try {
+      photoBuffer = await withTimeout(generateImageGPT(prompt, styleRefBuffer, serperBuffers), 90000, 'GPT-Image-1');
+      console.log('[Actu] GPT image OK');
+    } catch (gptErr) {
+      console.warn('[Actu] GPT failed:', gptErr.message, '— falling back to Serper');
+      photoBuffer = serperBuffers[0] || null;
+    }
+  } else {
+    photoBuffer = serperBuffers[0] || null;
+  }
+
+  // 4. Sharp composite 1080x1350
+  const W = 1080, H = 1350;
+
+  let base;
+  if (photoBuffer) {
+    try {
+      base = await sharp(photoBuffer, { failOn: 'none' }).resize(W, H, { fit: 'cover', position: 'center' }).toBuffer();
+    } catch (_) {
+      photoBuffer = null;
+    }
+  }
+  if (!base) {
+    // Pas de photo exploitable → dégradé aux couleurs de la marque (jamais un aplat noir)
+    base = await sharp(brandGradientBuffer(W, H, primaryColor, accentColor)).png().toBuffer();
+  }
+
+  const gradient = Buffer.from(
+    `<svg width="${W}" height="${H}"><defs>` +
+    `<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="35%" stop-color="black" stop-opacity="0"/>` +
+    `<stop offset="100%" stop-color="black" stop-opacity="0.92"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="${W}" height="${H}" fill="url(#g)"/>` +
+    `</svg>`
+  );
+
+  const BADGE_COLORS = {
+    SPORT: '#E11D48', POLITIQUE: '#7C3AED', ECONOMIE: '#0EA5E9',
+    CULTURE: '#F59E0B', TECH: '#10B981', SOCIETE: '#6366F1',
+  };
+
+  // Accent bar only — text rendered client-side with real Google Fonts
+  const accentBar = Buffer.from(
+    `<svg width="${W}" height="8"><rect width="${W}" height="8" fill="${accentColor || '#10B981'}"/></svg>`
+  );
+
+  const composites = [
+    { input: gradient,  blend: 'over' },
+    { input: accentBar, left: 0, top: H - 8 },
+  ];
+
+  // Logo : fichier local (presets démo) ou URL (clients réels)
+  let logoBuf = null;
+  if (client?.logo_local_path) {
+    try { logoBuf = fs.readFileSync(client.logo_local_path); } catch (_) { /* logo optionnel */ }
+  }
+  if (!logoBuf && client?.logo_url) {
+    try { logoBuf = await downloadBuffer(client.logo_url); } catch (_) { /* logo optionnel */ }
+  }
+  if (logoBuf) {
+    try {
+      // removeBackground (coins) et non removeWhiteBackground (global) :
+      // le logo peut avoir des lettres blanches — on supprime uniquement la couleur de fond détectée aux coins
+      const logoPng = await sharp(logoBuf)
+        .resize(null, 260, { fit: 'inside' })
+        .png()
+        .toBuffer();
+
+      const logoMeta = await sharp(logoPng).metadata();
+      const logoX = W - logoMeta.width - 40;
+      const logoY = 36;
+
+      // Ombre portée : copie noire floutée décalée
+      const shadow = await sharp(logoPng)
+        .modulate({ brightness: 0 })
+        .blur(20)
+        .toBuffer();
+
+      composites.push({ input: shadow, top: logoY + 12, left: logoX + 6 });
+      composites.push({ input: logoPng, top: logoY, left: logoX });
+    } catch (_) { /* logo optionnel */ }
+  }
+
+  // Watermark discret (démo publique) — haut gauche, sous le logo éventuel
+  if (watermark) {
+    const wmSvg = Buffer.from(
+      `<svg width="620" height="56" xmlns="http://www.w3.org/2000/svg">` +
+      `<text x="0" y="36" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="600" ` +
+      `fill="#ffffff" fill-opacity="0.48">${escapeXml(watermark)}</text>` +
+      `</svg>`
+    );
+    composites.push({ input: wmSvg, left: 44, top: 40 });
+  }
+
+  const out = await sharp(base)
+    .composite(composites)
+    .jpeg({ quality: 92 })
+    .toBuffer();
+
+  const caption = await captionPromise;
+
+  // Aucune photo exploitable → on a rendu le dégradé de marque : invite à ajouter une image
+  const photoFallback = !photoBuffer;
+  const notice = photoFallback
+    ? 'Aucune photo pertinente trouvée — ajoute ta propre image pour un rendu plus fort.'
+    : null;
+
+  // Return background + text data — client Canvas renders the text with real fonts
+  return {
+    bgImage: 'data:image/jpeg;base64,' + out.toString('base64'),
+    title, subtitle, category, packId,
+    photoFallback, notice,
+    // Police effective du client → le Canvas front charge CETTE police (effectivité)
+    font: {
+      name:          clientFont.fontName,
+      url:           clientFont.urlPath,
+      weight:        clientFont.weight,
+      style:         clientFont.style,
+      transform:     clientFont.transform,
+      letterSpacing: clientFont.letterSpacing,
+    },
+    primaryColor: primaryColor || BADGE_COLORS[category] || '#6366F1',
+    accentColor:  accentColor  || '#10B981',
+    caption,
+  };
+}
+
 // ─── POST /api/generate/actu ──────────────────────────────────────────────────
 router.post('/actu', async (req, res) => {
   let creditCtx = null; // { clientId, postType, cost, charged } — pour remboursement si échec
@@ -620,182 +827,11 @@ router.post('/actu', async (req, res) => {
     if (!charge.ok) { clearTimeout(hardDeadline); return insufficientCredits(res, charge.cost); }
     creditCtx = { clientId: creditClientId, postType: 'actu', cost: charge.cost, charged: charge.charged };
 
-    const brandCtx     = buildBrandContext(client);
-    const packId       = getPackId(client?.graphic_style, client?.font_primary);
-    const clientFont   = resolveFont(client); // police effective (bibliothèque ou custom)
-    const primaryColor = client?.brand_colors?.[0] || null;
-    const accentColor  = client?.brand_colors?.[1] || null;
-
-    // 1. Gemini -> brief éditorial + visuel
-    const needsVisual = imageMode === 'ai';
-    const raw = await gemini(
-      'Tu es directeur artistique d\'un media Instagram.' + brandCtx + '\n\n' +
-      'Actu : "' + newsText + '"\n\n' +
-      'Genere un JSON :\n' +
-      '{\n' +
-      '  "search_query": "requete Google Images en anglais pour trouver la meilleure photo",\n' +
-      (needsVisual ? '  "visual_brief": "description cinematique de l\'image a generer, 2-3 phrases style shot description",\n' : '') +
-      (needsVisual ? '  "emotion": "dramatique | energique | premium | populaire | factuel",\n' : '') +
-      '  "title": "titre percutant en MAJUSCULES, 4-6 mots max",\n' +
-      '  "subtitle": "sous-titre factuel, 8-12 mots",\n' +
-      '  "category": "SPORT | POLITIQUE | ECONOMIE | CULTURE | TECH | SOCIETE"\n' +
-      '}\n\n' +
-      'Retourne UNIQUEMENT le JSON.'
-    );
-
-    let brief;
-    try { brief = parseAIJson(raw); } catch (_) { brief = {}; }
-    const {
-      search_query, title = 'BREAKING', subtitle = newsText.slice(0, 60),
-      category = 'ACTU', visual_brief,
-    } = brief;
-
-    // Caption lancée en parallèle — Haiku est rapide, pas de latence ajoutée
-    const captionPromise = generateCaption('actu', { newsText, title, subtitle }, client).catch(() => '');
-
-    // 2. Serper reference photos (used as classic/fallback background)
-    let serperBuffers = [];
-    if (photoData) {
-      const b64 = photoData.split(',')[1];
-      if (b64) serperBuffers.push(Buffer.from(b64, 'base64'));
-    }
-    if (serperBuffers.length === 0 && photoUrl) {
-      try { serperBuffers.push(await downloadBuffer(photoUrl)); } catch (_) {}
-    }
-    if (serperBuffers.length === 0 && search_query && process.env.SERPER_API_KEY) {
-      const isGooglePhoto = imageMode !== 'ai';
-      const images = await serperImages(search_query, { hq: true }); // toujours HQ — qualité + filtres anti-watermark
-      const urls   = images.map(img => img.imageUrl).filter(Boolean).slice(0, isGooglePhoto ? 8 : 3);
-      const results = await Promise.all(urls.map(u => downloadBuffer(u).catch(() => null)));
-      const sane = results
-        .filter(b => b && b.length > 5000 && isImageBuffer(b))
-        .sort((a, b) => isGooglePhoto ? b.length - a.length : 0);
-      // Rejette les images non décodables / trop sombres / vides (cause des "fonds noirs")
-      serperBuffers = await keepUsablePhotos(sane);
-      if (!serperBuffers.length) console.warn('[Actu] aucune photo Serper exploitable → dégradé de marque');
-    }
-    // 3. Style ref : one-shot (request) > persistent (brand)
-    let styleRefBuffer = null;
-    if (styleRefData) {
-      const b64 = styleRefData.split(',')[1] || styleRefData;
-      if (b64) styleRefBuffer = Buffer.from(b64, 'base64');
-    } else if (client?.style_ref_url) {
-      try { styleRefBuffer = await downloadBuffer(client.style_ref_url); } catch (_) {}
-    }
-
-    // 4. Image : AI mode ou classic
-    let photoBuffer = null;
-    if (imageMode === 'ai' && visual_brief) {
-      const prompt = buildImagePrompt(brief, client);
-      try {
-        photoBuffer = await withTimeout(generateImageGPT(prompt, styleRefBuffer, serperBuffers), 90000, 'GPT-Image-1');
-        console.log('[Actu] GPT image OK');
-      } catch (gptErr) {
-        console.warn('[Actu] GPT failed:', gptErr.message, '— falling back to Serper');
-        photoBuffer = serperBuffers[0] || null;
-      }
-    } else {
-      photoBuffer = serperBuffers[0] || null;
-    }
-
-    // 4. Sharp composite 1080x1350
-    const W = 1080, H = 1350;
-
-    let base;
-    if (photoBuffer) {
-      try {
-        base = await sharp(photoBuffer, { failOn: 'none' }).resize(W, H, { fit: 'cover', position: 'center' }).toBuffer();
-      } catch (_) {
-        photoBuffer = null;
-      }
-    }
-    if (!base) {
-      // Pas de photo exploitable → dégradé aux couleurs de la marque (jamais un aplat noir)
-      base = await sharp(brandGradientBuffer(W, H, primaryColor, accentColor)).png().toBuffer();
-    }
-
-    const gradient = Buffer.from(
-      `<svg width="${W}" height="${H}"><defs>` +
-      `<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
-      `<stop offset="35%" stop-color="black" stop-opacity="0"/>` +
-      `<stop offset="100%" stop-color="black" stop-opacity="0.92"/>` +
-      `</linearGradient></defs>` +
-      `<rect width="${W}" height="${H}" fill="url(#g)"/>` +
-      `</svg>`
-    );
-
-    const BADGE_COLORS = {
-      SPORT: '#E11D48', POLITIQUE: '#7C3AED', ECONOMIE: '#0EA5E9',
-      CULTURE: '#F59E0B', TECH: '#10B981', SOCIETE: '#6366F1',
-    };
-
-    // Accent bar only — text rendered client-side with real Google Fonts
-    const accentBar = Buffer.from(
-      `<svg width="${W}" height="8"><rect width="${W}" height="8" fill="${accentColor || '#10B981'}"/></svg>`
-    );
-
-    const composites = [
-      { input: gradient,  blend: 'over' },
-      { input: accentBar, left: 0, top: H - 8 },
-    ];
-
-    if (client?.logo_url) {
-      try {
-        const logoBuf = await downloadBuffer(client.logo_url);
-
-        // removeBackground (coins) et non removeWhiteBackground (global) :
-        // le logo peut avoir des lettres blanches — on supprime uniquement la couleur de fond détectée aux coins
-        const logoPng = await sharp(logoBuf)
-          .resize(null, 260, { fit: 'inside' })
-          .png()
-          .toBuffer();
-
-        const logoMeta = await sharp(logoPng).metadata();
-        const logoX = W - logoMeta.width - 40;
-        const logoY = 36;
-
-        // Ombre portée : copie noire floutée décalée
-        const shadow = await sharp(logoPng)
-          .modulate({ brightness: 0 })
-          .blur(20)
-          .toBuffer();
-
-        composites.push({ input: shadow, top: logoY + 12, left: logoX + 6 });
-        composites.push({ input: logoPng, top: logoY, left: logoX });
-      } catch (_) { /* logo optionnel */ }
-    }
-
-    const out = await sharp(base)
-      .composite(composites)
-      .jpeg({ quality: 92 })
-      .toBuffer();
-
-    const caption = await captionPromise;
+    const payload = await runActuPipeline(client, { newsText, photoUrl, photoData, imageMode, styleRefData });
     clearTimeout(hardDeadline);
 
-    // Aucune photo exploitable → on a rendu le dégradé de marque : invite à ajouter une image
-    const photoFallback = !photoBuffer;
-    const notice = photoFallback
-      ? 'Aucune photo pertinente trouvée — ajoute ta propre image pour un rendu plus fort.'
-      : null;
-
-    // Return background + text data — client Canvas renders the text with real fonts
     res.json({
-      bgImage: 'data:image/jpeg;base64,' + out.toString('base64'),
-      title, subtitle, category, packId,
-      photoFallback, notice,
-      // Police effective du client → le Canvas front charge CETTE police (effectivité)
-      font: {
-        name:          clientFont.fontName,
-        url:           clientFont.urlPath,
-        weight:        clientFont.weight,
-        style:         clientFont.style,
-        transform:     clientFont.transform,
-        letterSpacing: clientFont.letterSpacing,
-      },
-      primaryColor: primaryColor || BADGE_COLORS[category] || '#6366F1',
-      accentColor:  accentColor  || '#10B981',
-      caption,
+      ...payload,
       creditsLeft: charge.charged ? charge.balance : undefined,
     });
     creditCtx = null; // post livré → surtout pas de remboursement
@@ -941,345 +977,403 @@ router.post('/citation', async (req, res) => {
   }
 });
 
-// ─── Deep Dive — System Prompt ───────────────────────────────────────────────
-const DEEP_DIVE_SYSTEM_PROMPT = `Tu es l'orchestrateur Deep Dive de Forje Studio. Tu génères le contenu structuré d'un carousel Instagram éducatif de 5 slides (format 4:5, 1080×1350px).
+// ═══════════════════════════════════════════════════════════════════════════
+// DEEP DIVE v2 — carousel narratif 7-10 slides (format le plus sauvegardé IG)
+// ---------------------------------------------------------------------------
+// Architecture : le SERVEUR compose UNIQUEMENT le fond de chaque slide
+// (photo + overlay/vignette selon le layout + logo). Le TEXTE (titre, body,
+// stat, liste, CTA) est peint CÔTÉ CLIENT sur Canvas avec la VRAIE police du
+// média — car librsvg (sous Sharp) ignore les @font-face base64 et rendrait
+// un serif système. Même principe éprouvé que l'Actu et la Citation.
+//   → renderDeepDiveSlideCanvas() dans app-screens.jsx fait le rendu texte.
+// ═══════════════════════════════════════════════════════════════════════════
+const { deepDiveVariant } = require('../lib/credits');
 
-ENTRÉE (JSON message user) :
-{ "topic":"string", "brand":{"primary":"#hex","secondary":"#hex","bg":"#hex","text":"#hex","handle":"@compte","tone":"punchy|informatif|premium|storytelling|académique","darkMode":true}, "template_id":"T1|T2|T3|T4|T5|null", "image_mode":"none|serp|genai|hybrid", "language":"fr" }
+const DD_W = 1080, DD_H = 1350;
+// Zone grid-safe : Instagram croppe en carré (1080×1080) sur la grille du profil
+// → il coupe 135px en haut et 135px en bas. Le texte critique reste entre ces bornes.
+const DD_SAFE_TOP = 135, DD_SAFE_BOTTOM = DD_H - 135;
+const DD_LAYOUTS = ['full_impact', 'split_bottom', 'stat_focus', 'list_recap', 'cta_clean'];
 
-SORTIE STRICTE — JSON uniquement, zéro texte avant ou après :
+// Layout par défaut selon le rôle narratif (si Claude renvoie un layout invalide)
+function layoutForRole(role, hasStat) {
+  if (role === 'hook' || role === 'climax') return hasStat ? 'stat_focus' : 'full_impact';
+  if (role === 'recap') return 'list_recap';
+  if (role === 'cta')   return 'cta_clean';
+  return hasStat ? 'stat_focus' : 'split_bottom';
+}
+
+// ─── Prompt Claude — recherche web + plan narratif (le cerveau du Deep Dive) ──
+function buildDeepDivePlanPrompt(topic, client, slideCount) {
+  const name   = client?.name || 'le média';
+  const tone   = client?.tone_tags?.join(', ') || 'direct, informatif';
+  const mood   = client?.mood || 'factuel';
+  const topics = client?.topics?.join(', ') || '';
+  return `Tu es rédacteur en chef d'un média Instagram premium.
+Tu construis un carousel "deep dive" pédagogique de ${slideCount} slides.
+
+SUJET : "${topic}"
+
+IDENTITÉ DU MÉDIA :
+- Nom : ${name}
+- Ton : ${tone}
+- Mood : ${mood}
+- Sujets habituels : ${topics}
+
+NOTE — BRIEF STRUCTURÉ : si le SUJET ci-dessus contient déjà des lignes
+"Angle :", "Hook suggéré :", "Faits clés :", "À creuser :", "Ton :" (brief issu
+d'un article de veille), EXPLOITE-le :
+- les "Faits clés" sont la matière première de tes slides de contenu (vérifie-les
+  et enrichis-les via la recherche web) ;
+- "À creuser" indique précisément ce que ta recherche web doit compléter ;
+- "Hook suggéré" est une base pour le slide 1 — améliore-le si tu peux faire plus fort ;
+- respecte l'"Angle" et le "Ton" indiqués.
+
+ÉTAPE 1 — RECHERCHE (obligatoire) :
+Utilise la recherche web pour trouver des FAITS RÉELS sur ce sujet : chiffres
+précis, dates, noms, statistiques récentes, citations. Un deep dive média sans
+facts vérifiables est un deep dive raté. 2 à 4 recherches maximum, cible les
+infos les plus percutantes et les plus récentes.
+
+ÉTAPE 2 — CONSTRUIS LE PLAN selon cet arc narratif STRICT :
+
+Slide 1 — HOOK (role "hook", layout "full_impact")
+  title : 5-8 mots MAXIMUM, le plus percutant. Pose une tension/question SANS la
+  résoudre (open loop). Formules qui marchent : chiffre choc + mystère, question
+  provocante, affirmation contre-intuitive.
+  body : une seule phrase courte qui amplifie la curiosité. Aucune réponse ici.
+
+Slide 2 — SETUP (role "setup", layout "split_bottom")
+  Réduit le scepticisme, pose le contexte en 2 phrases max, promet implicitement
+  ce que le lecteur va apprendre.
+
+Slides 3 à ${slideCount - 3} — CONTENU (role "content")
+  UNE idée par slide, jamais deux. Chaque slide donne un fait concret issu de ta
+  recherche. body : 30 mots MAXIMUM (c'est une flashcard, pas un paragraphe).
+  Progression logique. Quand un slide repose sur un CHIFFRE fort, mets ce chiffre
+  dans "stat" (ex "87%", "1,2 Md€", "×3").
+  RYTHME VISUEL (impératif) : ALTERNE les layouts entre "stat_focus" et
+  "split_bottom" sur les slides de contenu. JAMAIS plus de 2 "stat_focus"
+  d'affilée — même si plusieurs slides ont un chiffre, mets-en certaines en
+  "split_bottom". IMPORTANT : sur un slide "split_bottom", le champ "stat" n'est
+  PAS affiché → intègre alors le chiffre directement dans le "title" ou le "body".
+  Le "stat" géant n'est montré que sur les slides "stat_focus".
+  Le carousel doit respirer comme un magazine, pas enchaîner 4 fois le même écran.
+
+Slide ${slideCount - 2} — CLIMAX (role "climax", layout "full_impact" ou "stat_focus")
+  LA révélation : résout l'open loop du slide 1. Le fait le plus fort.
+
+Slide ${slideCount - 1} — RÉCAP (role "recap", layout "list_recap")
+  Résume les 3 points clés. Mets-les dans "body" séparés par " • " (ex
+  "Point un • Point deux • Point trois"). C'est la slide qu'on screenshot.
+
+Slide ${slideCount} — CTA (role "cta", layout "cta_clean")
+  title court + body = appel à l'action : "Enregistre ce post pour plus tard" et
+  "Suis ${name} pour d'autres analyses".
+
+POUR CHAQUE SLIDE fournis aussi :
+- "image_query" : requête Google Images EN ANGLAIS, 4-6 mots, pour trouver une
+  vraie photo illustrant CETTE slide (personne, lieu, événement précis). Varie
+  les sujets d'image — jamais deux fois la même requête.
+
+ÉTAPE 3 — LA CAPTION Instagram : première ligne = hook autonome (visible avant
+le "voir plus"), puis 3-4 lignes de contexte, puis "Enregistre ce post 📌".
+Fournis aussi 5 hashtags pertinents dans "hashtags".
+
+RETOURNE UNIQUEMENT CE JSON (aucun texte autour, pas de markdown) :
 {
-  "meta": { "topic_refined":"...", "template_id":"T2", "image_mode":"..." },
-  "content": {
-    "topic":"...", "subtitle":"...",
-    "points": [
-      { "num":"01", "title":"...", "body":"...", "stat":"...", "stat_label":"..." },
-      { "num":"02", "title":"...", "body":"...", "stat":null, "stat_label":null },
-      { "num":"03", "title":"...", "body":"...", "stat":"...", "stat_label":"..." }
-    ],
-    "cta":"..."
-  },
   "slides": [
-    { "index":0, "type":"hook",  "variant":"B", "image":{"mode":"genai","prompt":"STYLE: cinematic photography SUBJECT: ... MOOD: ... FORMAT: portrait 4:5 AVOID: text watermarks faces logos"} },
-    { "index":1, "type":"point", "variant":"A", "image":null },
-    { "index":2, "type":"point", "variant":"B", "image":{"mode":"serp","search_query":"..."} },
-    { "index":3, "type":"point", "variant":"A", "image":null },
-    { "index":4, "type":"cta",   "variant":"A", "image":null }
+    { "position":1, "role":"hook", "layout":"full_impact", "title":"...", "body":"...", "stat":null, "image_query":"..." }
   ],
   "caption":"...",
-  "hashtags":["#deepdive","..."]
+  "hashtags":["#...","#..."]
+}`;
 }
 
-RÈGLES CONTENU :
-- Hook : titre max 12 mots, tension (paradoxe/chiffre/question). Sous-titre : promet le bénéfice en une phrase.
-- Points 1–3 : titre 3–7 mots, body 25–45 mots. Stat réelle et vérifiable uniquement — null si incertaine.
-- CTA : action concrète + micro-raison. Variant toujours A, image toujours null.
-- Alterne variant A et B au moins 2 fois sur les 5 slides.
-- Ton : punchy=phrases courtes/verbes d'action ; premium=posé/raffiné ; académique=rigoureux/nuancé ; storytelling=narratif ; informatif=neutre/clair.
-- Langue : toujours celle du champ language.
-- Si image_mode=none : tous slides ont "image":null et variant "A". Si image_mode=serp : search_query précise, journalistique, -logo -text. Si image_mode=genai : prompt STYLE/SUBJECT/MOOD/FORMAT/AVOID. Si image_mode=hybrid : index 0→genai, index 1-2→serp si factuel/genai si abstrait, index 3→genai, index 4→null.
-
-TEMPLATE (si template_id null) : punchy→T3, storytelling→T2, premium→T5, analytique→T4, informatif→T1.`;
-
-// ─── Deep Dive — Brand helper ─────────────────────────────────────────────────
-function buildDeepDiveBrand(client) {
-  const colors  = client?.brand_colors || [];
-  const tagStr  = [...(client?.tone_tags || []), client?.mood || ''].join(' ').toLowerCase();
-  let tone = 'informatif';
-  if (/punchy|viral|percutant|fort|impact/.test(tagStr)) tone = 'punchy';
-  else if (/premium|luxe|haut|elite|raffiné/.test(tagStr)) tone = 'premium';
-  else if (/storytell|narratif|histoire|cinéma/.test(tagStr)) tone = 'storytelling';
-  else if (/academ|expert|rigueur|technique|data/.test(tagStr)) tone = 'académique';
-  return {
-    primary:     colors[0] || '#6366F1',
-    secondary:   colors[1] || '#F5F500',
-    bg:          '#0A0A0A',
-    text:        '#FFFFFF',
-    textMuted:   '#888888',
-    handle:      client?.name ? '@' + client.name.toLowerCase().replace(/[^a-z0-9_]/g, '') : '@compte',
-    logo:        client?.logo_url || null,
-    darkMode:    true,
-    tone,
-  };
+// ─── Claude : recherche web + plan (extrait le JSON du dernier bloc texte) ────
+async function deepDivePlan(topic, client, slideCount) {
+  const resp = await withTimeout(haiku.messages.create({
+    model:      'claude-sonnet-4-6',
+    max_tokens: 4500,
+    tools:      [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
+    messages:   [{ role: 'user', content: buildDeepDivePlanPrompt(topic, client, slideCount) }],
+  }), 120000, 'DeepDive plan');
+  // Les blocs de recherche (server_tool_use / web_search_tool_result) précèdent le
+  // texte final. On concatène tous les blocs texte puis on extrait le JSON.
+  const raw = resp.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+  const plan = parseAIJson(raw);
+  if (!plan || !Array.isArray(plan.slides) || !plan.slides.length) {
+    throw new Error('Plan Deep Dive vide ou invalide');
+  }
+  return plan;
 }
 
-const TONE_TO_TEMPLATE = { punchy:'T3', storytelling:'T2', premium:'T5', académique:'T4', informatif:'T1' };
-
-// ─── Deep Dive — Image resolver ───────────────────────────────────────────────
-async function resolveSlideImage(slide) {
-  if (!slide.image) return null;
-  const { mode, prompt, search_query } = slide.image;
+// ─── Serper : 1 photo exploitable + liste de candidats (pour l'éditeur) ───────
+async function fetchSlidePhoto(query) {
+  if (!process.env.SERPER_API_KEY || !query) return { buffer: null, candidates: [] };
   try {
-    if (mode === 'genai' && openaiClient) {
-      const resp = await withTimeout(
-        openaiClient.images.generate({ model:'gpt-image-1', prompt: prompt || 'abstract cinematic background dark', n:1, size:'1024x1536', quality: slide.index === 0 ? 'high' : 'standard' }),
-        60000, 'GPT-Image deepdive'
-      );
-      const b64 = resp.data?.[0]?.b64_json;
-      return b64 ? Buffer.from(b64, 'base64') : null;
-    }
-    if (mode === 'serp' && process.env.SERPER_API_KEY) {
-      const imgs = await serperImages(search_query || '');
-      const urls = imgs.map(i => i.imageUrl).filter(Boolean);
-      return urls.length ? await tryDownloadFirst(urls) : null;
-    }
-  } catch (e) { console.warn('[DeepDive/Image]', e.message); }
-  return null;
+    const imgs       = await serperImages(query, { hq: true });
+    const candidates = imgs.map(i => i.imageUrl).filter(Boolean).slice(0, 6);
+    const results    = await Promise.all(candidates.slice(0, 5).map(u => downloadBuffer(u).catch(() => null)));
+    const sane       = results.filter(b => b && b.length > 10000 && isImageBuffer(b));
+    const usable     = await keepUsablePhotos(sane);
+    return { buffer: usable[0] || null, candidates };
+  } catch (e) {
+    console.warn('[DeepDive/img]', e.message);
+    return { buffer: null, candidates: [] };
+  }
 }
 
-// ─── Deep Dive — Slide renderer (Sharp + SVG) ─────────────────────────────────
-async function renderDeepDiveSlide(tplId, slideIndex, slideType, variant, brand, content, imgBuf) {
-  const W = 1080, H = 1350, PAD = 60;
-  const primary = brand.primary || '#6366F1';
+// ─── Logo média : téléchargé + détouré une seule fois, réutilisé sur tous les fonds ──
+async function loadDDLogo(logoUrl) {
+  if (!logoUrl) return null;
+  try {
+    const raw  = await downloadBuffer(logoUrl);
+    const png  = await sharp(raw).resize(null, 60, { fit: 'inside' }).png().toBuffer();
+    const meta = await sharp(png).metadata();
+    const shadow = await sharp(png).modulate({ brightness: 0 }).blur(10).toBuffer();
+    return { buffer: png, shadow, width: meta.width || 60, height: meta.height || 60 };
+  } catch (_) { return null; }
+}
 
-  // Template palette
-  const TC = {
-    T1: { bg:'#FAFAF8', text:'#111111', accent: primary, muted:'#555555', barLeft:true,  uppercase:false },
-    T2: { bg:'#080808', text:'#FFFFFF', accent: primary, muted:'rgba(255,255,255,0.55)', barTop:true,   uppercase:true  },
-    T3: { bg:'#000000', text:'#FFFFFF', accent: primary, muted:'rgba(255,255,255,0.50)', barTop:true,   uppercase:true  },
-    T4: { bg:'#0D0B1E', text:'#FFFFFF', accent: primary, muted:'rgba(255,255,255,0.50)', barTop:true,   uppercase:false },
-    T5: { bg:'#F5F0E8', text:'#1A1A1A', accent:'#C9A96E',muted:'#7A6952',               barLeft:true,  uppercase:false },
-  };
-  const tc = TC[tplId] || TC.T2;
-
-  // Content for this slide
-  let title = '', body = '', num = '', stat = '', statLab = '';
-  if (slideType === 'hook') {
-    title = content.topic || '';
-    body  = content.subtitle || '';
-  } else if (slideType === 'point') {
-    const pt = content.points?.[slideIndex - 1] || {};
-    num      = pt.num     || String(slideIndex).padStart(2, '0');
-    title    = pt.title   || '';
-    body     = pt.body    || '';
-    stat     = pt.stat    || '';
-    statLab  = pt.stat_label || '';
-  } else {
-    title = content.cta || 'Sauvegardez ce carousel.';
+// ─── Overlay SVG par layout (fond uniquement — le texte est peint côté client) ──
+function ddOverlay(layout) {
+  if (layout === 'full_impact') {
+    return Buffer.from(
+      `<svg width="${DD_W}" height="${DD_H}" xmlns="http://www.w3.org/2000/svg"><defs>` +
+      `<linearGradient id="v" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${DD_H}">` +
+      `<stop offset="0%" stop-color="black" stop-opacity="0.50"/>` +
+      `<stop offset="42%" stop-color="black" stop-opacity="0.22"/>` +
+      `<stop offset="100%" stop-color="black" stop-opacity="0.92"/>` +
+      `</linearGradient></defs><rect width="${DD_W}" height="${DD_H}" fill="url(#v)"/></svg>`
+    );
   }
-  if (tc.uppercase) { title = title.toUpperCase(); }
-
-  // Base background
-  const bgSvg = Buffer.from(
-    `<svg width="${W}" height="${H}">` +
-    `<rect width="${W}" height="${H}" fill="${escapeXml(tc.bg)}"/>` +
-    (tc.barTop  ? `<rect x="0" y="0" width="${W}" height="5" fill="${escapeXml(tc.accent)}"/>` : '') +
-    (tc.barLeft ? `<rect x="${PAD}" y="80" width="4" height="${H - 160}" rx="2" fill="${escapeXml(tc.accent)}" opacity="0.35"/>` : '') +
-    `</svg>`
+  if (layout === 'stat_focus') {
+    return Buffer.from(
+      `<svg width="${DD_W}" height="${DD_H}" xmlns="http://www.w3.org/2000/svg">` +
+      `<rect width="${DD_W}" height="${DD_H}" fill="black" fill-opacity="0.66"/></svg>`
+    );
+  }
+  if (layout === 'split_bottom') {
+    const panelH = 470;
+    return Buffer.from(
+      `<svg width="${DD_W}" height="${DD_H}" xmlns="http://www.w3.org/2000/svg"><defs>` +
+      `<linearGradient id="s" gradientUnits="userSpaceOnUse" x1="0" y1="${DD_H - panelH - 120}" x2="0" y2="${DD_H - panelH}">` +
+      `<stop offset="0%" stop-color="#0C0C10" stop-opacity="0"/>` +
+      `<stop offset="100%" stop-color="#0C0C10" stop-opacity="0.97"/>` +
+      `</linearGradient></defs>` +
+      `<rect width="${DD_W}" height="${panelH + 120}" y="${DD_H - panelH - 120}" fill="url(#s)"/>` +
+      `<rect width="${DD_W}" height="${panelH}" y="${DD_H - panelH}" fill="#0C0C10" fill-opacity="0.97"/></svg>`
+    );
+  }
+  // list_recap / cta_clean : slides typographiques → panneau quasi opaque (photo = texture)
+  const op = layout === 'cta_clean' ? 0.96 : 0.94;
+  return Buffer.from(
+    `<svg width="${DD_W}" height="${DD_H}" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect width="${DD_W}" height="${DD_H}" fill="#0C0C10" fill-opacity="${op}"/></svg>`
   );
-  let base = await sharp(bgSvg).png().toBuffer();
-  const composites = [];
+}
 
-  // Background image (variant B)
-  if (imgBuf && variant === 'B') {
+// ─── Composition du FOND d'une slide (photo + overlay + logo) ─────────────────
+async function composeDeepDiveBg(base, layout, logoResized) {
+  const composites = [{ input: await sharp(ddOverlay(layout)).png().toBuffer() }];
+  // Logo haut-droite (sauf cta_clean qui est centré côté client → logo discret quand même)
+  if (logoResized) {
+    const lx = DD_W - 56 - logoResized.width;
+    composites.push({ input: logoResized.shadow, left: lx + 3, top: 57 });
+    composites.push({ input: logoResized.buffer, left: lx,     top: 54 });
+  }
+  return sharp(base).composite(composites).jpeg({ quality: 92 }).toBuffer();
+}
+
+// Prépare la base 1080×1350 depuis un buffer photo (ou dégradé de marque en secours)
+async function ddBaseFromPhoto(photoBuffer, brand) {
+  if (photoBuffer) {
     try {
-      const imgResized = await sharp(imgBuf).resize(W, H, { fit:'cover', position:'center' }).png().toBuffer();
-      composites.push({ input: imgResized, left:0, top:0 });
-      // Use userSpaceOnUse + black overlay so gradient renders correctly across all librsvg versions
-      const overlay = Buffer.from(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
-        `<defs><linearGradient id="ov" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${H}">` +
-        `<stop offset="0%" stop-color="black" stop-opacity="0.28"/>` +
-        `<stop offset="55%" stop-color="black" stop-opacity="0.52"/>` +
-        `<stop offset="100%" stop-color="black" stop-opacity="0.78"/>` +
-        `</linearGradient></defs>` +
-        `<rect width="${W}" height="${H}" fill="url(#ov)"/>` +
-        `</svg>`
-      );
-      composites.push({ input: await sharp(overlay).png().toBuffer(), left:0, top:0 });
-    } catch (_) {}
+      return await sharp(photoBuffer, { failOn: 'none' })
+        .resize(DD_W, DD_H, { fit: 'cover', position: 'attention' })
+        .modulate({ saturation: 0.92 })
+        .toBuffer();
+    } catch (_) { /* photo illisible → dégradé */ }
   }
-
-  // Ghost big number (T3 background effect)
-  if (tplId === 'T3' && num) {
-    const ghostSvg = Buffer.from(
-      `<svg width="${W}" height="400">` +
-      `<text x="${W - 40}" y="360" text-anchor="end" font-family="Arial Black,Arial,sans-serif" font-size="340" font-weight="900" fill="${escapeXml(tc.accent)}" opacity="0.08">${escapeXml(num)}</text>` +
-      `</svg>`
-    );
-    composites.push({ input: ghostSvg, left:0, top: H - 460 });
-  }
-
-  // Slide counter
-  const ctrSvg = Buffer.from(
-    `<svg width="180" height="36">` +
-    `<text x="180" y="26" text-anchor="end" font-family="Arial,sans-serif" font-size="20" fill="${escapeXml(tc.muted)}">${slideIndex + 1} / 5</text>` +
-    `</svg>`
-  );
-  composites.push({ input: ctrSvg, left: W - PAD - 180, top: 48 });
-
-  // Number badge (points)
-  if (num && tplId !== 'T3') {
-    const numSvg = Buffer.from(
-      `<svg width="200" height="80">` +
-      `<text x="0" y="64" font-family="Arial Black,Arial,sans-serif" font-size="64" font-weight="900" fill="${escapeXml(tc.accent)}">${escapeXml(num)}</text>` +
-      `</svg>`
-    );
-    composites.push({ input: numSvg, left: tc.barLeft ? PAD + 20 : PAD, top: 100 });
-  }
-  if (num && tplId === 'T3') {
-    const numSvg = Buffer.from(
-      `<svg width="200" height="80">` +
-      `<text x="0" y="64" font-family="Arial Black,Arial,sans-serif" font-size="56" font-weight="900" fill="${escapeXml(tc.accent)}">${escapeXml(num)}</text>` +
-      `</svg>`
-    );
-    composites.push({ input: numSvg, left: PAD, top: 100 });
-  }
-
-  // Title
-  if (title) {
-    const fs       = slideType === 'hook' ? 84 : (tplId === 'T3' ? 76 : 68);
-    const maxW     = W - PAD * 2 - (tc.barLeft ? 20 : 0);
-    const titleLines = wrapText(title, Math.floor(maxW / (fs * (tc.uppercase ? 0.62 : 0.52)))).slice(0, 3);
-    const lineH    = fs + 14;
-    const titleH   = titleLines.length * lineH;
-    const titleSvg = Buffer.from(
-      `<svg width="${maxW}" height="${titleH + 20}">` +
-      titleLines.map((l, j) =>
-        `<text x="0" y="${fs + j * lineH}" font-family="${tplId === 'T5' ? 'Georgia,serif' : 'Arial Black,Arial,sans-serif'}" font-size="${fs}" font-weight="900" fill="${escapeXml(tc.text)}">${escapeXml(l)}</text>`
-      ).join('') +
-      `</svg>`
-    );
-    const titleLeft = tc.barLeft ? PAD + 24 : PAD;
-    const titleTop  = slideType === 'hook' ? 180 : (num ? 210 : 160);
-    composites.push({ input: titleSvg, left: titleLeft, top: titleTop });
-
-    // Body text (below title)
-    if (body) {
-      const bodyLines = wrapText(body, Math.floor(maxW / 19)).slice(0, 4);
-      const bodySvg = Buffer.from(
-        `<svg width="${maxW}" height="${bodyLines.length * 52 + 20}">` +
-        bodyLines.map((l, j) =>
-          `<text x="0" y="${40 + j * 52}" font-family="Arial,sans-serif" font-size="33" font-weight="400" fill="${escapeXml(tc.muted)}">${escapeXml(l)}</text>`
-        ).join('') +
-        `</svg>`
-      );
-      const bodyLeft = titleLeft;
-      const bodyTop  = titleTop + titleH + (slideType === 'hook' ? 36 : 28);
-      composites.push({ input: bodySvg, left: bodyLeft, top: bodyTop });
-    }
-  }
-
-  // Stat block (points)
-  if (stat) {
-    const statSvg = Buffer.from(
-      `<svg width="${W - PAD * 2}" height="180">` +
-      `<text x="0" y="120" font-family="Arial Black,Arial,sans-serif" font-size="108" font-weight="900" fill="${escapeXml(tc.accent)}">${escapeXml(stat)}</text>` +
-      (statLab ? `<text x="0" y="158" font-family="Arial,sans-serif" font-size="28" fill="${escapeXml(tc.muted)}">${escapeXml(statLab)}</text>` : '') +
-      `</svg>`
-    );
-    composites.push({ input: statSvg, left: tc.barLeft ? PAD + 24 : PAD, top: H - 350 });
-  }
-
-  // CTA accent (slide 4)
-  if (slideType === 'cta') {
-    const lineSvg = Buffer.from(
-      `<svg width="80" height="6"><rect width="80" height="4" rx="2" fill="${escapeXml(tc.accent)}"/></svg>`
-    );
-    composites.push({ input: lineSvg, left: PAD, top: 155 });
-  }
-
-  // Handle (bottom left)
-  const handleSvg = Buffer.from(
-    `<svg width="400" height="40">` +
-    `<text x="0" y="28" font-family="Arial,sans-serif" font-size="22" fill="${escapeXml(tc.muted)}">${escapeXml(brand.handle || '@compte')}</text>` +
-    `</svg>`
-  );
-  composites.push({ input: handleSvg, left: tc.barLeft ? PAD + 24 : PAD, top: H - 72 });
-
-  // Progress bar
-  const prog = Math.round(((slideIndex + 1) / 5) * (W - PAD * 2));
-  const progSvg = Buffer.from(
-    `<svg width="${W}" height="8">` +
-    `<rect width="${W - PAD * 2}" height="2" x="${PAD}" y="3" fill="rgba(128,128,128,0.2)" rx="1"/>` +
-    `<rect width="${prog}" height="2" x="${PAD}" y="3" fill="${escapeXml(tc.accent)}" rx="1"/>` +
-    `</svg>`
-  );
-  composites.push({ input: progSvg, left: 0, top: H - 24 });
-
-  return sharp(base).composite(composites).jpeg({ quality: 90 }).toBuffer();
+  return sharp(brandGradientBuffer(DD_W, DD_H, brand.primary, brand.accent)).png().toBuffer();
 }
 
 // ─── POST /api/generate/deepdive ─────────────────────────────────────────────
 router.post('/deepdive', async (req, res) => {
-  if (!sharp) return res.status(500).json({ error: 'Sharp non installe' });
+  let creditCtx = null;
+  const hardDeadline = setTimeout(() => {
+    if (!res.headersSent) res.status(504).json({ error: 'Génération trop longue — réessaie' });
+    refundCredits(creditCtx); creditCtx = null;
+  }, 175000);
 
-  const { topic, userId, clientId, imageMode = 'none', templateId } = req.body;
-  if (!topic) return res.status(400).json({ error: 'topic manquant' });
+  if (!sharp) { clearTimeout(hardDeadline); return res.status(500).json({ error: 'Sharp non installé' }); }
+
+  const { topic, userId, clientId, imageMode = 'hybrid', slideCount = 8 } = req.body;
+  if (!topic) { clearTimeout(hardDeadline); return res.status(400).json({ error: 'topic manquant' }); }
 
   try {
-    const client = await getClientBrand(userId, clientId);
+    const client   = await getClientBrand(userId, clientId);
+    const variant  = deepDiveVariant(imageMode); // 'premium' si genai/hybrid, sinon 'light'
+    const creditClientId = client?.id || clientId || null;
+    const charge   = await chargeCredits(creditClientId, 'deep_dive', variant);
+    if (!charge.ok) { clearTimeout(hardDeadline); return insufficientCredits(res, charge.cost); }
+    creditCtx = { clientId: creditClientId, postType: 'deep_dive', cost: charge.cost, charged: charge.charged };
 
-    // Crédits : Deep Dive premium (slides IA) = 8, léger (Serper / aucun fond) = 3
-    var ddVariant = require('../lib/credits').deepDiveVariant(imageMode);
-    var creditClientId = client?.id || clientId || null;
-    var charge = await chargeCredits(creditClientId, 'deep_dive', ddVariant);
-    if (!charge.ok) return insufficientCredits(res, charge.cost);
-    var creditCtx = { clientId: creditClientId, postType: 'deep_dive', cost: charge.cost, charged: charge.charged };
+    const clampedCount = Math.min(10, Math.max(7, Number(slideCount) || 8));
 
-    const brand  = buildDeepDiveBrand(client);
+    // 1+2. Claude : recherche web + plan narratif
+    const plan   = await deepDivePlan(topic, client, clampedCount);
+    const slides = plan.slides.slice(0, 10);
 
-    // 1. Template auto-selection
-    const tplId = templateId || TONE_TO_TEMPLATE[brand.tone] || 'T2';
+    // Marque + police effective (la police part au client pour le rendu Canvas)
+    const clientFont = resolveFont(client);
+    const brand = {
+      primary: client?.brand_colors?.[0] || '#FF3B30',
+      accent:  client?.brand_colors?.[1] || '#FFFFFF',
+    };
+    const logoResized = await loadDDLogo(client?.logo_url);
 
-    // 2. Claude orchestration — structured JSON content
-    const userMsg = JSON.stringify({ topic, brand, template_id: tplId, image_mode: imageMode, language: 'fr' });
-    const aiResp  = await haiku.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 3000,
-      system:     DEEP_DIVE_SYSTEM_PROMPT,
-      messages:   [{ role: 'user', content: userMsg }],
-    });
-    const rawJson = aiResp.content.find(b => b.type === 'text')?.text || '';
-    let carousel;
-    try { carousel = parseAIJson(rawJson); } catch (_) { throw new Error('Claude JSON invalide'); }
-
-    const { meta = {}, content = {}, slides: slideSpecs = [] } = carousel;
-    if (!slideSpecs.length) throw new Error('Aucun slide dans la réponse Claude');
-
-    // Use effective template (Claude may override)
-    const effectiveTpl = meta.template_id || tplId;
-
-    // 3. Resolve images in parallel (if imageMode !== 'none')
-    const imgBuffers = new Array(5).fill(null);
-    if (imageMode !== 'none') {
-      await Promise.all(slideSpecs.map(async (spec) => {
-        // CTA slide never gets an image
-        if (spec.index === 4) return;
-        // For serp-only mode: override any spec that has an image (or add one for first 3 slides)
-        if (imageMode === 'serp') {
-          const query = spec.image?.search_query || content.points?.[spec.index - 1]?.title || content.topic || 'news';
-          const buf = await resolveSlideImage({ index: spec.index, image: { mode: 'serp', search_query: query } });
-          if (buf) imgBuffers[spec.index] = buf;
-          return;
+    // 3. Images en parallèle (Serper + éventuelle génération IA pour hook/climax en premium)
+    const imgData = await Promise.all(slides.map(async (slide) => {
+      if (imageMode === 'none') return { buffer: null, candidates: [] };
+      // Récap & CTA restent typographiques (panneau quasi opaque) → pas de photo à chercher
+      if (slide.role === 'recap' || slide.role === 'cta') return { buffer: null, candidates: [] };
+      const isKey = slide.role === 'hook' || slide.role === 'climax';
+      if (variant === 'premium' && isKey) {
+        try {
+          const brief    = { visual_brief: (slide.image_query || slide.title || topic) + '.', emotion: client?.mood };
+          const aiPrompt = buildImagePrompt(brief, client);
+          const buf      = await withTimeout(generateImageGPT(aiPrompt, null, []), 70000, 'DeepDive genai');
+          // On récupère quand même les candidats Serper pour l'éditeur "changer l'image"
+          const { candidates } = await fetchSlidePhoto(slide.image_query).catch(() => ({ candidates: [] }));
+          return { buffer: buf, candidates };
+        } catch (e) {
+          console.warn('[DeepDive] genai échec, fallback Serper:', e.message);
+          return fetchSlidePhoto(slide.image_query);
         }
-        if (!spec.image) return;
-        const buf = await resolveSlideImage(spec);
-        if (buf) imgBuffers[spec.index] = buf;
-      }));
+      }
+      return fetchSlidePhoto(slide.image_query);
+    }));
+
+    // 3b. Rythme visuel garanti côté code : jamais plus de 2 "stat_focus" d'affilée
+    // (le 3ᵉ consécutif bascule en "split_bottom" — qui affiche aussi le "stat").
+    // On ne touche qu'aux slides de contenu, jamais au hook/climax/recap/cta.
+    let ddRun = 0, ddPrev = null;
+    const ddLayouts = slides.map((slide) => {
+      let lay = DD_LAYOUTS.includes(slide.layout) ? slide.layout : layoutForRole(slide.role, !!slide.stat);
+      if (lay === ddPrev) ddRun++; else ddRun = 0;
+      if (ddRun >= 2 && lay === 'stat_focus' && slide.role === 'content') { lay = 'split_bottom'; ddRun = 0; }
+      ddPrev = lay;
+      return lay;
+    });
+
+    // 4. Composition des fonds slide par slide (texte ajouté côté client)
+    const outSlides = [];
+    for (let i = 0; i < slides.length; i++) {
+      const slide  = slides[i];
+      const layout = ddLayouts[i];
+      const base   = await ddBaseFromPhoto(imgData[i].buffer, brand);
+      const bg     = await composeDeepDiveBg(base, layout, logoResized);
+      outSlides.push({
+        position:      i + 1,
+        role:          slide.role || 'content',
+        layout,
+        title:         slide.title || '',
+        body:          slide.body  || '',
+        stat:          slide.stat  || null,
+        bg:            'data:image/jpeg;base64,' + bg.toString('base64'),
+        candidates:    imgData[i].candidates || [],
+        photoFallback: !imgData[i].buffer,
+      });
     }
 
-    // 4. Render 5 slides (parallel)
-    const SLIDE_TYPES = ['hook', 'point', 'point', 'point', 'cta'];
-    const slideBuffers = await Promise.all(
-      Array.from({ length: 5 }, (_, i) => {
-        const spec     = slideSpecs.find(s => s.index === i) || { index:i, type: SLIDE_TYPES[i], variant:'A' };
-        const imgBuf   = imgBuffers[i];
-        return renderDeepDiveSlide(effectiveTpl, i, spec.type || SLIDE_TYPES[i], imgBuf ? 'B' : (spec.variant || 'A'), brand, content, imgBuf);
-      })
-    );
+    const caption = plan.caption
+      || await generateCaption('deepdive', { topic, hookTitle: slides[0].title, hookBody: slides[0].body }, client).catch(() => '');
 
-    // 5. Caption (from Claude or fallback)
-    const caption = carousel.caption || await generateCaption('deepdive', { topic, hookTitle: content.topic, hookBody: content.subtitle }, client).catch(() => '');
-
-    const images = slideBuffers.map(b => 'data:image/jpeg;base64,' + b.toString('base64'));
-    res.json({ images, content, meta: { ...meta, template_id: effectiveTpl }, caption, hashtags: carousel.hashtags || [], creditsLeft: charge.charged ? charge.balance : undefined });
+    clearTimeout(hardDeadline);
+    res.json({
+      slides:   outSlides,
+      total:    outSlides.length,
+      caption,
+      hashtags: plan.hashtags || [],
+      topic,
+      variant,
+      // Police effective + couleurs → le Canvas client peint le texte avec la VRAIE police
+      font: {
+        name:          clientFont.fontName,
+        url:           clientFont.urlPath,
+        weight:        clientFont.weight,
+        style:         clientFont.style,
+        transform:     clientFont.transform,
+        letterSpacing: clientFont.letterSpacing,
+      },
+      // logo inclus → le Canvas client peut redessiner le logo sur un fond importé manuellement
+      brand: { ...brand, logo: client?.logo_url || null },
+      creditsLeft: charge.charged ? charge.balance : undefined,
+    });
     creditCtx = null; // carousel livré → pas de remboursement
 
   } catch (err) {
     console.error('[Generate/DeepDive]', err.message);
-    await refundCredits(typeof creditCtx !== 'undefined' ? creditCtx : null);
-    res.status(500).json({ error: err.message, refunded: true });
+    clearTimeout(hardDeadline);
+    await refundCredits(creditCtx); creditCtx = null;
+    if (!res.headersSent) res.status(500).json({ error: err.message, refunded: true });
+  }
+});
+
+// ─── POST /api/generate/regenerate-slide ─────────────────────────────────────
+// Recompose le FOND d'UNE seule slide avec une image choisie par le CM.
+// Gratuit : la génération du carousel est déjà payée (simple changement d'image).
+router.post('/regenerate-slide', async (req, res) => {
+  if (!sharp) return res.status(500).json({ error: 'Sharp non installé' });
+  // imageUrl : photo web · imageData : image importée (base64) · clear : revenir au fond de marque
+  const { userId, clientId, layout, imageUrl, imageData, clear } = req.body;
+  if (!imageUrl && !imageData && !clear) return res.status(400).json({ error: 'imageUrl, imageData ou clear requis' });
+
+  try {
+    const client = await getClientBrand(userId, clientId);
+    const brand = {
+      primary: client?.brand_colors?.[0] || '#FF3B30',
+      accent:  client?.brand_colors?.[1] || '#FFFFFF',
+    };
+    const logoResized = await loadDDLogo(client?.logo_url);
+
+    let photoBuffer = null;
+    if (!clear) {
+      if (imageData) {
+        const b64 = String(imageData).split(',')[1] || imageData;
+        try { const buf = Buffer.from(b64, 'base64'); if (buf.length > 500 && isImageBuffer(buf)) photoBuffer = buf; } catch (_) {}
+      } else if (imageUrl) {
+        try { const buf = await downloadBuffer(imageUrl); if (buf && buf.length > 5000 && isImageBuffer(buf)) photoBuffer = buf; } catch (_) {}
+      }
+    }
+
+    const safeLayout = DD_LAYOUTS.includes(layout) ? layout : 'split_bottom';
+    const base = await ddBaseFromPhoto(photoBuffer, brand);
+    const bg   = await composeDeepDiveBg(base, safeLayout, logoResized);
+    res.json({ bg: 'data:image/jpeg;base64,' + bg.toString('base64'), photoFallback: !photoBuffer });
+
+  } catch (err) {
+    console.error('[Generate/RegenerateSlide]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/generate/search-images ────────────────────────────────────────
+// Recherche d'images à la demande (Serper) pour ajouter/changer le fond d'une slide,
+// y compris quand le carousel a été généré en "Typo seul" (aucun candidat au départ).
+router.post('/search-images', async (req, res) => {
+  const { query } = req.body;
+  if (!query) return res.status(400).json({ error: 'query manquant' });
+  if (!process.env.SERPER_API_KEY) return res.json({ candidates: [] });
+  try {
+    const imgs = await serperImages(String(query).slice(0, 120), { hq: true });
+    const candidates = imgs.map(i => i.imageUrl).filter(Boolean).slice(0, 12);
+    res.json({ candidates });
+  } catch (err) {
+    console.error('[Generate/SearchImages]', err.message);
+    res.status(500).json({ error: err.message, candidates: [] });
   }
 });
 
@@ -1311,6 +1405,136 @@ router.post('/detect-format', async (req, res) => {
     res.json(parseAIJson(raw));
   } catch (err) {
     console.error('[DetectFormat]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/generate/forge-from-article ───────────────────────────────────
+// Transforme un article de veille en un brief ADAPTÉ au format choisi
+// (actu / citation / deep_dive). Un seul appel Claude, prompt par format.
+// Renvoie { format, prefill } → le front pré-remplit la page de génération.
+function forgeActuPrompt(a) {
+  return `Tu es rédacteur en chef d'un média Instagram. Voici un article de veille :
+
+TITRE : ${a.title}
+CONTENU : ${a.content}
+SOURCE : ${a.source}
+
+Reformule cet article en une actu directe et percutante, prête à devenir un post
+breaking (max 220 caractères, factuelle, sans emoji superflu).
+
+Retourne UNIQUEMENT ce JSON : {"newsText":"…"}`;
+}
+
+function forgeCitationPrompt(a) {
+  return `Tu es rédacteur en chef d'un média Instagram.
+Voici un article de veille :
+
+TITRE : ${a.title}
+CONTENU : ${a.content}
+SOURCE : ${a.source}
+
+Extrais LA citation la plus forte de cet article — une déclaration textuelle
+prononcée par une personne (pas une paraphrase du journaliste).
+
+Critères de sélection :
+- Une vraie phrase entre guillemets dans l'article, attribuée à quelqu'un
+- La plus percutante / polémique / émotionnelle / marquante
+- Maximum 200 caractères (elle doit tenir sur un post)
+- Si la citation est trop longue, coupe-la proprement à l'endroit le plus fort
+  avec "..." (sans déformer le sens)
+
+Si l'article ne contient AUCUNE citation directe exploitable, retourne
+{ "found": false } — ne fabrique JAMAIS une citation.
+
+Retourne UNIQUEMENT ce JSON :
+{ "found": true, "quoteText": "la citation exacte", "authorName": "Prénom Nom", "authorTitle": "sa fonction (ex: Sélectionneur des Bleus)" }`;
+}
+
+function forgeDeepDivePrompt(a) {
+  return `Tu es rédacteur en chef d'un média Instagram.
+Voici un article de veille :
+
+TITRE : ${a.title}
+CONTENU : ${a.content}
+SOURCE : ${a.source}
+DATE : ${a.publishedAt || 'non précisée'}
+
+Transforme cet article en un BRIEF DE DEEP DIVE structuré — un carousel
+pédagogique de 7 à 10 slides. Le brief doit donner au générateur tout ce qu'il
+faut pour construire un arc narratif complet.
+
+Retourne UNIQUEMENT ce JSON :
+{
+  "subject": "le sujet reformulé en une phrase claire et précise",
+  "angle": "l'angle éditorial recommandé (chronologique / analyse / décryptage / conséquences / coulisses)",
+  "hook_suggestion": "une proposition de hook en 5-8 mots qui crée une tension",
+  "key_facts": ["fait 1 tiré de l'article (chiffre, date, nom précis)", "fait 2", "fait 3 — minimum 3, maximum 6 faits"],
+  "open_questions": ["question que l'article soulève et que la recherche web devra compléter"],
+  "tone_note": "consigne de ton spécifique à ce sujet (ex: éducatif sans moralisme, factuel sans sensationnalisme)"
+}
+
+Les key_facts doivent être VÉRIFIABLES et venir de l'article — pas d'invention.
+Les open_questions guideront la recherche web complémentaire du générateur.`;
+}
+
+// Assemble le brief Deep Dive structuré en texte pour le champ "Sujet du carousel"
+function assembleDeepDiveBrief(b) {
+  const lines = [b.subject || ''];
+  if (b.angle)           lines.push('Angle : ' + b.angle);
+  if (b.hook_suggestion) lines.push('Hook suggéré : ' + b.hook_suggestion);
+  if (Array.isArray(b.key_facts) && b.key_facts.length)         lines.push('Faits clés : ' + b.key_facts.join(' · '));
+  if (Array.isArray(b.open_questions) && b.open_questions.length) lines.push('À creuser : ' + b.open_questions.join(' · '));
+  if (b.tone_note)       lines.push('Ton : ' + b.tone_note);
+  return lines.filter(Boolean).join('\n');
+}
+
+router.post('/forge-from-article', async (req, res) => {
+  const { article = {}, format = 'actu' } = req.body;
+  const a = {
+    title:       article.title       || article.titre || '',
+    content:     article.content     || article.description || article.text || article.extrait || '',
+    source:      article.source      || '',
+    publishedAt: article.publishedAt || article.published_at || article.date || '',
+  };
+  if (!a.title && !a.content) return res.status(400).json({ error: 'Article vide' });
+
+  const fmt = (format === 'deepdive' || format === 'deep_dive') ? 'deep_dive'
+            : (format === 'citation' ? 'citation' : 'actu');
+
+  try {
+    const prompt = fmt === 'citation'  ? forgeCitationPrompt(a)
+                 : fmt === 'deep_dive' ? forgeDeepDivePrompt(a)
+                 : forgeActuPrompt(a);
+
+    const response = await withTimeout(haiku.messages.create({
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 900,
+      messages:   [{ role: 'user', content: prompt }],
+    }), 30000, 'forge-from-article');
+
+    const raw  = response.content.find(b => b.type === 'text')?.text || '';
+    const data = parseAIJson(raw);
+
+    if (fmt === 'actu') {
+      return res.json({ format: 'actu', prefill: { newsText: data.newsText || a.title } });
+    }
+    if (fmt === 'citation') {
+      if (!data.found) return res.json({ format: 'citation', found: false });
+      return res.json({
+        format: 'citation', found: true,
+        prefill: { quoteText: data.quoteText || '', authorName: data.authorName || '', authorTitle: data.authorTitle || '' },
+      });
+    }
+    // deep_dive
+    return res.json({
+      format: 'deepdive',
+      brief:  data,
+      prefill: { topic: assembleDeepDiveBrief(data) },
+    });
+
+  } catch (err) {
+    console.error('[ForgeFromArticle]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1792,3 +2016,5 @@ router.get('/brand-identity/logo-export', async (req, res) => {
 });
 
 module.exports = router;
+// Pipeline réutilisé par la démo publique de la landing (routes/demo.js)
+module.exports.runActuPipeline = runActuPipeline;

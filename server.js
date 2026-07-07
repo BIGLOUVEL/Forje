@@ -42,6 +42,9 @@ app.use('/fonts/playfair-display', express.static(path.join(NM, '@fontsource/pla
 app.use('/fonts/syne',             express.static(path.join(NM, '@fontsource/syne/files')));
 app.use('/fonts/dm-serif-display', express.static(path.join(NM, '@fontsource/dm-serif-display/files')));
 
+// Libs front servies localement (pas de CDN) — ex : JSZip pour l'export ZIP du carousel
+app.use('/vendor/jszip', express.static(path.join(NM, 'jszip/dist')));
+
 // SaaS principal (fichiers statiques à la racine)
 app.use(express.static(ROOT));
 
@@ -76,6 +79,8 @@ app.use('/api/brand',        require('./routes/brand'));
 app.use('/api/interactions', require('./routes/interactions'));
 app.use('/api/agent',        require('./routes/agent'));
 app.use('/api/billing',      billingRouter);
+app.use('/api/instagram',    require('./routes/instagram'));
+app.use('/api/account',      require('./routes/account'));
 
 const { router: rssRouter,     fetchAllFeeds }                              = require('./routes/rss');
 const { router: scoringRouter, scoreForCompte }                             = require('./routes/scoring');
@@ -88,6 +93,10 @@ app.use('/api/scoring',  scoringRouter);
 app.use('/api/twitter',  twitterRouter);
 app.use('/api/learning', learningRouter);
 app.use('/api/hot',      require('./routes/hot'));
+
+// ─── Démo publique de la landing (board de veille + génération sans compte) ──
+const { router: demoRouter, refreshDemoVeille } = require('./routes/demo');
+app.use('/api/demo', demoRouter);
 
 // ─── Polling RSS toutes les 5 minutes — SANS Twitter (appels API gratuits) ───
 const RSS_INTERVAL_MS = 5 * 60 * 1000;
@@ -130,6 +139,11 @@ dailyPurge();
 
 rssLoop();
 setInterval(rssLoop, RSS_INTERVAL_MS);
+
+// ─── Board de veille démo (landing) — rescoring + snapshot toutes les 10 min ─
+const DEMO_VEILLE_INTERVAL_MS = 10 * 60 * 1000;
+setTimeout(() => refreshDemoVeille(scoreForCompte), 20 * 1000); // premier passage juste après le boot
+setInterval(() => refreshDemoVeille(scoreForCompte), DEMO_VEILLE_INTERVAL_MS);
 
 // ─── Admin (caché, pas indexé dans le SPA) ───────────────────────────────────
 app.get('/admin', (_req, res) => res.sendFile(path.join(ROOT, 'admin.html')));

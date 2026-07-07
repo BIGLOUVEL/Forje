@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=1440, initial-scale=1.0"/>
-<title>Forje Studio</title>
+<title>Forje Studio — Le studio IA qui forge tes posts Instagram</title>
+<meta name="description" content="Forje surveille l'actu et génère tes posts Instagram dans ta charte exacte. Du breaking au post publié : 90 secondes. 69€/mois, 700 crédits, essai gratuit avec 50 crédits."/>
+<meta property="og:title" content="Forje Studio — Le studio IA qui forge tes posts Instagram"/>
+<meta property="og:description" content="Du breaking au post publié : 90 secondes. Forge ton identité une fois, poste pour toujours. Essai gratuit — 50 crédits offerts."/>
+<meta property="og:type" content="website"/>
+<meta property="og:image" content="assets/demo/og-ballon-bleu.jpg"/>
+<meta name="twitter:card" content="summary_large_image"/>
 <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon.png?v=4"/>
 <link rel="apple-touch-icon" href="assets/favicon.png?v=4"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -17,12 +23,13 @@
 <link id="css-l1" rel="stylesheet" href="forje.css" media="none"/>
 <link id="css-l2" rel="stylesheet" href="forje-lux.css" media="none"/>
 <link id="css-l3" rel="stylesheet" href="forje-mark.css" media="none"/>
+<link id="css-l4" rel="stylesheet" href="forje-live.css?v=1" media="none"/>
 
 <!-- App CSS — désactivé par défaut -->
-<link id="css-a1" rel="stylesheet" href="app.css?v=7" media="none"/>
+<link id="css-a1" rel="stylesheet" href="app.css?v=8" media="none"/>
 <link id="css-a2" rel="stylesheet" href="app-dashboard.css?v=7" media="none"/>
-<link id="css-a3" rel="stylesheet" href="app-screens.css?v=7" media="none"/>
-<link id="css-a4" rel="stylesheet" href="app-sources.css?v=7" media="none"/>
+<link id="css-a3" rel="stylesheet" href="app-screens.css?v=18" media="none"/>
+<link id="css-a4" rel="stylesheet" href="app-sources.css?v=9" media="none"/>
 <link id="css-a5" rel="stylesheet" href="app-onboarding.css?v=7" media="none"/>
 <link id="css-a6" rel="stylesheet" href="app-pulse.css?v=2" media="none"/>
 
@@ -94,11 +101,15 @@
 <!-- Bibliothèque typographique partagée (window.ForjeFonts) — avant le chargement des JSX -->
 <script src="lib/fonts.js?v=7"></script>
 
+<!-- JSZip (servi en local) — export ZIP du carousel Deep Dive → window.JSZip -->
+<script src="/vendor/jszip/jszip.min.js"></script>
+
 <script>
 (async () => {
   const files = [
     'forje-atoms.jsx',
     'forje-hero.jsx',
+    'forje-live.jsx',
     'forje-sections.jsx',
     'forje-tweaks.jsx',
     'forje-app.jsx',
@@ -113,7 +124,7 @@
     'root.jsx',
   ];
 
-  const V = '?v=9';
+  const V = '?v=21';
   for (const src of files) {
     try {
       const res  = await fetch(src + V);
