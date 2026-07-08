@@ -235,6 +235,269 @@ async function renderCitationCanvas(data) {
 }
 window.__renderCitationCanvas = renderCitationCanvas;
 
+// ─── Canvas renderer : slide Deep Dive avec la vraie police du client ─────────
+// Le serveur renvoie le FOND de chaque slide (photo + overlay/panneau selon le
+// layout + logo). On peint ICI le texte (titre/body/stat/liste/CTA) avec la
+// police effective du média, le numéro de slide et la barre de progression —
+// librsvg (Sharp) ne sait pas appliquer une @font-face base64, le Canvas si.
+// Helpers pour un fond importé manuellement (dessiné côté client, sans serveur)
+function _ddDrawCover(ctx, img, W, H) {
+  var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  if (!iw || !ih) return;
+  var s = Math.max(W / iw, H / ih), w = iw * s, h = ih * s;
+  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+}
+function _ddDrawOverlay(ctx, layout, W, H) {
+  if (layout === 'full_impact') {
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'rgba(0,0,0,0.50)'); g.addColorStop(0.42, 'rgba(0,0,0,0.22)'); g.addColorStop(1, 'rgba(0,0,0,0.92)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); return;
+  }
+  if (layout === 'stat_focus') { ctx.fillStyle = 'rgba(0,0,0,0.66)'; ctx.fillRect(0, 0, W, H); return; }
+  if (layout === 'split_bottom') {
+    var ph = 470;
+    var g2 = ctx.createLinearGradient(0, H - ph - 120, 0, H - ph);
+    g2.addColorStop(0, 'rgba(12,12,16,0)'); g2.addColorStop(1, 'rgba(12,12,16,0.97)');
+    ctx.fillStyle = g2; ctx.fillRect(0, H - ph - 120, W, 120);
+    ctx.fillStyle = 'rgba(12,12,16,0.97)'; ctx.fillRect(0, H - ph, W, ph); return;
+  }
+  var op = layout === 'cta_clean' ? 0.96 : 0.94;
+  ctx.fillStyle = 'rgba(12,12,16,' + op + ')'; ctx.fillRect(0, 0, W, H);
+}
+async function _ddDrawLogo(ctx, logoUrl, W) {
+  if (!logoUrl) return;
+  var lg = new Image(); lg.crossOrigin = 'anonymous';
+  var ok = await new Promise(function(r){ lg.onload = function(){ r(true); }; lg.onerror = function(){ r(false); }; lg.src = logoUrl; });
+  if (!ok) return;
+  var h = 60, w = (lg.naturalWidth / lg.naturalHeight) * h || 60;
+  ctx.drawImage(lg, W - 56 - w, 54, w, h);
+}
+
+async function renderDeepDiveSlideCanvas(slide, shared, skipLogo) {
+  var W = 1080, H = 1350;
+  var canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext('2d');
+
+  // 1. Fond : image importée manuellement (dessinée ICI, instantané, zéro serveur)
+  //    sinon le fond composé par le serveur (photo web / dégradé de marque).
+  if (slide.customBg) {
+    var cb = new Image();
+    await new Promise(function(res){ cb.onload = res; cb.onerror = res; cb.src = slide.customBg; });
+    try { _ddDrawCover(ctx, cb, W, H); } catch(_) {}
+    _ddDrawOverlay(ctx, slide.layout || 'split_bottom', W, H);
+    if (!skipLogo) { try { await _ddDrawLogo(ctx, (shared.brand || {}).logo, W); } catch(_) {} }
+  } else {
+    var bg = new Image();
+    await new Promise(function(res){ bg.onload = res; bg.onerror = res; bg.src = slide.bg; });
+    try { ctx.drawImage(bg, 0, 0, W, H); } catch(_) {}
+  }
+
+  // 2. Police effective + couleurs (source de vérité : serveur → shared.font / shared.brand)
+  var df       = shared.font  || {};
+  var brand    = shared.brand || {};
+  var primary  = brand.primary || '#FF3B30';
+  var headName   = df.name   || 'Anton';
+  var headWeight = df.weight || 700;
+  var headStyle  = df.style  || 'normal';
+  var doUpper    = df.transform === 'uppercase';
+  var headFamily = "'" + headName + "',Impact,sans-serif";
+  var SANS = 'DM Sans,Arial,sans-serif';
+
+  // 3. Charge la police (@font-face + document.fonts.load) — fiable pour Canvas
+  if (df.name && df.url) {
+    var ext = (df.url.split('.').pop() || '').toLowerCase().split(/[?#]/)[0];
+    var fmt = ({ ttf:'truetype', otf:'opentype', woff:'woff', woff2:'woff2' })[ext] || 'woff';
+    var styleId = 'ff-forje-' + headName.replace(/\s+/g, '-').toLowerCase();
+    if (!document.getElementById(styleId)) {
+      var st = document.createElement('style');
+      st.id = styleId;
+      st.textContent = "@font-face{font-family:'" + headName + "';src:url('" + df.url + "') format('" + fmt + "');font-weight:" + headWeight + ";font-style:" + headStyle + ";}";
+      document.head.appendChild(st);
+    }
+    try {
+      await Promise.race([
+        document.fonts.load(headStyle + ' ' + headWeight + " 72px '" + headName + "'"),
+        new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('font timeout')); }, 4000); }),
+      ]);
+    } catch(e) { console.warn('[Font]', e.message); }
+  }
+
+  function wrap(text, maxW, font) {
+    ctx.font = font;
+    var words = String(text || '').split(' '), lines = [], cur = '';
+    words.forEach(function(w) {
+      var cand = cur ? cur + ' ' + w : w;
+      if (ctx.measureText(cand).width > maxW && cur) { lines.push(cur); cur = w; }
+      else { cur = cand; }
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  }
+  function noShadow() { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0; }
+  function headFont(px) { return headStyle + ' ' + headWeight + ' ' + px + 'px ' + headFamily; }
+
+  var layout = slide.layout || 'split_bottom';
+  var title  = doUpper ? String(slide.title || '').toUpperCase() : String(slide.title || '');
+
+  // ─── LAYOUT 1 : full_impact (hook / climax) — titre énorme ancré en bas ──────
+  if (layout === 'full_impact') {
+    var big      = title.length > 28 ? 88 : 108;
+    var tFont    = headFont(big);
+    var tLines   = wrap(title, W - 120, tFont).slice(0, 4);
+    var lineH    = big + 8;
+    var bFont    = '400 34px ' + SANS;
+    var bLines   = slide.body ? wrap(slide.body, W - 140, bFont).slice(0, 2) : [];
+    var titleH   = tLines.length * lineH;
+    var bodyH    = bLines.length * 44;
+    var blockBot = H - 235;
+    var bodyTop  = blockBot - bodyH;
+    var titleBot = bodyTop - (bLines.length ? 34 : 0);
+    var titleTop = titleBot - titleH;
+
+    ctx.fillStyle = primary;
+    ctx.fillRect(60, titleTop - 34, 90, 8);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.75)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 5;
+    ctx.font = tFont;
+    tLines.forEach(function(l, i) { ctx.fillText(l, 60, titleTop + big + i * lineH); });
+    if (bLines.length) {
+      ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
+      ctx.font = bFont; ctx.fillStyle = 'rgba(255,255,255,0.80)';
+      bLines.forEach(function(l, i) { ctx.fillText(l, 60, bodyTop + 30 + i * 44); });
+    }
+    noShadow();
+  }
+
+  // ─── LAYOUT 2 : split_bottom (setup / content) — texte dans le panneau bas ───
+  else if (layout === 'split_bottom') {
+    var panelTop = H - 470, ix = 60;
+    ctx.textAlign = 'left';
+    // Trait accent + chiffre éventuel (si ce slide portait un "stat")
+    var y2 = panelTop + 78;
+    ctx.fillStyle = primary; ctx.fillRect(ix, y2 - 18, 90, 8);
+    if (slide.stat) {
+      ctx.font = headFont(56); ctx.fillStyle = primary;
+      ctx.fillText(String(slide.stat), ix, y2 + 44);
+      y2 += 78;
+    }
+    var tFont2  = headFont(48);
+    var tLines2 = wrap(slide.title, W - 120, tFont2).slice(0, slide.stat ? 2 : 3);
+    ctx.font = tFont2; ctx.fillStyle = '#fff';
+    y2 += 48;
+    tLines2.forEach(function(l, i) { ctx.fillText(l, ix, y2 + i * 58); });
+    var by2 = y2 + tLines2.length * 58 + 16;
+    var bFont2  = '400 29px ' + SANS;
+    var bLines2 = wrap(slide.body, W - 120, bFont2).slice(0, slide.stat ? 3 : 5);
+    ctx.font = bFont2; ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    bLines2.forEach(function(l, i) { ctx.fillText(l, ix, by2 + i * 42); });
+  }
+
+  // ─── LAYOUT 3 : stat_focus — chiffre géant centré ────────────────────────────
+  else if (layout === 'stat_focus') {
+    var cx = W / 2;
+    var stat = String(slide.stat || slide.title || '');
+    var statSize = stat.length > 6 ? 138 : stat.length > 4 ? 176 : stat.length > 2 ? 210 : 240;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = primary; ctx.font = headFont(statSize);
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 4;
+    ctx.fillText(stat, cx, H / 2 - 10);
+
+    var lbl = slide.stat ? (slide.body || slide.title || '') : (slide.body || '');
+    var lFont = '500 38px ' + SANS;
+    var lLines = wrap(lbl, W - 200, lFont).slice(0, 3);
+    ctx.shadowBlur = 8; ctx.font = lFont; ctx.fillStyle = '#fff';
+    lLines.forEach(function(l, i) { ctx.fillText(l, cx, H / 2 + 78 + i * 50); });
+    noShadow(); ctx.textAlign = 'left';
+  }
+
+  // ─── LAYOUT 4 : list_recap — la slide qu'on screenshot ───────────────────────
+  else if (layout === 'list_recap') {
+    var lix = 70;
+    ctx.textAlign = 'left';
+    var tFont4 = headFont(58);
+    var tLines4 = wrap(title, W - 140, tFont4).slice(0, 2);
+    ctx.font = tFont4; ctx.fillStyle = '#fff';
+    var ty4 = 300;
+    tLines4.forEach(function(l, i) { ctx.fillText(l, lix, ty4 + i * 66); });
+    var afterT = ty4 + tLines4.length * 66;
+    ctx.fillStyle = primary; ctx.fillRect(lix, afterT + 4, 90, 8);
+
+    var points = String(slide.body || '').split(/\s*[•\n;|]\s*/).map(function(s){ return s.trim(); }).filter(Boolean).slice(0, 4);
+    var py = afterT + 96;
+    var pFont = '500 32px ' + SANS;
+    points.forEach(function(pt, i) {
+      var lines = wrap(pt, W - lix - 56 - 60, pFont);
+      var cyc = py + 14;
+      ctx.beginPath(); ctx.fillStyle = primary; ctx.arc(lix + 17, cyc, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '800 20px ' + SANS;
+      ctx.fillText(String(i + 1), lix + 17, cyc + 7);
+      ctx.textAlign = 'left'; ctx.font = pFont; ctx.fillStyle = 'rgba(255,255,255,0.90)';
+      lines.forEach(function(l, j) { ctx.fillText(l, lix + 58, py + 8 + j * 42); });
+      py += Math.max(66, lines.length * 42 + 30);
+    });
+  }
+
+  // ─── LAYOUT 5 : cta_clean — épuré, centré ────────────────────────────────────
+  else {
+    var ccx = W / 2;
+    var tFont5 = headFont(64);
+    var tLines5 = wrap(title, W - 160, tFont5).slice(0, 3);
+    var bFont5 = '400 34px ' + SANS;
+    var bLines5 = wrap(slide.body, W - 220, bFont5).slice(0, 4);
+    var titleH5 = tLines5.length * 76, bodyH5 = bLines5.length * 48;
+    var startY5 = (H - (titleH5 + 50 + bodyH5)) / 2 - 20;
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff'; ctx.font = tFont5;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 3;
+    tLines5.forEach(function(l, i) { ctx.fillText(l, ccx, startY5 + 64 + i * 76); });
+    var by5 = startY5 + titleH5 + 52;
+    ctx.shadowBlur = 8;
+    ctx.font = bFont5; ctx.fillStyle = 'rgba(255,255,255,0.78)';
+    bLines5.forEach(function(l, i) { ctx.fillText(l, ccx, by5 + i * 48); });
+    noShadow();
+    ctx.fillStyle = primary; ctx.fillRect(ccx - 45, by5 + bodyH5 + 28, 90, 8);
+    ctx.textAlign = 'left';
+  }
+
+  // ─── Éléments communs : numéro de slide (haut gauche) + barre de progression ──
+  if (slide.position > 1) {
+    ctx.textAlign = 'left';
+    ctx.font = '600 24px ' + SANS;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 1;
+    ctx.fillText(String(slide.position).padStart(2, '0') + ' / ' + String(shared.total || 1).padStart(2, '0'), 60, 90);
+    noShadow();
+  }
+  var pct = (slide.position || 1) / (shared.total || 1);
+  ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(0, H - 6, W, 6);
+  ctx.fillStyle = primary; ctx.fillRect(0, H - 6, Math.round(W * pct), 6);
+
+  // Un logo cross-origin sans en-têtes CORS peut « tainter » le canvas → export impossible.
+  // Dans ce cas, on re-rend le fond importé SANS le logo (le reste est garanti exportable).
+  try {
+    return canvas.toDataURL('image/jpeg', 0.92);
+  } catch (e) {
+    if (slide.customBg && !skipLogo) return renderDeepDiveSlideCanvas(slide, shared, true);
+    throw e;
+  }
+}
+window.__renderDeepDiveSlideCanvas = renderDeepDiveSlideCanvas;
+
+// Rend toutes les slides d'un carousel Deep Dive → tableau de data URLs
+async function renderDeepDiveCarousel(data) {
+  var shared = { font: data.font, brand: data.brand, total: data.total || (data.slides || []).length };
+  var out = [];
+  for (var i = 0; i < (data.slides || []).length; i++) {
+    out.push(await renderDeepDiveSlideCanvas(data.slides[i], shared));
+  }
+  return out;
+}
+window.__renderDeepDiveCarousel = renderDeepDiveCarousel;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GENERATE — hub (Higgsfield-like) + creation (2 variations via tweak)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -252,7 +515,7 @@ const PRESETS = [
     tag: 'Le plus utilisé', icon: 'news',   img: 'assets/actu.webp',      vid: 'assets/actu-loop.mp4',      visual: 'actu'  },
   { id: 'citation', label: 'Citation',  desc: 'Une phrase forte, mise en image',
     icon: 'quote',  img: 'assets/citation.webp',  vid: 'assets/citation-loop.mp4',  visual: 'quote' },
-  { id: 'deepdive', label: 'Deep Dive', desc: 'Carousel 6 slides — le format le plus sauvegardé',
+  { id: 'deepdive', label: 'Deep Dive', desc: 'Carousel 7-10 slides — le format le plus sauvegardé',
     tag: 'Meilleur reach', icon: 'layers', img: 'assets/deep-dive.webp',  vid: 'assets/deep-dive-loop.mp4', visual: 'bts'   },
 ];
 
@@ -867,10 +1130,21 @@ const GenFormFields = ({ preset, s }) => {
     <ToolSection title="Sujet du carousel" icon="layers">
       <GenFormInput value={s.topic} onChange={s.setTopic} rows={4}
         placeholder="Ex : Pourquoi les startups françaises échouent avant 3 ans…"/>
+      <div className="tool-sub">Claude recherche le sujet sur le web → faits, chiffres, dates réels.</div>
+    </ToolSection>
+    <ToolSection title="Nombre de slides" icon="layers">
+      <div className="dd-count-pills">
+        {[7, 8, 9, 10].map(n => (
+          <button key={n}
+            className={`dd-count-pill${s.ddSlideCount === n ? ' dd-count-pill--active' : ''}`}
+            onClick={() => s.setDdSlideCount(n)}>{n}</button>
+        ))}
+      </div>
+      <div className="tool-sub">7 à 10 = le sweet spot de l’algo Instagram.</div>
     </ToolSection>
     <ToolSection title="Visuels" icon="image">
       <div className="dd-mode-pills">
-        {[['none','Typo seul','Rapide'],['serp','Photo web','~10s'],['genai','IA cinéma','~30s, 0.15$'],['hybrid','Hybrid','Recommandé']].map(([val, label, sub]) => (
+        {[['none','Typo seul','Rapide'],['serp','Photo web','~15s'],['genai','IA cinéma','premium'],['hybrid','Hybrid','Recommandé']].map(([val, label, sub]) => (
           <button key={val}
             className={`dd-mode-pill${s.ddImageMode === val ? ' dd-mode-pill--active' : ''}`}
             onClick={() => s.setDdImageMode(val)}>
@@ -879,6 +1153,7 @@ const GenFormFields = ({ preset, s }) => {
           </button>
         ))}
       </div>
+      <div className="tool-sub">Hybrid : IA cinématique sur le hook + le climax, photos web ailleurs.</div>
     </ToolSection>
   </>);
 
@@ -888,7 +1163,7 @@ const GenFormFields = ({ preset, s }) => {
 const LOADER_STEPS = {
   actu:     [[0,'Analyse de l\'actu…'],[5000,'Génération du visuel cinématique…'],[14000,'Rédaction du post…'],[22000,'Caption Instagram…'],[30000,'Finalisation…']],
   citation: [[0,'Composition visuelle…'],[6000,'Mise en forme typographique…'],[12000,'Finalisation…']],
-  deepdive: [[0,'Orchestration du contenu…'],[10000,'Génération des 5 slides…'],[20000,'Sourcing des visuels…'],[35000,'Rendu du carousel…'],[48000,'Finalisation…']],
+  deepdive: [[0,'Recherche web du sujet…'],[12000,'Construction du plan narratif…'],[24000,'Sourcing des visuels…'],[40000,'Composition des slides…'],[55000,'Rendu du carousel…']],
 };
 const LOADER_TOTAL = { actu: 36000, citation: 18000, deepdive: 60000 };
 
@@ -951,12 +1226,13 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
   const [photoData,    setPhotoData]    = useState('');
   const [quoteText,    setQuoteText]    = useState(preset.prefill?.quoteText  || savedInputs?.quoteText  || '');
   const [authorName,   setAuthorName]   = useState(preset.prefill?.authorName || savedInputs?.authorName || '');
-  const [authorTitle,  setAuthorTitle]  = useState('');
+  const [authorTitle,  setAuthorTitle]  = useState(preset.prefill?.authorTitle || '');
   const [topic,        setTopic]        = useState(preset.prefill?.topic      || savedInputs?.topic      || '');
   // Mode image : si l'user vient du Hub (autoStart), on préfère 'classic' (plus rapide, ~15s vs ~90s)
   // L'user peut toujours basculer sur 'ai' depuis le formulaire
   const [imageMode,    setImageMode]    = useState(preset.autoStart ? 'classic' : 'ai');
-  const [ddImageMode,  setDdImageMode]  = useState('none');
+  const [ddImageMode,  setDdImageMode]  = useState('serp'); // photos web par défaut (même coût que 'none')
+  const [ddSlideCount, setDdSlideCount] = useState(8);
   const [styleRefData, setStyleRefData] = useState(null);
   const [generating,   setGenerating]   = useState(_genActive === preset.id || !!preset.autoStart);
   const [results,      setResults]      = useState([]);
@@ -1070,7 +1346,7 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
 
   const s = { newsText, setNewsText, photoUrl, setPhotoUrl, photoData, setPhotoData, quoteText, setQuoteText,
               authorName, setAuthorName, authorTitle, setAuthorTitle, topic, setTopic,
-              imageMode, setImageMode, ddImageMode, setDdImageMode, styleRefData, setStyleRefData };
+              imageMode, setImageMode, ddImageMode, setDdImageMode, ddSlideCount, setDdSlideCount, styleRefData, setStyleRefData };
 
   const canGenerate = {
     actu:     newsText.trim().length > 10,
@@ -1110,14 +1386,22 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
       const body = {
         actu:     { newsText, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, clientId, imageMode, styleRefData: styleRefData || undefined },
         citation: { quoteText, authorName, authorTitle: authorTitle || undefined, photoUrl: photoUrl || undefined, photoData: photoData || undefined, userId, clientId },
-        deepdive: { topic, userId, clientId, imageMode: ddImageMode },
+        deepdive: { topic, userId, clientId, imageMode: ddImageMode, slideCount: ddSlideCount },
       }[preset.id];
       const res  = await veilleFetch(ep, { method: 'POST', body: JSON.stringify(body), signal: _abortController.signal });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || data.error || 'Erreur génération');
       // Solde de crédits renvoyé par le serveur → maj immédiate de la sidebar
       if (typeof data.creditsLeft === 'number') window.__applyCredits?.(data.creditsLeft);
-      if (data.bgImage) { data.image = await (preset.id === 'citation' ? renderCitationCanvas(data) : renderActuCanvas(data)); }
+      if (preset.id === 'deepdive' && Array.isArray(data.slides)) {
+        // Le serveur renvoie les FONDS (data.slides[].bg) + le texte → on peint chaque
+        // slide sur Canvas avec la vraie police, puis on assemble le carousel final.
+        data.images = await renderDeepDiveCarousel(data);
+        data.image  = data.images[0];
+        data.title  = data.slides[0]?.title || 'Deep Dive';
+      } else if (data.bgImage) {
+        data.image = await (preset.id === 'citation' ? renderCitationCanvas(data) : renderActuCanvas(data));
+      }
       window.__setGenToast?.({ status: 'ready', label: preset.label, presetId: preset.id, preset });
       const entry = { ...data, id: lId, preset_id: preset.id };
       // Sauvegarde Supabase — toujours, même si le composant est démonté
@@ -1133,6 +1417,8 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
           image:     data.image     || null,
           category:  data.category  || null,
           pack_id:   data.packId    || null,
+          // On conserve les fonds (slides[].bg) → le post reste ÉDITABLE quand on le rouvre
+          // (re-rendu du texte, ajout d'image…). Sans ça, un post rechargé serait figé.
           meta:      (({ image: _i, bgImage: _b, ...rest }) => rest)(data),
         }).select('id').single().then(({ data: row }) => {
           if (row && isMountedRef.current) {
@@ -1287,7 +1573,9 @@ const GenerateChat = ({ preset, onBack, onGoToBoard, brandScore = 7, onGoBrand, 
           )}
           <div className="gen-feed-panel">
             {results.filter(r => !r.loading).map(item =>
-              <GenFeedCard key={item.id} item={item} onExpand={setExpandedItem}/>
+              item.preset_id === 'deepdive'
+                ? <DeepDiveEditor key={item.id} item={item}/>
+                : <GenFeedCard key={item.id} item={item} onExpand={setExpandedItem}/>
             )}
           </div>
         </div>
@@ -1345,14 +1633,352 @@ const IgCaption = ({ caption }) => {
 };
 
 /* ── Carte de résultat dans le feed ──────────────────────────────────── */
-function downloadImage(dataUrl) {
+function downloadImage(dataUrl, filename) {
   var a = document.createElement('a');
   a.href = dataUrl;
-  a.download = 'forje-post.jpg';
+  a.download = filename || 'forje-post.jpg';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 }
+
+const DD_ROLE_LABEL = { hook:'Hook', setup:'Contexte', content:'Point', climax:'Climax', recap:'Récap', cta:'CTA' };
+
+/* ── Éditeur de carousel Deep Dive ───────────────────────────────────────
+   Preview horizontale (comme Instagram) + édition par slide : texte inline
+   (re-render Canvas instantané, 0 crédit), changement d'image (recomposite
+   le fond serveur puis re-render), caption éditable. */
+const DeepDiveEditor = ({ item }) => {
+  const shared   = { font: item.font, brand: item.brand, total: item.total || (item.slides || []).length };
+  const editable = Array.isArray(item.slides) && item.slides.some(s => s.bg);
+
+  const [slides,  setSlides]  = useState(() =>
+    (item.slides && item.slides.length
+      ? item.slides.map((s, i) => ({ ...s, image: (item.images || [])[i] || null }))
+      : (item.images || []).map((img, i) => ({ position: i + 1, image: img, layout: 'split_bottom' }))));
+  const [sel,     setSel]     = useState(0);
+  const [caption, setCaption] = useState(item.caption || '');
+  const [copied,  setCopied]  = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [busy,    setBusy]    = useState(false);
+  const [zoom,    setZoom]    = useState(false);
+  const [imgQuery,      setImgQuery]      = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching,     setSearching]     = useState(false);
+
+  const cur = slides[sel] || {};
+  // Ajout d'image (import) : toujours possible — il se fait côté client, sans le fond serveur.
+  // Édition du texte : nécessite un fond à repeindre (fond serveur d'une génération fraîche,
+  // OU une image importée). Sur un post rechargé de l'historique sans fond, l'ajout d'image
+  // reste possible ; le texte redevient éditable dès qu'une image est ajoutée.
+  const canEditText = !!(cur.bg || cur.customBg);
+
+  const [tDraft, setTDraft] = useState(cur.title || '');
+  const [bDraft, setBDraft] = useState(cur.body  || '');
+  const [sDraft, setSDraft] = useState(cur.stat  || '');
+  useEffect(() => {
+    setTDraft(cur.title || ''); setBDraft(cur.body || ''); setSDraft(cur.stat || '');
+    setPicking(false);
+  }, [sel]);
+
+  // Re-render Canvas (debounce) quand le texte change — instantané, gratuit
+  useEffect(() => {
+    if (!canEditText) return;
+    const changed = tDraft !== (cur.title || '') || bDraft !== (cur.body || '') || sDraft !== (cur.stat || '');
+    if (!changed) return;
+    const t = setTimeout(async () => {
+      const slide = { ...slides[sel], title: tDraft, body: bDraft, stat: sDraft || null };
+      const img = await window.__renderDeepDiveSlideCanvas(slide, shared);
+      setSlides(prev => prev.map((s, i) => i === sel ? { ...slide, image: img } : s));
+    }, 320);
+    return () => clearTimeout(t);
+  }, [tDraft, bDraft, sDraft]);
+
+  // Applique un fond à la slide courante (photo web, image importée, ou retour au fond de marque)
+  const applyImage = async ({ imageUrl, imageData, clear } = {}) => {
+    setBusy(true);
+    try {
+      const res = await veilleFetch('/generate/regenerate-slide', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId:   window.__currentUser?.id,
+          clientId: window.__activeClientId || undefined,
+          layout:   cur.layout,
+          imageUrl, imageData, clear,
+        }),
+      });
+      const d = await res.json();
+      if (d.bg) {
+        const slide = { ...slides[sel], bg: d.bg, title: tDraft, body: bDraft, stat: sDraft || null, photoFallback: !!d.photoFallback };
+        const img = await window.__renderDeepDiveSlideCanvas(slide, shared);
+        setSlides(prev => prev.map((s, i) => i === sel ? { ...slide, image: img } : s));
+      }
+    } catch (_) {} finally { setBusy(false); setPicking(false); }
+  };
+  const pickImage = (url) => applyImage({ imageUrl: url });
+
+  // Recherche d'images à la demande (marche même en "Typo seul")
+  const runImageSearch = async () => {
+    const q = (imgQuery || cur.title || '').trim();
+    if (!q) return;
+    setSearching(true);
+    try {
+      const res = await veilleFetch('/generate/search-images', { method: 'POST', body: JSON.stringify({ query: q }) });
+      const d = await res.json();
+      setSearchResults(Array.isArray(d.candidates) ? d.candidates : []);
+    } catch (_) { setSearchResults([]); } finally { setSearching(false); }
+  };
+
+  // Import d'une image perso depuis le disque → peinte DIRECTEMENT sur le Canvas,
+  // instantanément, SANS appel serveur (fichier local = pas de souci CORS).
+  const onUploadImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const slide = { ...slides[sel], customBg: reader.result, title: tDraft, body: bDraft, stat: sDraft || null, photoFallback: false };
+      const img = await window.__renderDeepDiveSlideCanvas(slide, shared);
+      setSlides(prev => prev.map((s, i) => i === sel ? { ...slide, image: img } : s));
+      setPicking(false);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  // Retire le fond : si c'est une image importée → nettoyage client instantané,
+  // sinon (photo web serveur) → recomposition serveur vers le fond de marque.
+  const removeBg = async () => {
+    if (slides[sel].customBg) {
+      const slide = { ...slides[sel], customBg: null, title: tDraft, body: bDraft, stat: sDraft || null, photoFallback: true };
+      const img = await window.__renderDeepDiveSlideCanvas(slide, shared);
+      setSlides(prev => prev.map((s, i) => i === sel ? { ...slide, image: img } : s));
+    } else {
+      await applyImage({ clear: true });
+    }
+  };
+
+  // Ouvre/ferme le sélecteur d'image (préremplit la recherche avec le titre de la slide)
+  const togglePicker = () => {
+    const opening = !picking;
+    setPicking(opening);
+    if (opening) { setImgQuery(cur.title || ''); setSearchResults([]); }
+  };
+
+  const copyCaption = () => navigator.clipboard.writeText(caption).then(() => {
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  });
+
+  // Slug du sujet pour nommer les fichiers exportés
+  const topicSlug = (String(item.topic || item.title || 'deepdive')
+    .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)) || 'deepdive';
+  const [zipping, setZipping] = useState(false);
+
+  // Télécharge tout le carousel en ZIP (slide-01.jpg…) — ordre garanti
+  const downloadCarousel = async () => {
+    const imgs = slides.map(s => s.image).filter(Boolean);
+    if (!imgs.length) return;
+    if (!window.JSZip) { // secours : téléchargements séquentiels si la lib n'a pas chargé
+      imgs.forEach((img, i) => setTimeout(() => downloadImage(img, topicSlug + '-slide' + String(i + 1).padStart(2, '0') + '.jpg'), i * 350));
+      return;
+    }
+    setZipping(true);
+    try {
+      const zip = new window.JSZip();
+      for (let i = 0; i < imgs.length; i++) {
+        const blob = await (await fetch(imgs[i])).blob();
+        zip.file('slide-' + String(i + 1).padStart(2, '0') + '.jpg', blob);
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url; a.download = topicSlug + '-carousel.zip';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { console.warn('[ZIP]', e.message); } finally { setZipping(false); }
+  };
+  const downloadOne = () => {
+    if (cur.image) downloadImage(cur.image, topicSlug + '-slide' + String(sel + 1).padStart(2, '0') + '.jpg');
+  };
+
+  // Valider = enregistrer l'état ÉDITÉ actuel (texte, image importée, caption) dans la DB,
+  // en gardant les fonds → le post reste ré-ouvrable et ré-éditable ensuite.
+  const [validated, setValidated] = useState(false);
+  const validate = async () => {
+    const sb = window.__supabase;
+    const images = slides.map(s => s.image).filter(Boolean);
+    if (!sb || !item.id || typeof item.id === 'number') {
+      setValidated('done'); setTimeout(() => setValidated(false), 2500); return;
+    }
+    setValidated('saving');
+    try {
+      const meta = {
+        topic: item.topic, total: item.total || slides.length,
+        font: item.font, brand: item.brand, hashtags: item.hashtags,
+        variant: item.variant, caption, slides, images,
+      };
+      await sb.from('generated_posts').update({ caption, image: images[0] || null, meta }).eq('id', item.id);
+      setValidated('done'); setTimeout(() => setValidated(false), 2500);
+    } catch (e) { console.warn('[Valider]', e.message); setValidated(false); }
+  };
+
+  const isStat = cur.layout === 'stat_focus';
+  const openImagePicker = () => { setPicking(true); setImgQuery(cur.title || ''); setSearchResults([]); };
+
+  return (
+    <div className="dd-editor-card gen-result--entering">
+      {/* Preview grande de la slide sélectionnée */}
+      <div className="dd-edit-preview">
+        {cur.image
+          ? <img src={cur.image} alt={'Slide ' + (sel + 1)} className="dd-edit-preview-img" onClick={() => setZoom(true)} title="Cliquer pour agrandir"/>
+          : <div className="gen-feed-thumb-empty" style={{ aspectRatio:'4/5' }}/>}
+        {cur.image && (
+          <button className="dd-edit-zoom" onClick={() => setZoom(true)} title="Agrandir" aria-label="Agrandir">
+            <AppIcon name="image" size={13}/>
+          </button>
+        )}
+        {slides.length > 1 && (
+          <>
+            <button className="dd-edit-nav dd-edit-nav--prev" onClick={() => setSel(i => (i - 1 + slides.length) % slides.length)} aria-label="Slide précédente">
+              <AppIcon name="chevLeft" size={16}/>
+            </button>
+            <button className="dd-edit-nav dd-edit-nav--next" onClick={() => setSel(i => (i + 1) % slides.length)} aria-label="Slide suivante">
+              <AppIcon name="chevRight" size={16}/>
+            </button>
+          </>
+        )}
+        <span className="dd-edit-counter">{sel + 1} / {slides.length}</span>
+        {cur.photoFallback && (
+          <button className="dd-edit-fallback-badge" onClick={openImagePicker} title="Ajouter une image de fond à cette slide">
+            <AppIcon name="image" size={11}/> Ajouter une image
+          </button>
+        )}
+      </div>
+
+      {/* Strip horizontale de miniatures (défile comme sur Instagram) */}
+      <div className="dd-edit-strip">
+        {slides.map((s, i) => (
+          <button key={i} className={'dd-edit-thumb' + (i === sel ? ' dd-edit-thumb--active' : '')} onClick={() => setSel(i)} title={'Slide ' + (i + 1) + (s.photoFallback ? ' — image non trouvée' : '')}>
+            {s.image ? <img src={s.image} alt=""/> : <span className="dd-edit-thumb-num">{i + 1}</span>}
+            {s.photoFallback && s.image && <span className="dd-edit-thumb-warn" title="Pas d’image de fond — ajoute-en une">+</span>}
+            <span className="dd-edit-thumb-role">{DD_ROLE_LABEL[s.role] || (i + 1)}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Panneau d'édition de la slide */}
+      {(
+        <div className="dd-edit-panel">
+          {canEditText ? (<>
+          <div className="dd-edit-field">
+            <label>Titre</label>
+            <input value={tDraft} onChange={e => setTDraft(e.target.value)} spellCheck={false} placeholder="Titre de la slide"/>
+          </div>
+          {isStat && (
+            <div className="dd-edit-field">
+              <label>Chiffre (affiché en géant)</label>
+              <input value={sDraft} onChange={e => setSDraft(e.target.value)} spellCheck={false} placeholder="87%"/>
+            </div>
+          )}
+          <div className="dd-edit-field">
+            <label>{cur.layout === 'list_recap' ? 'Points (séparés par « • »)' : 'Texte'}</label>
+            <textarea rows={2} value={bDraft} onChange={e => setBDraft(e.target.value)} spellCheck={false} placeholder="Contenu de la slide"/>
+          </div>
+          </>) : (
+            <div style={{ fontSize:12, color:'var(--app-fg-3)', lineHeight:1.5 }}>
+              Ajoute une image de fond ci-dessous. Pour rééditer le texte de ce post enregistré, relance une génération.
+            </div>
+          )}
+          <div className="dd-edit-actions">
+            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={togglePicker}>
+              <AppIcon name="image" size={12}/> {picking ? 'Fermer' : (cur.photoFallback ? 'Ajouter une image' : 'Changer l’image')}
+            </button>
+            {busy && <span style={{ fontSize:11, color:'var(--app-fg-3)' }}>Recomposition…</span>}
+          </div>
+          {picking && (
+            <div className="dd-edit-picker">
+              <div className="dd-edit-picker-row">
+                <label className="btn btn-primary btn-sm dd-edit-upload">
+                  <AppIcon name="arrowUp" size={12}/> Importer mon image
+                  <input type="file" accept="image/*" onChange={onUploadImage} hidden/>
+                </label>
+                {(cur.customBg || !cur.photoFallback) && (
+                  <button className="btn btn-ghost btn-sm" onClick={removeBg} disabled={busy} title="Revenir au fond de marque">
+                    Retirer le fond
+                  </button>
+                )}
+              </div>
+              <div className="dd-edit-picker-sep">ou chercher sur le web</div>
+              <div className="dd-edit-search">
+                <input
+                  value={imgQuery}
+                  onChange={e => setImgQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') runImageSearch(); }}
+                  placeholder="Mot-clé (ex : stade PSG)…"
+                  spellCheck={false}
+                />
+                <button className="btn btn-ghost btn-sm" onClick={runImageSearch} disabled={searching || busy}>
+                  {searching ? '…' : 'Chercher'}
+                </button>
+              </div>
+              {(() => {
+                const shown = searchResults.length ? searchResults : (cur.candidates || []);
+                if (!shown.length) {
+                  return <div className="dd-edit-picker-hint">{searching ? 'Recherche…' : 'Importe ton image (instantané) — ou cherche une photo sur le web.'}</div>;
+                }
+                return (
+                  <div className="dd-edit-candidates">
+                    {shown.map((url, i) => (
+                      <button key={i} className="dd-edit-cand" onClick={() => pickImage(url)} disabled={busy}>
+                        <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer"/>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Caption + téléchargement */}
+      <div className="gen-feed-caption-wrap">
+        <div className="caption-head">
+          <span className="caption-label">Caption Instagram</span>
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <button className="btn btn-accent btn-sm" onClick={downloadCarousel} disabled={zipping} style={{ padding:'3px 10px', fontSize:11, display:'flex', alignItems:'center', gap:5 }}>
+              <AppIcon name="arrowUp" size={11}/> {zipping ? 'Compression…' : 'Télécharger le carousel'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={downloadOne} title="Télécharger la slide affichée" style={{ padding:'3px 10px', fontSize:11 }}>
+              Slide {sel + 1}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={copyCaption} style={{ padding:'3px 10px', fontSize:11 }}>
+              {copied ? '✓ Copié' : 'Copier'}
+            </button>
+          </div>
+        </div>
+        <textarea className="caption-ig-body caption-ig-editable" value={caption} onChange={e => setCaption(e.target.value)} spellCheck={false}/>
+        {Array.isArray(item.hashtags) && item.hashtags.length > 0 && (
+          <div className="dd-edit-hashtags">{item.hashtags.join(' ')}</div>
+        )}
+      </div>
+
+      {/* Valider — enregistre les modifs, le post reste ré-éditable ensuite */}
+      <button className="btn btn-accent dd-edit-validate" onClick={validate} disabled={validated === 'saving'}>
+        {validated === 'saving' ? 'Enregistrement…' : validated === 'done' ? '✓ Carousel validé' : 'Valider le carousel'}
+      </button>
+
+      {/* Prévisualisation plein écran (clic sur la slide) */}
+      {zoom && (
+        <GenExpandModal
+          item={{ preset_id: 'deepdive', images: slides.map(s => s.image).filter(Boolean) }}
+          initialSlide={sel}
+          onClose={() => setZoom(false)}
+        />
+      )}
+    </div>
+  );
+};
 
 const GenFeedCard = ({ item, onExpand }) => {
   const src0 = item.preset_id === 'deepdive' ? item.images?.[0] : item.image;
@@ -1426,26 +2052,49 @@ const GenFeedCard = ({ item, onExpand }) => {
 };
 
 /* ── Modale plein écran d'une carte ──────────────────────────────────── */
-const GenExpandModal = ({ item, onClose }) => {
+const GenExpandModal = ({ item, onClose, initialSlide = 0 }) => {
   const images = item.preset_id === 'deepdive' ? (item.images || []) : (item.image ? [item.image] : []);
-  const [slide, setSlide] = useState(0);
+  const [slide, setSlide] = useState(initialSlide);
+  const multi = images.length > 1;
+  const prev = () => setSlide(s => (s - 1 + images.length) % images.length);
+  const next = () => setSlide(s => (s + 1) % images.length);
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') onClose(); };
+    const h = (e) => {
+      if (e.key === 'Escape') onClose();
+      if (multi && e.key === 'ArrowLeft')  prev();
+      if (multi && e.key === 'ArrowRight') next();
+    };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, []);
+  }, [multi, images.length]);
+
+  const cur = images[slide] || images[0];
+  const dl = () => {
+    if (!cur) return;
+    const base = item.preset_id || 'forje';
+    downloadImage(cur, base + '-' + (multi ? 'slide' + String(slide + 1).padStart(2, '0') : 'post') + '.jpg');
+  };
+
   return (
     <div className="gen-expand-overlay" onClick={onClose}>
       <div className="gen-expand-modal" onClick={e => e.stopPropagation()}>
         <button className="gen-expand-close" onClick={onClose}>
           <AppIcon name="x" size={16}/>
         </button>
-        <img src={images[slide] || images[0]} alt="" className="gen-expand-img"/>
-        {images.length > 1 && (
+        {multi && <button className="gen-expand-nav gen-expand-nav--prev" onClick={prev} aria-label="Précédent"><AppIcon name="chevLeft" size={20}/></button>}
+        <img src={cur} alt="" className="gen-expand-img"/>
+        {multi && <button className="gen-expand-nav gen-expand-nav--next" onClick={next} aria-label="Suivant"><AppIcon name="chevRight" size={20}/></button>}
+        <div className="gen-expand-bar">
+          <button className="btn btn-accent btn-sm" onClick={dl} style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <AppIcon name="arrowUp" size={12}/> Télécharger{multi ? ' la slide' : ''}
+          </button>
+          {multi && <span className="gen-expand-count">{slide + 1} / {images.length}</span>}
+        </div>
+        {multi && (
           <div className="gen-expand-slides">
             {images.map((_, i) => (
               <button key={i} className={`gen-variant-btn${slide===i?' active':''}`} onClick={() => setSlide(i)}>
-                Slide {i+1}
+                {i + 1}
               </button>
             ))}
           </div>
@@ -3213,80 +3862,233 @@ const SettingsRow = function({ label, sub, right, danger }) {
   );
 };
 
+const PRESET_AVATARS = [
+  { id:'moon',   src:'assets/avatars/moon.png',   label:'Lune' },
+  { id:'comet',  src:'assets/avatars/comet.png',  label:'Comète' },
+  { id:'planet', src:'assets/avatars/planet.png', label:'Planète' },
+  { id:'spark',  src:'assets/avatars/spark.png',  label:'Étincelle' },
+];
+
 const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
-  var [tab, setTab] = useState('compte');
-  var [notifEmail, setNotifEmail] = useState(prefs.notifEmail !== undefined ? prefs.notifEmail : true);
-  var [notifPush,  setNotifPush]  = useState(prefs.notifPush  !== undefined ? prefs.notifPush  : false);
-  var [autoScore,  setAutoScore]  = useState(prefs.autoScore  !== undefined ? prefs.autoScore  : true);
-  var [pulseMode,  setPulseMode]  = useState(prefs.pulseMode  !== undefined ? prefs.pulseMode  : false);
-  var [defFormat,  setDefFormat]  = useState(prefs.defaultFormat || 'Actualité');
-  var [confirmDel, setConfirmDel] = useState(false);
-  var [profile, setProfile] = useState(null);
-  var [checkoutLoading, setCheckoutLoading] = useState(false);
-
-  var savePref = function(key, val) {
-    if (onPrefsChange) onPrefsChange(Object.assign({}, prefs, { [key]: val }));
-  };
-
-  // Abonnement Stripe : ouvre une session Checkout pour le client actif
-  var startCheckout = async function() {
-    var clientId = window.__activeClientId;
-    if (!sb || !clientId) { alert('Sélectionne d\'abord une identité de marque.'); return; }
-    setCheckoutLoading(true);
-    try {
-      // veilleFetch injecte automatiquement le token Supabase de la session
-      var res = await veilleFetch('/billing/create-checkout', {
-        method: 'POST',
-        body: JSON.stringify({ clientId: clientId }),
-      });
-      var json = await res.json();
-      if (json.url) window.location.href = json.url;
-      else { alert(json.error || 'Paiement indisponible pour le moment.'); setCheckoutLoading(false); }
-    } catch (e) {
-      alert('Erreur : ' + e.message); setCheckoutLoading(false);
-    }
-  };
-
   var user = window.__currentUser;
   var sb   = window.__supabase;
   var email = user?.email || '';
   var fullName = user?.user_metadata?.full_name || '';
-  var displayName = fullName || email.split('@')[0] || 'Utilisateur';
+
+  var DEFAULT_NOTIF = { hot_news_email:true, hot_news_push:true, low_credits_email:true, weekly_recap_email:true, product_news_email:false };
+  var TABS = [
+    { id:'account',       icon:'target',  label:'Compte'         },
+    { id:'billing',       icon:'bolt',    label:'Abonnement'     },
+    { id:'credits',       icon:'sparkle', label:'Crédits'        },
+    { id:'connections',   icon:'link',    label:'Connexions'     },
+    { id:'notifications', icon:'bell',    label:'Notifications'  },
+    { id:'danger',        icon:'trash',   label:'Zone de danger' },
+  ];
+  function tabFromHash() {
+    var h = (location.hash || '').replace(/^#/, '');
+    return TABS.some(function(t){ return t.id === h; }) ? h : 'account';
+  }
+
+  var [tab, setTab] = useState(tabFromHash());
+  var [profile, setProfile] = useState(null);
+  var [toast, setToast] = useState(null);
+  var toastRef = useRef(null);
+  var [nameField, setNameField]   = useState('');
+  var [emailField, setEmailField] = useState(email);
+  var [savingName, setSavingName] = useState(false);
+  var avatarInputRef = useRef(null);
+  var [defFormat, setDefFormat] = useState(prefs.defaultFormat || 'Actualité');
+  var [pulseMode, setPulseMode] = useState(prefs.pulseMode !== undefined ? prefs.pulseMode : false);
+  var [notif, setNotif] = useState(DEFAULT_NOTIF);
+  var [checkoutLoading, setCheckoutLoading] = useState(false);
+  var [portalLoading, setPortalLoading] = useState(false);
+  var [tx, setTx] = useState([]);
+  var [txPage, setTxPage] = useState(0);
+  var [txDone, setTxDone] = useState(false);
+  var [txLoading, setTxLoading] = useState(false);
+  var [monthTx, setMonthTx] = useState([]);
+  var [exporting, setExporting] = useState(false);
+  var [delName, setDelName] = useState('');
+  var [deleting, setDeleting] = useState(false);
+  var TX_PAGE = 20;
+
+  var displayName = fullName || profile?.name || email.split('@')[0] || 'Utilisateur';
   var initials = (fullName
     ? fullName.split(' ').map(function(w){ return w[0]; }).join('').slice(0,2)
     : displayName.slice(0,2)).toUpperCase();
 
-  useEffect(function() {
+  function showToast(msg) {
+    setToast(msg);
+    if (toastRef.current) clearTimeout(toastRef.current);
+    toastRef.current = setTimeout(function(){ setToast(null); }, 2200);
+  }
+  function savePref(key, val) {
+    if (onPrefsChange) onPrefsChange(Object.assign({}, prefs, { [key]: val }));
+    showToast('Enregistré ✓');
+  }
+
+  function loadProfile() {
     if (!sb || !user) return;
-    sb.from('clients').select('plan,credits,subscription_status').eq('user_id', user.id).order('created_at').limit(1).maybeSingle()
-      .then(function({ data }) { if (data) setProfile(data); });
+    var q = sb.from('clients').select('id,name,avatar_url,logo_url,credits,subscription_status,credits_unlimited,credits_reset_at,stripe_customer_id,notif_prefs,instagram_connected,instagram_username').eq('user_id', user.id);
+    if (window.__activeClientId) q = q.eq('id', window.__activeClientId);
+    q.order('created_at').limit(1).maybeSingle().then(function(r){
+      if (r.data) { setProfile(r.data); setNameField(r.data.name || ''); setNotif(Object.assign({}, DEFAULT_NOTIF, r.data.notif_prefs || {})); }
+    });
+  }
+  useEffect(function(){ loadProfile(); }, []);
+
+  // Hash routing : chaque section = une URL (#account, #billing, …)
+  useEffect(function(){
+    function onHash(){ setTab(tabFromHash()); }
+    window.addEventListener('hashchange', onHash);
+    window.__goToSettings = function(t){ location.hash = t; setTab(t); };
+    return function(){ window.removeEventListener('hashchange', onHash); };
   }, []);
+  function goTab(t){ if ((location.hash || '').replace(/^#/,'') !== t) location.hash = t; setTab(t); }
 
   var subStatus = profile?.subscription_status || 'trial';
+  var unlimited = !!profile?.credits_unlimited;
   var credits = profile?.credits ?? 0;
   var creditsMax = window.FORJE_CREDITS ? window.FORJE_CREDITS.cap(subStatus) : (subStatus === 'active' ? 700 : 50);
-  var creditsPct = Math.min(100, Math.round(credits / creditsMax * 100));
-  var planLabel = subStatus === 'active' ? 'Forje Studio' : 'Essai gratuit';
+  var creditsPct = unlimited ? 100 : Math.min(100, Math.round(credits / creditsMax * 100));
+  var planLabel = unlimited ? 'Accès illimité' : subStatus === 'active' ? 'Forje Studio' : subStatus === 'past_due' ? 'Paiement en attente' : subStatus === 'canceled' ? 'Abonnement terminé' : 'Essai gratuit';
 
-  var NAV = [
-    { id:'compte',      icon:'target',   label:'Mon compte'     },
-    { id:'plan',        icon:'bolt',     label:'Plan & crédits' },
-    { id:'connexions',  icon:'link',     label:'Connexions'     },
-    { id:'preferences', icon:'settings', label:'Préférences'    },
-  ];
+  function fmtDate(d){ try { return new Date(d).toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' }); } catch(_) { return '—'; } }
+  function fmtShort(d){ try { var dt = new Date(d); return dt.toLocaleDateString('fr-FR', { day:'numeric', month:'short' }) + ' ' + dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }); } catch(_) { return ''; } }
+  var nextRenew = profile?.credits_reset_at ? (function(){ var d = new Date(profile.credits_reset_at); d.setMonth(d.getMonth()+1); return d; })() : null;
+  var daysToRenew = nextRenew ? Math.max(0, Math.ceil((nextRenew - new Date())/86400000)) : null;
 
-  var handleSignOut = async function() {
+  async function saveName() {
+    if (!sb || !profile) return;
+    setSavingName(true);
+    await sb.from('clients').update({ name: nameField.trim() }).eq('id', profile.id);
+    setSavingName(false); showToast('Enregistré ✓'); loadProfile();
+  }
+  async function saveEmail() {
+    if (!sb || !emailField.trim() || emailField.trim() === email) return;
+    var r = await sb.auth.updateUser({ email: emailField.trim() });
+    if (r.error) alert(r.error.message); else showToast('Email de vérification envoyé ✓');
+  }
+  async function handlePwdReset() {
+    if (!sb || !email) return;
+    await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    showToast('Email de réinitialisation envoyé ✓');
+  }
+  async function onAvatarFile(e) {
+    var f = e.target.files && e.target.files[0];
+    if (!f || !sb || !profile || !user) return;
+    var ext = (f.name.split('.').pop() || 'png').toLowerCase();
+    var path = 'avatars/' + user.id + '/' + Date.now() + '.' + ext;
+    var up = await sb.storage.from('brand-assets').upload(path, f, { upsert:true });
+    if (up.error) { alert(up.error.message); return; }
+    var pub = sb.storage.from('brand-assets').getPublicUrl(path);
+    await sb.from('clients').update({ avatar_url: pub.data.publicUrl }).eq('id', profile.id);
+    showToast('Photo mise à jour ✓'); loadProfile();
+  }
+  async function selectPreset(src) {
+    if (!sb || !profile) return;
+    await sb.from('clients').update({ avatar_url: src }).eq('id', profile.id);
+    showToast('Avatar mis à jour ✓'); loadProfile();
+  }
+
+  async function toggleNotif(key) {
+    var next = Object.assign({}, notif, { [key]: !notif[key] });
+    setNotif(next);
+    if (sb && profile) await sb.from('clients').update({ notif_prefs: next }).eq('id', profile.id);
+    showToast('Enregistré ✓');
+  }
+
+  async function startCheckout() {
+    var clientId = window.__activeClientId || profile?.id;
+    if (!sb || !clientId) { alert('Sélectionne d\'abord une identité de marque.'); return; }
+    setCheckoutLoading(true);
+    try {
+      var res = await veilleFetch('/billing/create-checkout', { method:'POST', body: JSON.stringify({ clientId: clientId }) });
+      var json = await res.json();
+      if (json.url) window.location.href = json.url;
+      else { alert(json.error || 'Paiement indisponible pour le moment.'); setCheckoutLoading(false); }
+    } catch (e) { alert('Erreur : ' + e.message); setCheckoutLoading(false); }
+  }
+  async function openPortal() {
+    if (!profile) return;
+    setPortalLoading(true);
+    try {
+      var res = await veilleFetch('/billing/create-portal', { method:'POST', body: JSON.stringify({ clientId: profile.id }) });
+      var json = await res.json();
+      if (json.url) window.location.href = json.url;
+      else { alert(json.error || 'Portail indisponible.'); setPortalLoading(false); }
+    } catch (e) { alert('Erreur : ' + e.message); setPortalLoading(false); }
+  }
+
+  async function loadTx(reset) {
+    if (!sb || !profile) return;
+    setTxLoading(true);
+    var from = reset ? 0 : txPage * TX_PAGE;
+    var r = await sb.from('credit_transactions').select('*').eq('client_id', profile.id).order('created_at', { ascending:false }).range(from, from + TX_PAGE - 1);
+    var rows = r.data || [];
+    setTx(function(prev){ return reset ? rows : prev.concat(rows); });
+    setTxDone(rows.length < TX_PAGE);
+    setTxPage(reset ? 1 : txPage + 1);
+    setTxLoading(false);
+  }
+  async function loadMonth() {
+    if (!sb || !profile) return;
+    var start = new Date(); start.setDate(1); start.setHours(0,0,0,0);
+    var r = await sb.from('credit_transactions').select('post_type,variant,credits_used').eq('client_id', profile.id).gte('created_at', start.toISOString());
+    setMonthTx(r.data || []);
+  }
+  useEffect(function(){
+    if (tab === 'credits' && profile && tx.length === 0) { loadTx(true); loadMonth(); }
+  }, [tab, profile]);
+
+  function exportCsv() {
+    var rows = [['date','type','variant','credits','solde_apres'].join(',')];
+    tx.forEach(function(t){ rows.push([t.created_at, t.post_type, t.variant, t.credits_used, t.balance_after].join(',')); });
+    var blob = new Blob([rows.join('\n')], { type:'text/csv;charset=utf-8' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'forje-credits.csv'; a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function exportAll() {
+    setExporting(true);
+    try {
+      var res = await veilleFetch('/account/export', { method:'POST' });
+      if (!res.ok) { var j = await res.json(); throw new Error(j.error || 'Erreur'); }
+      var blob = await res.blob();
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'forje-export.zip'; a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { alert(e.message); }
+    setExporting(false);
+  }
+  async function deleteAccount() {
+    setDeleting(true);
+    try {
+      var res = await veilleFetch('/account/delete', { method:'POST', body: JSON.stringify({ confirmName: delName }) });
+      var j = await res.json();
+      if (!res.ok) throw new Error(j.error || 'Erreur');
+      if (sb) await sb.auth.signOut();
+      window.location.href = '/';
+    } catch (e) { alert(e.message); setDeleting(false); }
+  }
+  async function handleSignOut() {
     if (!sb) return;
     await sb.auth.signOut();
     window.location.reload();
-  };
+  }
 
-  var handlePwdReset = async function() {
-    if (!sb || !email) return;
-    await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-    alert('Email de réinitialisation envoyé à ' + email);
-  };
-
+  // Répartition de la consommation du mois courant (par type de post)
+  var breakdown = (function(){
+    var acc = { actu:{posts:0,cr:0}, citation:{posts:0,cr:0}, deep_dive:{posts:0,cr:0} };
+    monthTx.forEach(function(t){
+      if (t.variant === 'refund' || !(t.credits_used > 0)) return;
+      if (!acc[t.post_type]) return;
+      acc[t.post_type].posts++; acc[t.post_type].cr += t.credits_used;
+    });
+    return acc;
+  })();
+  var usedTotal = breakdown.actu.cr + breakdown.citation.cr + breakdown.deep_dive.cr;
+  var maxCr = Math.max(breakdown.actu.cr, breakdown.citation.cr, breakdown.deep_dive.cr, 1);
+  var TYPE_LABEL = { actu:'Actu', citation:'Citation', deep_dive:'Deep Dive' };
   return (
     <div className="page-body">
       <div className="page-header">
@@ -3300,317 +4102,332 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
 
         {/* ── Left nav ── */}
         <nav className="settings-nav">
-          {NAV.map(function(item) {
+          {TABS.map(function(item) {
             return (
               <button key={item.id}
-                className={'settings-nav-item' + (tab === item.id ? ' active' : '')}
-                onClick={function(){ setTab(item.id); }}>
-                <AppIcon name={item.icon} size={13}/>
-                {item.label}
+                className={'settings-nav-item' + (tab === item.id ? ' active' : '') + (item.id === 'danger' ? ' settings-nav-item--danger-tab' : '')}
+                onClick={function(){ goTab(item.id); }}>
+                <span className="settings-nav-ico"><AppIcon name={item.icon} size={14}/></span>
+                <span className="settings-nav-lbl">{item.label}</span>
               </button>
             );
           })}
           <div className="settings-nav-divider"/>
           <button className="settings-nav-item settings-nav-item--danger" onClick={handleSignOut}>
-            <AppIcon name="logout" size={13}/>
-            Déconnexion
+            <span className="settings-nav-ico"><AppIcon name="logout" size={14}/></span>
+            <span className="settings-nav-lbl">Déconnexion</span>
           </button>
         </nav>
 
         {/* ── Content ── */}
         <div className="settings-content">
 
-          {/* ────────── MON COMPTE ────────── */}
-          {tab === 'compte' && (
+          {/* ────────── COMPTE ────────── */}
+          {tab === 'account' && (
             <div>
               <div className="settings-avatar-card">
-                <div className="settings-avatar">{initials}</div>
-                <div>
-                  <div style={{ fontFamily:"'Fraunces',serif", fontSize:20, fontWeight:600,
-                    letterSpacing:'-0.03em', color:'var(--app-fg)', lineHeight:1.15 }}>
-                    {displayName}
+                <div className="settings-avatar-lead">
+                  <div className="settings-avatar"
+                    style={ profile?.avatar_url ? { backgroundImage:'url('+profile.avatar_url+')', backgroundSize:'cover', backgroundPosition:'center', color:'transparent' } : null }>
+                    {profile?.avatar_url ? '' : initials}
                   </div>
-                  <div style={{ fontSize:12, color:'var(--app-fg-4)', marginTop:3 }}>{email}</div>
-                  <div style={{ marginTop:8, display:'flex', gap:6 }}>
-                    <span className="settings-tag settings-tag--accent">{planLabel}</span>
-                    <span className="settings-tag settings-tag--neutral">{credits} / {creditsMax} crédits</span>
+                  <div>
+                    <div style={{ fontFamily:"'Fraunces',serif", fontSize:20, fontWeight:600,
+                      letterSpacing:'-0.03em', color:'var(--app-fg)', lineHeight:1.15 }}>
+                      {displayName}
+                    </div>
+                    <div style={{ fontSize:12, color:'var(--app-fg-4)', marginTop:3 }}>{email}</div>
+                    <div style={{ marginTop:8, display:'flex', gap:6 }}>
+                      <span className="settings-tag settings-tag--accent">{planLabel}</span>
+                      <span className="settings-tag settings-tag--neutral">{unlimited ? '∞ crédits' : credits + ' / ' + creditsMax + ' crédits'}</span>
+                    </div>
                   </div>
                 </div>
+
+                <div className="avatar-picker">
+                  <div className="avatar-picker-label">Choisis ton avatar</div>
+                  <div className="avatar-picker-row">
+                    {PRESET_AVATARS.map(function(a){
+                      return (
+                        <button key={a.id} type="button" title={a.label}
+                          className={'avatar-opt' + (profile?.avatar_url === a.src ? ' avatar-opt--active' : '')}
+                          onClick={function(){ selectPreset(a.src); }}
+                          style={{ backgroundImage:'url('+a.src+')' }}/>
+                      );
+                    })}
+                    <button type="button" className="avatar-opt avatar-opt--upload" title="Importer une image"
+                      onClick={function(){ if (avatarInputRef.current) avatarInputRef.current.click(); }}>
+                      <AppIcon name="plus" size={15}/>
+                    </button>
+                  </div>
+                </div>
+                <input ref={avatarInputRef} type="file" accept="image/*" style={{ display:'none' }} onChange={onAvatarFile}/>
               </div>
 
-              <SettingsSection title="Informations du compte" sub="Vos données d'authentification Forje Studio.">
-                <SettingsRow
-                  label="Adresse email"
-                  sub={email}
-                  right={<span className="settings-tag">Vérifiée</span>}
-                />
-                <SettingsRow
-                  label="Mot de passe"
-                  sub="Réinitialisez votre mot de passe par email."
+              <SettingsSection title="Profil" sub="Ton nom d'affichage et ta photo.">
+                <SettingsRow label="Nom" sub="Affiché dans l'app et sur ton espace."
                   right={
-                    <button className="btn btn-ghost btn-sm" onClick={handlePwdReset}>
-                      Réinitialiser
-                    </button>
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                      <input className="settings-input" value={nameField} onChange={function(e){ setNameField(e.target.value); }} placeholder="Ton nom"/>
+                      <button className="btn btn-primary btn-sm" onClick={saveName} disabled={savingName || !nameField.trim() || nameField.trim() === (profile?.name||'')}>
+                        {savingName ? '…' : 'Enregistrer'}
+                      </button>
+                    </div>
                   }
                 />
-                <SettingsRow
-                  label="Identifiant compte"
-                  sub="Référence interne — ne peut pas être modifié."
+                <SettingsRow label="Email" sub="Un email de vérification sera envoyé à la nouvelle adresse."
                   right={
-                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11,
-                      color:'var(--app-fg-4)', background:'var(--app-surface-2)',
-                      padding:'3px 8px', borderRadius:4, border:'1px solid var(--app-line)' }}>
-                      {user?.id ? user.id.slice(0,12) + '…' : '—'}
-                    </span>
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                      <input className="settings-input" type="email" value={emailField} onChange={function(e){ setEmailField(e.target.value); }}/>
+                      <button className="btn btn-ghost btn-sm" onClick={saveEmail} disabled={!emailField.trim() || emailField.trim() === email}>Modifier</button>
+                    </div>
                   }
                 />
               </SettingsSection>
 
-              <SettingsSection title="Zone de danger"
-                sub="Ces actions sont irréversibles. Procédez avec précaution.">
-                <SettingsRow danger
-                  label="Supprimer mon compte"
-                  sub="Efface définitivement vos posts, votre identité de marque et toutes vos données."
+              <SettingsSection title="Sécurité" sub="Protège l'accès à ton compte.">
+                <SettingsRow label="Mot de passe" sub="On t'envoie un lien de réinitialisation par email."
+                  right={<button className="btn btn-ghost btn-sm" onClick={handlePwdReset}>Modifier le mot de passe</button>}
+                />
+                <SettingsRow label="Identifiant compte" sub="Référence interne — non modifiable."
+                  right={<span className="settings-mono">{user?.id ? user.id.slice(0,12) + '…' : '—'}</span>}
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Préférences" sub="Langue et confort d'usage.">
+                <SettingsRow label="Langue" sub="Français uniquement pour l'instant (i18n à venir)."
+                  right={<select className="settings-select" disabled><option>🇫🇷  Français</option></select>}
+                />
+                <SettingsRow label="Format par défaut" sub="Affiché en premier sur l'écran Générer."
                   right={
-                    !confirmDel
-                      ? <button className="btn btn-sm"
-                          style={{ color:'var(--app-danger)', border:'1px solid rgba(209,69,69,.25)',
-                            background:'transparent', fontFamily:'inherit' }}
-                          onClick={function(){ setConfirmDel(true); }}>
-                          Supprimer
-                        </button>
-                      : <div style={{ display:'flex', gap:7, alignItems:'center' }}>
-                          <span style={{ fontSize:12, color:'var(--app-fg-4)' }}>Confirmer ?</span>
-                          <button className="btn btn-sm"
-                            style={{ background:'var(--app-danger)', color:'#fff', border:'none', fontFamily:'inherit' }}>
-                            Oui, supprimer
-                          </button>
-                          <button className="btn btn-ghost btn-sm"
-                            onClick={function(){ setConfirmDel(false); }}>
-                            Annuler
-                          </button>
-                        </div>
+                    <select className="settings-select" value={defFormat} onChange={function(e){ setDefFormat(e.target.value); savePref('defaultFormat', e.target.value); }}>
+                      <option>Actualité</option><option>Citation</option><option>Deep Dive</option>
+                    </select>
                   }
+                />
+                <SettingsRow label="Mode Trader · Pulse" sub="Active un terminal veille façon Bloomberg dans la navigation."
+                  right={<SettingsToggle checked={pulseMode} onChange={function(v){ setPulseMode(v); savePref('pulseMode', v); }}/>}
                 />
               </SettingsSection>
             </div>
           )}
 
-          {/* ────────── PLAN & CRÉDITS ────────── */}
-          {tab === 'plan' && (
+          {/* ────────── ABONNEMENT ────────── */}
+          {tab === 'billing' && (
             <div>
-              <div className="settings-plan-hero">
-                <div className="settings-plan-tier">
-                  <AppIcon name="bolt" size={11}/>
-                  {planLabel}
+              {subStatus === 'past_due' && !unlimited && (
+                <div className="set-banner set-banner--danger">
+                  <AppIcon name="flame" size={15}/>
+                  <div><strong>Paiement échoué.</strong> Mets à jour ta carte pour continuer à générer.</div>
+                  <button className="btn btn-sm set-banner-btn" onClick={openPortal} disabled={portalLoading}>{portalLoading ? '…' : 'Mettre à jour'}</button>
                 </div>
-                <div style={{ fontFamily:"'Fraunces',serif", fontSize:26, fontWeight:600,
-                  letterSpacing:'-0.04em', lineHeight:1.1, color:'var(--app-fg)' }}>
-                  {subStatus === 'active' ? 'Forje Studio — 69 €/mois' : 'Essai gratuit'}
+              )}
+
+              <div className={'set-bill-card' + (unlimited ? ' set-bill-card--unlim' : subStatus === 'active' ? ' set-bill-card--active' : subStatus === 'trial' ? ' set-bill-card--trial' : '')}>
+                <div className="set-bill-top">
+                  <div>
+                    <div className="set-bill-name">{unlimited ? 'Accès illimité' : 'Forje Studio'}</div>
+                    <div className="set-bill-price">
+                      {unlimited ? 'À titre spécial · aucun débit' : subStatus === 'active' ? '69 €/mois · 700 crédits' : subStatus === 'canceled' ? 'Abonnement terminé' : '50 crédits d\'essai'}
+                    </div>
+                  </div>
+                  <span className={'set-bill-badge set-bill-badge--' + (unlimited ? 'unlim' : subStatus)}>
+                    {unlimited ? '∞ ILLIMITÉ' : subStatus === 'active' ? 'ACTIF' : subStatus === 'trial' ? 'ESSAI · ' + credits + ' cr.' : subStatus === 'past_due' ? 'IMPAYÉ' : 'TERMINÉ'}
+                  </span>
                 </div>
-                <div style={{ fontSize:13, color:'var(--app-fg-3)', marginTop:6 }}>
-                  {subStatus === 'active'
-                    ? '700 crédits / mois · Tout inclus, aucune limite de features'
-                    : subStatus === 'past_due'
-                    ? 'Paiement en attente — régularise pour continuer à générer.'
-                    : '50 crédits d\'essai · Teste les 3 formats avant de t\'abonner'}
+
+                {subStatus === 'active' && !unlimited && nextRenew && (
+                  <div className="set-bill-meta">Prochain renouvellement : {fmtDate(nextRenew)}</div>
+                )}
+
+                <div className="set-bill-actions">
+                  {unlimited ? (
+                    <span className="set-bill-note">Tu génères sans compter. 💛</span>
+                  ) : subStatus === 'active' ? (
+                    <>
+                      <button className="btn btn-primary" onClick={openPortal} disabled={portalLoading}>
+                        {portalLoading ? 'Ouverture…' : 'Gérer mon abonnement →'}
+                      </button>
+                      <span className="set-bill-note">Moyen de paiement, factures, annulation — géré par Stripe.</span>
+                    </>
+                  ) : subStatus === 'past_due' ? (
+                    <button className="btn btn-primary" onClick={openPortal} disabled={portalLoading}>{portalLoading ? '…' : 'Mettre à jour ma carte →'}</button>
+                  ) : (
+                    <button className="btn btn-primary" onClick={startCheckout} disabled={checkoutLoading}>
+                      <AppIcon name="bolt" size={13}/>
+                      {checkoutLoading ? 'Redirection…' : (subStatus === 'canceled' ? 'Se réabonner — 69 €/mois' : 'S\'abonner — 69 €/mois')}
+                    </button>
+                  )}
                 </div>
-                {subStatus !== 'active' && (
-                  <button className="btn btn-primary" style={{ marginTop:20, width:'fit-content' }}
-                    onClick={startCheckout} disabled={checkoutLoading}>
-                    <AppIcon name="bolt" size={13}/>
-                    {checkoutLoading ? 'Redirection…' : 'Passer à Forje Studio — 69 €/mois'}
-                  </button>
+              </div>
+
+              <SettingsSection title="Tout est inclus" sub="Un seul plan, aucune option.">
+                {['700 crédits chaque mois','Actu · Citation · Deep Dive, sans limite de features','Génération IA (Nano Banana / GPT-Image)','Charte de marque + polices personnalisées','Export 4K'].map(function(f){
+                  return <div key={f} className="set-incl-row"><AppIcon name="check" size={13}/><span>{f}</span></div>;
+                })}
+              </SettingsSection>
+            </div>
+          )}
+
+          {/* ────────── CRÉDITS ────────── */}
+          {tab === 'credits' && (
+            <div>
+              <div className={'set-credits-hero' + (unlimited ? ' set-credits-hero--unlim' : creditsPct <= 15 ? ' set-credits-hero--low' : '')}>
+                <div className="set-credits-hero-top">
+                  <div>
+                    <div className="set-credits-big">{unlimited ? '∞' : credits}<span className="set-credits-max">{unlimited ? '' : ' / ' + creditsMax}</span></div>
+                    <div className="set-credits-sub">{unlimited ? 'crédits illimités' : 'crédits restants ce mois'}</div>
+                  </div>
+                  {!unlimited && <div className="set-credits-pct">{creditsPct}%</div>}
+                </div>
+                <div className="settings-credits-bar" style={{ width:'100%', height:10 }}>
+                  <div className="settings-credits-fill" style={{ width: creditsPct + '%' }}/>
+                </div>
+                {!unlimited && nextRenew && (
+                  <div className="set-credits-reset">Rechargés le {fmtDate(nextRenew)}{daysToRenew != null ? ' · dans ' + daysToRenew + ' jour' + (daysToRenew>1?'s':'') : ''}</div>
                 )}
               </div>
 
-              <SettingsSection title="Utilisation ce mois-ci"
-                sub="Les crédits se réinitialisent à chaque renouvellement mensuel.">
-                <SettingsRow
-                  label="Crédits utilisés"
-                  sub={(creditsMax - credits) + ' restants ce mois'}
-                  right={
-                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                      <div className="settings-credits-bar">
-                        <div className="settings-credits-fill" style={{ width: creditsPct + '%' }}/>
+              {!unlimited && (
+                <SettingsSection title="Répartition de ta consommation" sub={usedTotal + ' crédit' + (usedTotal>1?'s':'') + ' utilisé' + (usedTotal>1?'s':'') + ' ce mois-ci'}>
+                  {['actu','citation','deep_dive'].map(function(k){
+                    var b = breakdown[k];
+                    return (
+                      <div key={k} className="set-break-row">
+                        <span className="set-break-name">{TYPE_LABEL[k]}</span>
+                        <span className="set-break-posts">{b.posts} post{b.posts>1?'s':''}</span>
+                        <div className="set-break-bar"><div className="set-break-fill" style={{ width: (b.cr/maxCr*100) + '%' }}/></div>
+                        <span className="set-break-cr">{b.cr} cr.</span>
                       </div>
-                      <span style={{ fontSize:12, fontWeight:600, color:'var(--app-fg-2)',
-                        fontVariantNumeric:'tabular-nums', minWidth:52, textAlign:'right' }}>
-                        {credits} / {creditsMax}
-                      </span>
-                    </div>
-                  }
-                />
-              </SettingsSection>
+                    );
+                  })}
+                </SettingsSection>
+              )}
 
-              <SettingsSection title="Coût par création"
-                sub="Chaque génération débite ton solde selon son coût réel.">
-                {[
-                  { name:'Citation',            cost:'1 crédit',            desc:'Photo Serper + mise en page' },
-                  { name:'Actu',                cost:'2 crédits',           desc:'Génération IA + photo' },
-                  { name:'Deep Dive (léger)',   cost:'3 crédits',           desc:'Fonds Serper sur les slides' },
-                  { name:'Deep Dive (premium)', cost:'8 crédits',           desc:'Slides générées en IA' },
-                ].map(function(p) {
+              <div className="set-hist-head">
+                <div>
+                  <div className="settings-section-title">Historique</div>
+                  <div className="settings-section-sub">Chaque génération et remboursement.</div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!tx.length}><AppIcon name="arrowUp" size={12}/> Exporter CSV</button>
+              </div>
+              <div className="set-hist">
+                {tx.length === 0 && !txLoading && <div className="set-hist-empty">Aucune transaction pour l'instant.</div>}
+                {tx.map(function(t){
+                  var isRefund = t.credits_used < 0 || t.variant === 'refund';
+                  var label = TYPE_LABEL[t.post_type] || t.post_type || '—';
+                  if (t.post_type === 'deep_dive' && t.variant && t.variant !== 'refund') label += ' (' + t.variant + ')';
+                  if (isRefund) label += ' · remboursement';
                   return (
-                    <div key={p.name} className="settings-plan-compare-row">
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:16 }}>
-                        <div>
-                          <div style={{ fontSize:13.5, fontWeight:600, color:'var(--app-fg)' }}>{p.name}</div>
-                          <div style={{ fontSize:12, color:'var(--app-fg-3)', marginTop:2 }}>{p.desc}</div>
-                        </div>
-                        <span className="settings-tag settings-tag--accent" style={{ flexShrink:0 }}>{p.cost}</span>
-                      </div>
+                    <div key={t.id} className="set-hist-row">
+                      <span className="set-hist-date">{fmtShort(t.created_at)}</span>
+                      <span className="set-hist-label">{label}</span>
+                      <span className={'set-hist-amt' + (isRefund ? ' set-hist-amt--plus' : '')}>{isRefund ? '+' + Math.abs(t.credits_used) : '−' + t.credits_used}</span>
+                      <span className="set-hist-bal">{t.balance_after}</span>
                     </div>
                   );
                 })}
-              </SettingsSection>
+                {!txDone && tx.length > 0 && (
+                  <button className="set-hist-more" onClick={function(){ loadTx(false); }} disabled={txLoading}>{txLoading ? 'Chargement…' : 'Charger plus'}</button>
+                )}
+              </div>
             </div>
           )}
 
           {/* ────────── CONNEXIONS ────────── */}
-          {tab === 'connexions' && (
+          {tab === 'connections' && (
             <div>
-              <SettingsSection title="Réseaux sociaux"
-                sub="Connectez vos comptes pour publier directement depuis Forje Studio.">
+              <SettingsSection title="Comptes connectés"
+                sub="Publie tes posts directement depuis Forje, sans téléchargement manuel.">
                 {[
-                  { name:'Instagram', emoji:'📸', color:'#E1306C', bg:'rgba(225,48,108,.1)', status:'disconnected', live:true },
-                  { name:'LinkedIn',  emoji:'💼', color:'#0A66C2', bg:'rgba(10,102,194,.08)', status:'soon', live:false },
-                  { name:'X · Twitter',emoji:'𝕏', color:'#000', bg:'rgba(0,0,0,.06)', status:'soon', live:false },
-                  { name:'Buffer',    emoji:'🗓', color:'#4A90D9', bg:'rgba(74,144,217,.1)', status:'soon', live:false },
-                ].map(function(conn) {
+                  { name:'Instagram', bg:'linear-gradient(135deg, #F58529, #DD2A7B 55%, #8134AF)', icon:(
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="5.5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1.1" fill="#fff" stroke="none"/></svg>
+                  ), desc:'Publie tes posts directement depuis Forje.', cta:'Lier mon compte Instagram' },
+                  { name:'X / Twitter', bg:'#0F1528', icon:(
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M18.9 2h3.3l-7.2 8.2L23.6 22h-6.6l-5.2-6.8L5.8 22H2.5l7.7-8.8L1.6 2h6.8l4.7 6.2L18.9 2z"/></svg>
+                  ), desc:'Adapte et publie tes posts sur X.', cta:'Lier mon compte X' },
+                ].map(function(c) {
                   return (
-                    <div key={conn.name} className="settings-conn-row">
-                      <div className="settings-conn-icon"
-                        style={{ background: conn.live ? conn.bg : 'var(--app-surface-2)' }}>
-                        <span style={{ fontSize:17, opacity: conn.live ? 1 : .45 }}>{conn.emoji}</span>
+                    <div key={c.name} className="set-conn-card">
+                      <div className="set-conn-glyph" style={{ background:c.bg }}>{c.icon}</div>
+                      <div className="set-conn-body">
+                        <div className="set-conn-name">{c.name}<span className="set-conn-soon">BIENTÔT</span></div>
+                        <div className="set-conn-desc">{c.desc}</div>
                       </div>
-                      <div className="settings-conn-info">
-                        <div className="settings-conn-name"
-                          style={{ color: conn.live ? 'var(--app-fg)' : 'var(--app-fg-4)' }}>
-                          {conn.name}
-                        </div>
-                        <div className={'settings-conn-status' + (conn.status === 'connected' ? ' connected' : '')}>
-                          {conn.status === 'connected' ? '● Connecté' : conn.status === 'soon' ? 'Bientôt disponible' : 'Non connecté'}
-                        </div>
-                      </div>
-                      {conn.live
-                        ? <button className="btn btn-ghost btn-sm">
-                            {conn.status === 'connected' ? 'Déconnecter' : 'Connecter'}
-                          </button>
-                        : <span className="settings-tag settings-tag--neutral" style={{ opacity:.6, fontSize:10 }}>
-                            Bientôt
-                          </span>}
+                      <button className="btn btn-ghost btn-sm" disabled title="Bientôt disponible">{c.cta}</button>
                     </div>
                   );
                 })}
               </SettingsSection>
 
-              <SettingsSection title="Intégrations"
-                sub="Outils tiers pour planifier et analyser vos publications.">
-                {[
-                  { name:'Later', emoji:'🕐', status:'soon' },
-                  { name:'Hootsuite', emoji:'🦉', status:'soon' },
-                  { name:'Make / Zapier', emoji:'⚡', status:'soon' },
-                ].map(function(tool) {
-                  return (
-                    <div key={tool.name} className="settings-conn-row">
-                      <div className="settings-conn-icon" style={{ background:'var(--app-surface-2)' }}>
-                        <span style={{ fontSize:17, opacity:.4 }}>{tool.emoji}</span>
-                      </div>
-                      <div className="settings-conn-info">
-                        <div className="settings-conn-name" style={{ color:'var(--app-fg-4)' }}>{tool.name}</div>
-                        <div className="settings-conn-status">Bientôt disponible</div>
-                      </div>
-                      <span className="settings-tag settings-tag--neutral" style={{ opacity:.6, fontSize:10 }}>Bientôt</span>
+              <p className="set-conn-foot">D'autres réseaux (LinkedIn, planificateurs) arriveront après le lancement de la publication Instagram.</p>
+            </div>
+          )}
+
+          {/* ────────── NOTIFICATIONS ────────── */}
+          {tab === 'notifications' && (
+            <div>
+              <SettingsSection title="Alertes" sub="Sois prévenu quand ça compte.">
+                <SettingsRow label="🔥 Actu chaude (score ≥ 85)" sub="Un scoop détecté sur ta veille."
+                  right={
+                    <div className="set-notif-cols">
+                      <label className="set-notif-col"><span>Email</span><SettingsToggle checked={!!notif.hot_news_email} onChange={function(){ toggleNotif('hot_news_email'); }}/></label>
+                      <label className="set-notif-col"><span>Push</span><SettingsToggle checked={!!notif.hot_news_push} onChange={function(){ toggleNotif('hot_news_push'); }}/></label>
                     </div>
-                  );
-                })}
+                  }
+                />
+                <SettingsRow label="⚠️ Crédits faibles (< 50)" sub="Quand ton solde passe sous 50 crédits."
+                  right={<label className="set-notif-col"><span>Email</span><SettingsToggle checked={!!notif.low_credits_email} onChange={function(){ toggleNotif('low_credits_email'); }}/></label>}
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Récaps" sub="Les emails plus posés.">
+                <SettingsRow label="📊 Récap hebdo de ta veille" sub="Le meilleur de la semaine, chaque lundi."
+                  right={<label className="set-notif-col"><span>Email</span><SettingsToggle checked={!!notif.weekly_recap_email} onChange={function(){ toggleNotif('weekly_recap_email'); }}/></label>}
+                />
+                <SettingsRow label="✨ Nouveautés Forje" sub="Les nouvelles fonctionnalités, sans spam."
+                  right={<label className="set-notif-col"><span>Email</span><SettingsToggle checked={!!notif.product_news_email} onChange={function(){ toggleNotif('product_news_email'); }}/></label>}
+                />
               </SettingsSection>
             </div>
           )}
 
-          {/* ────────── PRÉFÉRENCES ────────── */}
-          {tab === 'preferences' && (
+          {/* ────────── ZONE DE DANGER ────────── */}
+          {tab === 'danger' && (
             <div>
-              <SettingsSection title="Notifications"
-                sub="Choisissez comment Forje vous tient informé.">
-                <SettingsRow
-                  label="Résumé quotidien par email"
-                  sub="Un brief des meilleures actus à 8h chaque matin."
-                  right={<SettingsToggle checked={notifEmail} onChange={function(v){ setNotifEmail(v); savePref('notifEmail', v); }}/>}
-                />
-                <SettingsRow
-                  label="Notifications push"
-                  sub="Alertes en temps réel sur les articles très scorés."
-                  right={<SettingsToggle checked={notifPush} onChange={function(v){ setNotifPush(v); savePref('notifPush', v); }}/>}
-                />
-                <SettingsRow
-                  label="Score automatique des articles"
-                  sub="Forje évalue chaque article entrant selon votre ligne éditoriale."
-                  right={<SettingsToggle checked={autoScore} onChange={function(v){ setAutoScore(v); savePref('autoScore', v); }}/>}
-                />
-              </SettingsSection>
+              <div className="set-danger-card">
+                <div className="set-danger-item">
+                  <div className="set-danger-txt">
+                    <div className="set-danger-title">Exporter mes données</div>
+                    <div className="set-danger-desc">Télécharge tout : identité de marque, posts générés, historique de crédits.</div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={exportAll} disabled={exporting}>{exporting ? 'Préparation…' : 'Exporter (ZIP)'}</button>
+                </div>
 
-              <SettingsSection title="Interface"
-                sub="Personnalisez votre expérience Forje Studio.">
-                <SettingsRow
-                  label="Langue"
-                  sub="Langue de l'interface utilisateur."
-                  right={
-                    <select style={{ background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
-                      borderRadius:'var(--radius-sm)', padding:'5px 10px', color:'var(--app-fg)',
-                      fontSize:12, fontFamily:'inherit', cursor:'pointer', outline:'none' }}>
-                      <option>🇫🇷  Français</option>
-                      <option>🇬🇧  English</option>
-                    </select>
-                  }
-                />
-                <SettingsRow
-                  label="Format de post par défaut"
-                  sub="Affiché en premier sur l'écran Générer."
-                  right={
-                    <select
-                      value={defFormat}
-                      onChange={function(e){ setDefFormat(e.target.value); savePref('defaultFormat', e.target.value); }}
-                      style={{ background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
-                        borderRadius:'var(--radius-sm)', padding:'5px 10px', color:'var(--app-fg)',
-                        fontSize:12, fontFamily:'inherit', cursor:'pointer', outline:'none' }}>
-                      <option>Actualité</option>
-                      <option>Citation</option>
-                      <option>Deep Dive</option>
-                    </select>
-                  }
-                />
-                <SettingsRow
-                  label="Mode Trader · Pulse"
-                  sub="Active un terminal veille style Bloomberg dans la navigation."
-                  right={<SettingsToggle checked={pulseMode} onChange={function(v){ setPulseMode(v); savePref('pulseMode', v); }}/>}
-                />
-              </SettingsSection>
+                <div className="set-danger-divider"/>
 
-              <SettingsSection title="Données & Confidentialité"
-                sub="Contrôlez comment Forje utilise vos données.">
-                <SettingsRow
-                  label="Améliorer Forje avec mes données"
-                  sub="Vos posts et interactions servent à entraîner les modèles de personnalisation."
-                  right={<SettingsToggle checked={true} onChange={function(){}}/>}
-                />
-                <SettingsRow
-                  label="Politique de confidentialité"
-                  sub="Consultez la politique complète sur forje.studio/privacy."
-                  right={
-                    <button className="btn btn-ghost btn-sm">
-                      <AppIcon name="arrowRight" size={12}/>
-                      Lire
-                    </button>
-                  }
-                />
-              </SettingsSection>
+                <div className="set-danger-item">
+                  <div className="set-danger-txt">
+                    <div className="set-danger-title set-danger-title--red">Supprimer mon compte</div>
+                    <div className="set-danger-desc">Irréversible. Ton identité de marque, tes posts et ton historique seront effacés définitivement.</div>
+                    <div className="set-danger-confirm">
+                      <label>Tape <strong>{profile?.name || '…'}</strong> pour confirmer :</label>
+                      <input className="settings-input" value={delName} onChange={function(e){ setDelName(e.target.value); }} placeholder={profile?.name || 'nom du média'}/>
+                    </div>
+                  </div>
+                  <button className="btn btn-sm set-danger-btn"
+                    onClick={deleteAccount}
+                    disabled={deleting || !profile || delName.trim().toLowerCase() !== (profile?.name||'').trim().toLowerCase()}>
+                    {deleting ? 'Suppression…' : 'Supprimer'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
         </div>
       </div>
+      {toast && <div className="settings-toast"><AppIcon name="check" size={12}/> {toast}</div>}
     </div>
   );
 };

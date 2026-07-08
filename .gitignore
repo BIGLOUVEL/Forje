@@ -2,6 +2,7 @@
 .env
 veille/.env
 .claude/settings.json
+.claude/settings.local.json
 
 ### Dependencies
 node_modules/

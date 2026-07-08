@@ -43,12 +43,12 @@ const App = () => {
     const sb = window.__supabase;
     const user = window.__currentUser;
     if (!sb || !user) return;
-    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, subscription_status, graphic_style, tone_tags, mood, topics, onboarding_completed, onboarding_step, profile_type, preferences')
+    sb.from('clients').select('id, name, instagram_handle, logo_url, plan, credits, subscription_status, credits_unlimited, avatar_url, graphic_style, tone_tags, mood, topics, onboarding_completed, onboarding_step, profile_type, preferences')
       .eq('user_id', user.id).order('created_at')
       .then(({ data }) => {
         const list = data || [];
         setClients(list);
-        if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status });
+        if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status, credits_unlimited: list[0].credits_unlimited, avatar_url: list[0].avatar_url });
         if (onDone) onDone(list);
       });
   };
@@ -88,10 +88,23 @@ const App = () => {
     }
 
     window.__goToGenerate = (article) => {
-      const title   = article.title || article.titre || '';
-      const recap   = article.text || article.caption || '';
-      const newsText = recap ? recap : title;
-      setPreset({ id:'actu', label:'Actualité', icon:'news', visual:'actu', img:'assets/actu.webp', prefill: { newsText }, fromBoard: true });
+      // article.format + article.prefill (nouveau flux ForgeButton) OU fallback actu (anciens appels)
+      const PMAP = {
+        actu:     { id:'actu',     label:'Actualité', icon:'news',   visual:'actu',  img:'assets/actu.webp' },
+        citation: { id:'citation', label:'Citation',  icon:'quote',  visual:'quote', img:'assets/citation.webp' },
+        deepdive: { id:'deepdive', label:'Deep Dive', icon:'layers', visual:'bts',   img:'assets/deep-dive.webp' },
+      };
+      const fmt  = article.format === 'citation' ? 'citation'
+                 : (article.format === 'deepdive' || article.format === 'deep_dive') ? 'deepdive'
+                 : 'actu';
+      const base = PMAP[fmt];
+      let prefill = article.prefill;
+      if (!prefill) {
+        const title = article.title || article.titre || '';
+        const recap = article.text || article.caption || '';
+        prefill = { newsText: recap || title };
+      }
+      setPreset({ ...base, prefill, fromBoard: true });
       setScreen('generate');
     };
     window.__setGenToast = (toast) => setGenToast(toast);
@@ -150,7 +163,7 @@ const App = () => {
       if (user && newActive) localStorage.setItem('forje_active_client_' + user.id, newActive);
       else if (user) localStorage.removeItem('forje_active_client_' + user.id);
       setBrandScore(computeBrandScore(list[0] || null));
-      if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status });
+      if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status, credits_unlimited: list[0].credits_unlimited, avatar_url: list[0].avatar_url });
       setScreen('generate');
     });
   };
@@ -165,7 +178,7 @@ const App = () => {
     loadClients((list) => {
       const c = list.find(x => x.id === clientId) || list[0] || null;
       setBrandScore(computeBrandScore(c));
-      if (c) setProfile({ plan: c.plan, credits: c.credits, subscription_status: c.subscription_status });
+      if (c) setProfile({ plan: c.plan, credits: c.credits, subscription_status: c.subscription_status, credits_unlimited: c.credits_unlimited, avatar_url: c.avatar_url });
     });
     setScreen('generate');
   };

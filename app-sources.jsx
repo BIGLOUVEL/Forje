@@ -801,6 +801,84 @@ const NewsRow = ({ item, active, onClick, onHover3s, onDismiss }) => {
   );
 };
 
+// ─── Sélecteur de format au clic sur "Forger" ────────────────────────────────
+// Au lieu de générer directement une Actu, on demande le format cible, puis
+// Claude transforme l'article en brief adapté (POST /generate/forge-from-article)
+// avant de rediriger vers la page de génération pré-remplie.
+const FORGE_FORMATS = [
+  { id:'actu',     icon:'bolt',   label:'Actu',      desc:'Post breaking, rapide',        cost:'2 cr' },
+  { id:'citation', icon:'quote',  label:'Citation',  desc:'Une déclaration forte',        cost:'1 cr' },
+  { id:'deepdive', icon:'layers', label:'Deep Dive', desc:'Carousel analyse 7-10 slides', cost:'3-8 cr' },
+];
+
+const ForgeButton = ({ article, onForge, triggerClass, triggerStyle, triggerContent }) => {
+  const [open,    setOpen]    = useState(false);
+  const [loading, setLoading] = useState(null);
+  const [err,     setErr]     = useState(null);
+
+  const pick = async (fmt) => {
+    setLoading(fmt); setErr(null);
+    try { onForge?.(fmt); } catch (_) {}
+    try {
+      const res = await veilleFetch('/generate/forge-from-article', {
+        method: 'POST',
+        body: JSON.stringify({
+          format:   fmt,
+          clientId: window.__activeClientId || undefined,
+          userId:   window.__currentUser?.id,
+          article: {
+            title:        article?.title || '',
+            content:      article?.description || article?.content || article?.text || '',
+            source:       article?.source || '',
+            published_at: article?.published_at || article?.when || '',
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur');
+      if (fmt === 'citation' && data.found === false) {
+        setErr('Pas de citation directe dans cet article. Essaie le format Actu ou Deep Dive.');
+        setLoading(null);
+        return;
+      }
+      setLoading(null); setOpen(false);
+      window.__goToGenerate?.({ format: data.format || fmt, prefill: data.prefill, title: article?.title, source: article?.source, url: article?.url });
+    } catch (e) { setErr(e.message || 'Erreur'); setLoading(null); }
+  };
+
+  return (
+    <>
+      <button className={triggerClass} style={triggerStyle} onClick={e => { e.stopPropagation(); setOpen(true); }}>
+        {triggerContent}
+      </button>
+      {open && (
+        <div className="forge-modal-overlay" onClick={e => { e.stopPropagation(); if (!loading) setOpen(false); }}>
+          <div className="forge-modal" onClick={e => e.stopPropagation()}>
+            <div className="forge-modal-head">
+              <span>Forjer cet article en :</span>
+              <button className="forge-modal-close" onClick={() => !loading && setOpen(false)} aria-label="Fermer"><AppIcon name="x" size={14}/></button>
+            </div>
+            <div className="forge-modal-opts">
+              {FORGE_FORMATS.map(f => (
+                <button key={f.id} className="forge-modal-opt" disabled={!!loading} onClick={() => pick(f.id)}>
+                  <span className="forge-modal-opt-icon"><AppIcon name={f.icon} size={18}/></span>
+                  <span className="forge-modal-opt-body">
+                    <span className="forge-modal-opt-label">{f.label}</span>
+                    <span className="forge-modal-opt-desc">{f.desc}</span>
+                  </span>
+                  <span className="forge-modal-opt-cost">{loading === f.id ? '…' : f.cost}</span>
+                </button>
+              ))}
+            </div>
+            {loading && <div className="forge-modal-loading"><span className="forge-spin"/> Claude analyse l'article…</div>}
+            {err && <div className="forge-modal-err">{err}</div>}
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 const RecapPanel = ({ news, onGenerate }) => {
   if (!news) return (
     <div className="action-empty">
@@ -862,14 +940,14 @@ const RecapPanel = ({ news, onGenerate }) => {
         </div>
       )}
 
-      {/* ── CTA ── */}
-      <button
-        className="btn btn-primary"
-        style={{ width:'100%', marginTop:'auto', justifyContent:'center' }}
-        onClick={() => onGenerate?.(news.id, news.format)}
-      >
-        <AppIcon name="bolt" size={13}/>Forger ce post
-      </button>
+      {/* ── CTA — sélecteur de format ── */}
+      <ForgeButton
+        article={news}
+        onForge={(fmt) => onGenerate?.(news.id, fmt)}
+        triggerClass="btn btn-primary"
+        triggerStyle={{ width:'100%', marginTop:'auto', justifyContent:'center' }}
+        triggerContent={<><AppIcon name="bolt" size={13}/>Forger ce post</>}
+      />
     </div>
   );
 };
@@ -971,9 +1049,10 @@ const UrgentCard = ({ item, active, onClick, onDismiss, onGenerate }) => {
             border:'1px solid rgba(79,91,213,.15)',
           }}>{item.format}</span>
         )}
-        <button
-          onClick={e => { e.stopPropagation(); onGenerate?.(item.id, item.format); }}
-          style={{
+        <ForgeButton
+          article={item}
+          onForge={(fmt) => onGenerate?.(item.id, fmt)}
+          triggerStyle={{
             all:'unset', cursor:'pointer', marginLeft:'auto',
             fontSize:12, fontWeight:700, color:'var(--app-accent)',
             display:'flex', alignItems:'center', gap:4,
@@ -981,11 +1060,8 @@ const UrgentCard = ({ item, active, onClick, onDismiss, onGenerate }) => {
             background:'rgba(79,91,213,.08)', border:'1px solid rgba(79,91,213,.2)',
             transition:'all .12s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background='var(--app-accent)'; e.currentTarget.style.color='#fff'; e.currentTarget.style.borderColor='var(--app-accent)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background='rgba(79,91,213,.08)'; e.currentTarget.style.color='var(--app-accent)'; e.currentTarget.style.borderColor='rgba(79,91,213,.2)'; }}
-        >
-          Forger →
-        </button>
+          triggerContent={<>Forger →</>}
+        />
         <button
           onClick={e => { e.stopPropagation(); onDismiss?.(item.id); }}
           style={{ all:'unset', cursor:'pointer', fontSize:16, color:'var(--app-fg-4)', opacity:.4, padding:'2px 6px', lineHeight:1 }}
@@ -1454,7 +1530,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
                     active={item.id === activeId}
                     onClick={() => { setSelected(item.id); track(item.id, 'open'); }}
                     onDismiss={(id) => { setDismissed(d => new Set([...d, id])); track(id, 'dismiss'); if (activeId === id) setSelected(null); }}
-                    onGenerate={(id, format) => { track(id, 'generate', { format_utilise: format }); goGenerate(urgentItems.find(n => n.id === id)); }}
+                    onGenerate={(id, format) => track(id, 'generate', { format_utilise: format })}
                   />
                 ))}
               </div>
@@ -1505,10 +1581,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
         <aside className="sources-action">
           <RecapPanel
             news={active}
-            onGenerate={(id, format) => {
-              track(id, 'generate', { format_utilise: format });
-              goGenerate(active);
-            }}
+            onGenerate={(id, format) => track(id, 'generate', { format_utilise: format })}
           />
         </aside>
       </div>

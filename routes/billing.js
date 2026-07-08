@@ -65,6 +65,39 @@ router.post('/create-checkout', async (req, res) => {
   }
 });
 
+// ─── POST /api/billing/create-portal ─────────────────────────────────────────
+// Stripe Customer Portal : moyen de paiement, factures PDF, annulation — géré
+// entièrement par Stripe. Une seule route suffit.
+router.post('/create-portal', async (req, res) => {
+  const s = getStripe();
+  if (!s) return res.status(503).json({ error: 'Paiement non configuré (STRIPE_SECRET_KEY manquant)' });
+
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    const { data: { user } = {} } = token ? await supabase.auth.getUser(token) : {};
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { clientId } = req.body;
+    if (!clientId) return res.status(400).json({ error: 'clientId manquant' });
+
+    const { data: client } = await supabase
+      .from('clients').select('stripe_customer_id')
+      .eq('id', clientId).eq('user_id', user.id).single();
+    if (!client) return res.status(403).json({ error: 'Forbidden' });
+    if (!client.stripe_customer_id) return res.status(400).json({ error: 'Aucun abonnement actif' });
+
+    const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+    const session = await s.billingPortal.sessions.create({
+      customer: client.stripe_customer_id,
+      return_url: `${appUrl}/?screen=settings#billing`,
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[Billing/Portal]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/billing/webhook (raw body — monté avant express.json) ──────────
 async function webhook(req, res) {
   const s = getStripe();

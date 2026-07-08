@@ -131,10 +131,12 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
     ? fullName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()
     : (email.split('@')[0] || '?').slice(0,2).toUpperCase();
   const subStatus = profile?.subscription_status || 'trial';
+  const unlimited = !!profile?.credits_unlimited;
   const credits = profile?.credits ?? 0;
   const creditsMax = window.FORJE_CREDITS ? window.FORJE_CREDITS.cap(subStatus) : (subStatus === 'active' ? 700 : 50);
   const creditsPct = Math.min(100, credits > 0 ? Math.round(credits / creditsMax * 100) : 0);
-  const planLabel = subStatus === 'active' ? 'Studio' : 'Essai';
+  const planLabel = unlimited ? 'Illimité' : subStatus === 'active' ? 'Studio' : 'Essai';
+  const goCredits = () => { try { location.hash = 'credits'; } catch (_) {} onNav('settings'); };
 
   const mainItems = [
     { key: 'generate', icon: 'sparkle',  label: 'Générer' },
@@ -242,16 +244,47 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
       </div>
 
       <div className="sidebar-footer">
-        <div className="sidebar-usage">
+        {unlimited ? (
+          <div className="sidebar-usage sidebar-usage--unlim" onClick={goCredits} style={{cursor:'pointer'}} title="Voir mes crédits">
+            <div className="sidebar-usage-header">
+              <span className="sidebar-usage-label">Crédits</span>
+              <span className="sidebar-usage-count">Illimité</span>
+            </div>
+            <div className="sidebar-usage-readout">
+              <span className="sidebar-usage-value sidebar-usage-inf">∞</span>
+              <span className="sidebar-usage-unit">accès spécial</span>
+            </div>
+            <div className="sidebar-usage-bar" role="progressbar" aria-valuetext="Crédits illimités" aria-label="Crédits illimités">
+              <div className="sidebar-usage-fill" style={{width: '100%'}}/>
+            </div>
+            <span className="sidebar-usage-cta">
+              Génère sans compter
+              <span className="sc-arrow">→</span>
+            </span>
+          </div>
+        ) : (
+        <div className={'sidebar-usage' + (creditsPct <= 7 ? ' sidebar-usage--crit' : creditsPct <= 15 ? ' sidebar-usage--low' : '')}
+          onClick={goCredits} style={{cursor:'pointer'}} title="Voir mes crédits">
           <div className="sidebar-usage-header">
-            <span className="sidebar-usage-label">Crédits de création</span>
-            <span className="sidebar-usage-count">{credits} / {creditsMax}</span>
+            <span className="sidebar-usage-label">Crédits</span>
+            <span className="sidebar-usage-count">{planLabel}</span>
           </div>
-          <div className="sidebar-usage-bar">
-            <div className="sidebar-usage-fill" style={{width: creditsPct + '%'}}/>
+          <div className="sidebar-usage-readout">
+            <span className="sidebar-usage-value">{credits}</span>
+            <span className="sidebar-usage-max">/ {creditsMax}</span>
+            <span className="sidebar-usage-unit">restants</span>
           </div>
-          <span className="sidebar-usage-cta" style={{cursor:'pointer'}} onClick={() => onNav('settings')}>Augmenter la cadence →</span>
+          <div className="sidebar-usage-bar" role="progressbar"
+            aria-valuenow={credits} aria-valuemin={0} aria-valuemax={creditsMax}
+            aria-label="Crédits de création restants">
+            <div className="sidebar-usage-fill" style={{width: Math.max(creditsPct, credits > 0 ? 4 : 0) + '%'}}/>
+          </div>
+          <span className="sidebar-usage-cta">
+            {creditsPct <= 15 ? 'Recharger mes crédits' : 'Augmenter la cadence'}
+            <span className="sc-arrow">→</span>
+          </span>
         </div>
+        )}
 
         <div className="sidebar-user" ref={menuRef}>
           {userMenuOpen && (
@@ -266,7 +299,7 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
             </div>
           )}
           <div className="sidebar-user-trigger" onClick={() => setUserMenuOpen(o => !o)}>
-            <div className="sidebar-user-avatar">{initials}</div>
+            <div className="sidebar-user-avatar" style={profile?.avatar_url ? {backgroundImage:'url('+profile.avatar_url+')', backgroundSize:'cover', backgroundPosition:'center', color:'transparent'} : null}>{profile?.avatar_url ? '' : initials}</div>
             <span className="sidebar-user-name">{displayName}</span>
             <AppIcon name="chevDown" size={13} className={`sidebar-user-chev${userMenuOpen ? ' open' : ''}`}/>
           </div>
