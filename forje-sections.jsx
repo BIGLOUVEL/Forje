@@ -87,6 +87,26 @@ const StepArt = ({ kind }) => {
   );
 };
 
+// Vrais screens de l'app (déposés dans assets/screens/) — fallback sur
+// l'art CSS tant que le fichier n'existe pas.
+const HOW_SHOTS = {
+  identity: { src: 'assets/screens/how-identite.webp',   alt: 'L\'identité de marque encodée dans Forje Studio' },
+  board:    { src: 'assets/screens/how-veille.webp',     alt: 'La veille scorée en temps réel dans Forje Studio' },
+  compose:  { src: 'assets/screens/how-generation.webp', alt: 'Un post généré dans la charte, dans Forje Studio' },
+};
+
+const StepShot = ({ kind }) => {
+  const shot = HOW_SHOTS[kind];
+  const [ok, setOk] = useS(true);
+  if (!shot || !ok) return <StepArt kind={kind} />;
+  return (
+    <div className="how-shot">
+      <div className="how-shot-bar"><i /><i /><i /></div>
+      <img src={shot.src} alt={shot.alt} loading="lazy" onError={() => setOk(false)} />
+    </div>
+  );
+};
+
 const HowItWorks = () => (
   <section className="section" id="how">
     <div className="section-label"><span className="bar" /> Comment ça marche</div>
@@ -104,7 +124,7 @@ const HowItWorks = () => (
             <div className="how-label">{s.label}</div>
             <h3>{s.title}</h3>
             <p>{s.text}</p>
-            <StepArt kind={s.art} />
+            <StepShot kind={s.art} />
           </div>
         );
       })}

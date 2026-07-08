@@ -4,6 +4,7 @@
    3. Board de veille en direct   4. L'outil de génération, en vrai
    Les identités affichées/utilisées sont les VRAIS comptes démo (table
    clients, servis par /api/demo/media) — rien d'inventé côté front.
+   DA : "fenêtre produit" — densité SaaS, mono pour la donnée, chrome app.
    ═══════════════════════════════════════════════════════════════════════ */
 const { useState: useSL, useEffect: useEL, useRef: useRL, useCallback: useCL } = React;
 
@@ -26,14 +27,15 @@ const MEDIA_FALLBACK = [
 ];
 
 // ───── Helpers ──────────────────────────────────────────────────────────
-const relTime = (iso) => {
-  const s = Math.max(5, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return 'il y a ' + s + ' s';
+// Âge compact pour la colonne du board — style tableur, pas de prose.
+const shortAge = (iso) => {
+  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return s + ' s';
   const m = Math.floor(s / 60);
-  if (m < 60) return 'il y a ' + m + ' min';
+  if (m < 60) return m + ' min';
   const h = Math.floor(m / 60);
-  if (h < 24) return 'il y a ' + h + ' h';
-  return 'il y a ' + Math.floor(h / 24) + ' j';
+  if (h < 24) return h + ' h';
+  return Math.floor(h / 24) + ' j';
 };
 
 const CheckIcon = (p) => (
@@ -45,7 +47,17 @@ const CheckIcon = (p) => (
 const MediaAvatar = ({ media, size = 52, className }) => (
   media && media.avatar
     ? <img className={className} src={media.avatar} alt={'Logo ' + media.name} style={{ width: size, height: size }} />
-    : <span className={className + ' media-avatar-fallback'} style={{ width: size, height: size }}>{(media?.name || '?')[0]}</span>
+    : <span className={(className || '') + ' media-avatar-fallback'} style={{ width: size, height: size }}>{(media?.name || '?')[0]}</span>
+);
+
+// Chrome de fenêtre partagé board / démo
+const WindowBar = ({ url, right }) => (
+  <div className="fs-titlebar">
+    <span className="fs-dots"><i /><i /><i /></span>
+    <span className="fs-url">{url}</span>
+    <span className="fs-spacer" />
+    {right}
+  </div>
 );
 
 // Lazy-load : déclenche onVisible ~400px avant l'entrée dans le viewport.
@@ -75,11 +87,14 @@ const fetchMedia = async () => {
 };
 
 // ───── 3. BOARD DE VEILLE EN DIRECT ─────────────────────────────────────
+const POLL_MS = 20000; // aligné sur le cache serveur de /api/demo/veille
+
 const LiveBoard = () => {
   const sectionRef = useRL(null);
   const [profiles, setProfiles] = useSL(null); // [{key, name, topic, items}]
   const [tab, setTab] = useSL('ballon_bleu');
-  const [, forceTick] = useSL(0);
+  const [lastSync, setLastSync] = useSL(null);
+  const [, forceTick] = useSL(0);              // tick 1s → âges & synchro vivent
   const knownIds = useRL(new Set());
   const freshIds = useRL(new Set());
   const started = useRL(false);
@@ -96,7 +111,8 @@ const LiveBoard = () => {
         }
       }
       setProfiles(next);
-      setTimeout(() => { freshIds.current.clear(); }, 4000);
+      setLastSync(Date.now());
+      setTimeout(() => { freshIds.current.clear(); }, 5000);
     } catch (e) { /* réseau : on garde l'état courant */ }
   }, []);
 
@@ -104,8 +120,8 @@ const LiveBoard = () => {
     if (started.current) return;
     started.current = true;
     refresh();
-    timersRef.current.push(setInterval(refresh, 30000));
-    timersRef.current.push(setInterval(() => forceTick(n => n + 1), 20000));
+    timersRef.current.push(setInterval(refresh, POLL_MS));
+    timersRef.current.push(setInterval(() => forceTick(n => n + 1), 1000));
     window.__forjeTrack?.('demo_board_viewed');
   }, [refresh]);
 
@@ -122,57 +138,78 @@ const LiveBoard = () => {
 
   const list = profiles || MEDIA_FALLBACK.map(m => ({ key: m.key, name: m.name, topic: '', items: [] }));
   const active = list.find(p => p.key === tab) || list[0];
+  const syncSec = lastSync ? Math.floor((Date.now() - lastSync) / 1000) : null;
+  const syncLabel = syncSec === null ? 'connexion…'
+    : syncSec < 2 ? 'synchronisé à l\'instant'
+    : syncSec < 60 ? 'synchronisé il y a ' + syncSec + ' s'
+    : 'synchronisé il y a ' + Math.floor(syncSec / 60) + ' min';
 
   return (
     <section className="section section-live" id="demo-live" ref={sectionRef}>
-      <div className="section-label"><span className="bar" /> Veille</div>
-      <h2>Pendant que tu lis cette page,<br /><span className="accent">Forje surveille l'actu.</span></h2>
+      <div className="section-label"><span className="bar" /> Veille — temps réel</div>
+      <h2>Pendant que tu lis cette page, <span className="accent">Forje surveille l'actu.</span></h2>
       <p className="lede">
         Ce board est branché sur la vraie veille de deux comptes démo.
         Chaque actu est scorée de 0 à 100 selon sa pertinence pour le compte.
       </p>
 
-      <div className="live-board">
-        <div className="live-head">
-          <div className="live-status">
-            <span className="live-dot" />
-            <span className="live-status-label">En direct</span>
-            <span className="live-status-sep">·</span>
-            <span>La veille de {active.name}{active.topic ? ' — ' + active.topic : ''}</span>
-          </div>
-          <div className="live-tabs">
+      <div className="fs-window live-window">
+        <WindowBar
+          url="app.forje.studio/veille"
+          right={<span className="fs-live"><span className="fs-live-dot" /> LIVE</span>}
+        />
+
+        <div className="lb-toolbar">
+          <div className="fs-tabs">
             {list.map(p => (
-              <button key={p.key} className={'live-tab' + (tab === p.key ? ' active' : '')}
+              <button key={p.key} className={'fs-tab' + (tab === p.key ? ' active' : '')}
                       onClick={() => { setTab(p.key); window.__forjeTrack?.('demo_board_tab', { preset: p.key }); }}>
                 {p.name}
               </button>
             ))}
           </div>
+          {active.topic && <span className="lb-scope">univers · {active.topic}</span>}
         </div>
 
-        <div className="live-rows">
+        <div className="lb-cols">
+          <span>Score</span><span>Actu</span><span>Source</span>
+          <span className="ta-r">Âge</span><span aria-hidden="true" />
+        </div>
+
+        <div className="lb-rows">
           {!profiles && (
-            <div className="live-loading">
-              {[0, 1, 2, 3].map(i => <div key={i} className="live-skeleton" style={{ animationDelay: (i * 0.12) + 's' }} />)}
+            <div className="lb-loading">
+              {[0, 1, 2, 3, 4, 5].map(i => <div key={i} className="lb-skeleton" style={{ animationDelay: (i * 0.1) + 's' }} />)}
             </div>
           )}
           {profiles && active.items.length === 0 && (
-            <div className="live-empty">La veille se réchauffe — reviens dans quelques minutes.</div>
+            <div className="lb-empty">La veille se réchauffe — reviens dans quelques minutes.</div>
           )}
-          {active.items.map(item => (
-            <div key={item.id} className={'live-row' + (freshIds.current.has(item.id) ? ' fresh' : '')}>
-              <div className={'live-score' + (item.score >= 80 ? ' hot' : '')}>{item.score}</div>
-              <div className="live-main">
-                <div className="live-title">{item.title}</div>
-                <div className="live-meta">{item.source} · {relTime(item.published_at)}</div>
+          {active.items.map(item => {
+            const hot = item.score >= 80;
+            return (
+              <div key={item.id}
+                   className={'lb-row' + (hot ? ' hot' : '') + (freshIds.current.has(item.id) ? ' fresh' : '')}>
+                <div className="lb-score">
+                  <span className="lb-num">{item.score}</span>
+                  <span className="lb-meter"><i style={{ width: item.score + '%' }} /></span>
+                </div>
+                <div className="lb-title" title={item.title}>{item.title}</div>
+                <div className="lb-src" title={item.source}>{item.source}</div>
+                <div className="lb-age ta-r">{shortAge(item.published_at)}</div>
+                <div className="lb-act">
+                  <button className="lb-forge" onClick={() => forgePost(item)}>
+                    Forger <Icon.Arrow />
+                  </button>
+                </div>
               </div>
-              {item.score >= 80 && (
-                <button className="live-forge" onClick={() => forgePost(item)}>
-                  Forger ce post <Icon.Arrow />
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
+        </div>
+
+        <div className="lb-foot">
+          <span>{profiles ? active.items.length + ' actus dans l\'univers de ' + active.name : ' '}</span>
+          <span className="lb-sync"><span className="lb-sync-dot" /> {syncLabel}</span>
         </div>
       </div>
     </section>
@@ -189,20 +226,26 @@ const PIPELINE_STEPS = [
 ];
 
 const PipelineProgress = ({ stepIdx, done }) => (
-  <div className="pipeline">
+  <div className="dm-pipe">
     {PIPELINE_STEPS.map((s, i) => {
       const state = done || i < stepIdx ? 'done' : i === stepIdx ? 'active' : 'todo';
       return (
-        <div key={i} className={'pipe-step ' + state}>
-          <span className="pipe-ico">
-            {state === 'done' ? <CheckIcon /> : state === 'active' ? <span className="pipe-spin" /> : null}
+        <div key={i} className={'dm-pipe-step ' + state}>
+          <span className="dm-pipe-ix">{'0' + (i + 1)}</span>
+          <span className="dm-pipe-ico">
+            {state === 'done' ? <CheckIcon /> : state === 'active' ? <span className="dm-pipe-spin" /> : null}
           </span>
-          <span className="pipe-label">{s.label}</span>
+          <span className="dm-pipe-label">{s.label}</span>
         </div>
       );
     })}
   </div>
 );
+
+const fmtChrono = (ms) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+};
 
 const InteractiveDemo = () => {
   const sectionRef = useRL(null);
@@ -214,6 +257,8 @@ const InteractiveDemo = () => {
   const [phase, setPhase] = useSL('idle');             // idle | generating | result | limited | busy | error
   const [stepIdx, setStepIdx] = useSL(0);
   const [result, setResult] = useSL(null);
+  const [genAt, setGenAt] = useSL(null);
+  const [, forceTick] = useSL(0);
   const timers = useRL([]);
   const started = useRL(false);
 
@@ -236,7 +281,14 @@ const InteractiveDemo = () => {
     window.__forjeTrack?.('demo_section_viewed');
   });
 
-  // Pré-sélection depuis le board ("Forger ce post")
+  // Chrono vivant pendant la génération (statut de la colonne Sortie)
+  useEL(() => {
+    if (phase !== 'generating') return;
+    const t = setInterval(() => forceTick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [phase]);
+
+  // Pré-sélection depuis le board ("Forger")
   useEL(() => {
     const handler = (e) => {
       const { preset, newsId: id, title } = e.detail || {};
@@ -302,6 +354,7 @@ const InteractiveDemo = () => {
     if (!canGenerate) return;
     setPhase('generating');
     setResult(null);
+    setGenAt(Date.now());
     window.__forjeTrack?.('demo_generate_started', { preset: mediaKey, from: sourceNewsId ? 'board' : 'prompt' });
     if (!sourceNewsId) window.__forjeTrack?.('demo_prompt_used', { preset: mediaKey });
     playPipeline();
@@ -345,6 +398,13 @@ const InteractiveDemo = () => {
     </a>
   );
 
+  const outStatus = phase === 'generating' ? fmtChrono(Date.now() - genAt)
+    : phase === 'result' ? '1080 × 1350 · prêt'
+    : phase === 'limited' ? 'quota atteint'
+    : phase === 'busy' ? 'affluence'
+    : phase === 'error' ? 'erreur'
+    : 'en attente';
+
   return (
     <section className="section section-demo" id="demo-generate" ref={sectionRef}>
       <div className="section-label"><span className="bar" /> Démo</div>
@@ -355,129 +415,141 @@ const InteractiveDemo = () => {
         sortir dans leur charte.
       </p>
 
-      <div className="demo-shell">
-        <div className="demo-left">
-          <div className="media-tabs">
-            {mediaList.map(m => (
-              <button key={m.key} className={'media-tab' + (mediaKey === m.key ? ' active' : '')}
-                      onClick={() => selectMedia(m.key)}>
-                <MediaAvatar media={m} size={22} className="media-tab-avatar" />
-                <span>{m.name}</span>
-              </button>
-            ))}
-          </div>
+      <div className="fs-window demo-window">
+        <WindowBar
+          url="app.forje.studio/studio"
+          right={<span className="fs-chip">Démo publique · 2 essais</span>}
+        />
 
-          <div className="media-card">
-            <div className="media-id">
-              <MediaAvatar media={media} size={52} className="media-avatar" />
-              <div>
-                <div className="media-name">{media.name}</div>
-                {media.handle && <div className="media-handle">{media.handle}</div>}
+        <div className="dm-body">
+          <div className="dm-left">
+            <div className="dm-step"><span className="dm-step-num">01</span>Le média</div>
+            <div className="fs-tabs dm-media-tabs">
+              {mediaList.map(m => (
+                <button key={m.key} className={'fs-tab' + (mediaKey === m.key ? ' active' : '')}
+                        onClick={() => selectMedia(m.key)}>
+                  <MediaAvatar media={m} size={18} className="dm-tab-avatar" />
+                  <span>{m.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="dm-identity">
+              <MediaAvatar media={media} size={42} className="dm-id-avatar" />
+              <div className="dm-id-main">
+                <div className="dm-id-name">{media.name}</div>
+                {media.handle && <div className="dm-id-handle">{media.handle}</div>}
+              </div>
+              <div className="dm-id-spec">
+                {media.palette && media.palette.length > 0 && (
+                  <span className="dm-id-swatches">
+                    {media.palette.slice(0, 4).map((c, i) => <i key={i} style={{ background: c }} />)}
+                  </span>
+                )}
+                {media.font && <span className="dm-id-font">{media.font}</span>}
               </div>
             </div>
-            {media.topics && media.topics.length > 0 && (
-              <div className="media-topics">
-                {media.topics.slice(0, 5).map((t, i) => <span key={i} className="media-topic">{t}</span>)}
-              </div>
+            {media.tone && media.tone.length > 0 && (
+              <div className="dm-id-tone">charte · {media.tone.join(' · ')}</div>
             )}
-            <div className="media-identity">
-              {media.palette && media.palette.length > 0 && (
-                <div className="media-swatches">
-                  {media.palette.map((c, i) => <span key={i} style={{ background: c }} />)}
-                </div>
-              )}
-              {media.font && <span className="media-font">{media.font}</span>}
-              {media.tone && media.tone.length > 0 && <span className="media-tone">{media.tone.join(' · ')}</span>}
-            </div>
-          </div>
 
-          <div className="prompt-block">
-            <label className="prompt-label" htmlFor="demo-prompt">L'actu à forger</label>
+            <div className="dm-step"><span className="dm-step-num">02</span>L'actu à forger</div>
             <textarea
               id="demo-prompt"
-              className="prompt-input"
+              className="dm-input"
               rows={3}
               maxLength={300}
               placeholder={media.placeholder || 'Colle une actu, une déclaration, une idée de post…'}
               value={prompt}
               onChange={onPromptChange}
             />
+
             {boardItems.length > 0 && (
-              <div className="prompt-suggestions">
-                <span className="prompt-suggestions-label">Sur le board :</span>
+              <div className="dm-sugg">
+                <div className="dm-sugg-label">Depuis le board</div>
                 {boardItems.map(item => (
                   <button key={item.id}
-                          className={'prompt-chip' + (sourceNewsId === item.id ? ' active' : '')}
+                          className={'dm-sugg-row' + (sourceNewsId === item.id ? ' active' : '')}
                           onClick={() => pickNews(item)}
                           title={item.title}>
-                    {item.title.length > 48 ? item.title.slice(0, 48) + '…' : item.title}
+                    <span className="dm-sugg-score">{item.score}</span>
+                    <span className="dm-sugg-title">{item.title}</span>
                   </button>
                 ))}
               </div>
             )}
+
+            <button className="btn btn-primary btn-lg dm-generate-btn" disabled={!canGenerate} onClick={generate}>
+              Générer le post <Icon.Arrow />
+            </button>
+            <div className="dm-note">Deux essais par visiteur · vrai pipeline, vraie charte</div>
           </div>
 
-          <button className="btn btn-primary btn-lg demo-generate-btn" disabled={!canGenerate} onClick={generate}>
-            Générer le post <Icon.Arrow />
-          </button>
-          <div className="demo-note">Deux essais par visiteur · vrai pipeline, vraie charte</div>
-        </div>
-
-        <div className="demo-right">
-          {phase === 'idle' && (
-            <div className="demo-placeholder">
-              <div className="demo-placeholder-frame">
-                <span>Le post de {media.name} apparaîtra ici</span>
-              </div>
+          <div className="dm-right">
+            <div className="dm-out-head">
+              <span className="dm-out-label">Sortie</span>
+              <span className={'dm-out-status' + (phase === 'generating' ? ' running' : '')}>{outStatus}</span>
             </div>
-          )}
 
-          {phase === 'generating' && (
-            <div className="demo-generating">
-              <div className="demo-gen-title">Forje compose le post de {media.name}</div>
-              <PipelineProgress stepIdx={stepIdx} done={false} />
-            </div>
-          )}
+            <div className="dm-out-body">
+              {phase === 'idle' && (
+                <div className="dm-placeholder">
+                  <div className="dm-placeholder-frame">
+                    <span>Le post de {media.name} apparaîtra ici</span>
+                  </div>
+                </div>
+              )}
 
-          {phase === 'result' && result && (
-            <div className="demo-result">
-              <div className="demo-post-wrap">
-                <img className="demo-post" src={result.image} alt={'Post généré avec l\'identité de ' + media.name} />
-              </div>
-              {result.cached && <div className="demo-cached-note">Cette actu avait déjà été forgée — servie depuis le cache.</div>}
-              <div className="demo-punchline">
-                Ça, c'était avec l'identité de <strong>{media.name}</strong>.<br />Imagine avec la tienne.
-              </div>
-              {signupCta('Forger mon identité — 50 crédits offerts', 'demo_cta_post_result')}
-              {typeof result.remaining === 'number' && result.remaining > 0 && (
-                <div className="demo-remaining">Il te reste {result.remaining} essai{result.remaining > 1 ? 's' : ''} démo.</div>
+              {phase === 'generating' && (
+                <div className="dm-generating">
+                  <div className="dm-gen-title">Forje compose le post de {media.name}</div>
+                  <PipelineProgress stepIdx={stepIdx} done={false} />
+                </div>
+              )}
+
+              {phase === 'result' && result && (
+                <div className="dm-result">
+                  <div className="dm-post-wrap">
+                    <img className="dm-post" src={result.image} alt={'Post généré avec l\'identité de ' + media.name} />
+                  </div>
+                  <div className="dm-result-meta">
+                    charte {media.name}{result.cached ? ' · cette actu avait déjà été forgée — servie du cache' : ' · généré à l\'instant'}
+                  </div>
+                  <div className="dm-punchline">
+                    Ça, c'était avec l'identité de <strong>{media.name}</strong>.<br />Imagine avec la tienne.
+                  </div>
+                  {signupCta('Forger mon identité — 50 crédits offerts', 'demo_cta_post_result')}
+                  {typeof result.remaining === 'number' && result.remaining > 0 && (
+                    <div className="dm-remaining">Il te reste {result.remaining} essai{result.remaining > 1 ? 's' : ''} démo.</div>
+                  )}
+                </div>
+              )}
+
+              {phase === 'limited' && (
+                <div className="dm-blocked">
+                  <div className="dm-blocked-title">Tu as utilisé tes 2 essais démo.</div>
+                  <p>La suite se passe avec ta propre identité — 50 crédits offerts pour la forger.</p>
+                  {signupCta('Créer mon compte gratuitement', 'demo_cta_rate_limited')}
+                </div>
+              )}
+
+              {phase === 'busy' && (
+                <div className="dm-blocked">
+                  <div className="dm-blocked-title">Forte affluence sur la démo.</div>
+                  <p>Crée ton compte pour générer sans attendre — 50 crédits offerts.</p>
+                  {signupCta('Créer mon compte gratuitement', 'demo_cta_daily_limit')}
+                </div>
+              )}
+
+              {phase === 'error' && (
+                <div className="dm-blocked">
+                  <div className="dm-blocked-title">La forge a raté ce coup-ci.</div>
+                  <p>Réessaie dans quelques secondes — ça arrive, même aux meilleures forges.</p>
+                  <button className="btn btn-ghost btn-lg" onClick={generate}>Réessayer</button>
+                </div>
               )}
             </div>
-          )}
-
-          {phase === 'limited' && (
-            <div className="demo-blocked">
-              <div className="demo-blocked-title">Tu as utilisé tes 2 essais démo.</div>
-              <p>La suite se passe avec ta propre identité — 50 crédits offerts pour la forger.</p>
-              {signupCta('Créer mon compte gratuitement', 'demo_cta_rate_limited')}
-            </div>
-          )}
-
-          {phase === 'busy' && (
-            <div className="demo-blocked">
-              <div className="demo-blocked-title">Forte affluence sur la démo.</div>
-              <p>Crée ton compte pour générer sans attendre — 50 crédits offerts.</p>
-              {signupCta('Créer mon compte gratuitement', 'demo_cta_daily_limit')}
-            </div>
-          )}
-
-          {phase === 'error' && (
-            <div className="demo-blocked">
-              <div className="demo-blocked-title">La forge a raté ce coup-ci.</div>
-              <p>Réessaie dans quelques secondes — ça arrive, même aux meilleures forges.</p>
-              <button className="btn btn-ghost btn-lg" onClick={generate}>Réessayer</button>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </section>
