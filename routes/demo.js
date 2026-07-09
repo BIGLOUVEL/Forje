@@ -51,7 +51,7 @@ async function loadDemoClient(key) {
   const hit = _clientCache.get(key);
   if (hit && Date.now() - hit.at < 60000) return hit.client;
   const { data, error } = await supabase.from('clients').select(
-    'id,name,instagram_handle,logo_url,avatar_url,brand_colors,font_primary,font_body,font_id,font_set,font_custom_url,font_is_custom,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
+    'id,name,instagram_handle,logo_url,logo_badge_url,logo_nu_url,logo_style,avatar_url,brand_colors,font_primary,font_body,font_id,font_set,font_custom_url,font_is_custom,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url,style_ref_urls'
   ).eq('id', p.clientId).maybeSingle();
   if (error) console.error('[Demo/client]', key, error.message);
   if (data) { _clientCache.set(key, { at: Date.now(), client: data }); return data; }
@@ -287,8 +287,10 @@ router.get('/media', async (_req, res) => {
         key,
         name: c.name,
         handle: c.instagram_handle || null,
-        avatar: c.avatar_url || c.logo_url || null,
-        logo: c.logo_url || null,
+        // Identité visuelle du MÉDIA = son logo (badge). avatar_url est la PP
+        // Forje de l'utilisateur propriétaire — rien à faire sur la landing.
+        avatar: c.logo_badge_url || c.logo_url || null,
+        logo: c.logo_badge_url || c.logo_url || null,
         palette: c.brand_colors || [],
         font: c.font_primary || null,
         tone: (c.tone_tags || []).map(t => String(t).toLowerCase()),
@@ -345,12 +347,54 @@ router.get('/examples', (_req, res) => {
   res.json({ examples });
 });
 
+// ─── POST/GET /api/demo/refresh — cron externe ────────────────────────────────
+// Sur Vercel (serverless), les setInterval de server.js ne tournent jamais :
+// cette route fait le même travail, appelée toutes les 10 min par le workflow
+// GitHub Actions .github/workflows/demo-refresh.yml.
+// Découpée en étapes pour tenir dans la limite de durée d'une fonction :
+//   ?step=rss                  → ingestion RSS (news_raw, tous comptes)
+//   ?step=board&profile=<key>  → scoring + snapshot d'UN profil démo
+//   sans step                  → tout (usage manuel / local)
+// Auth : Authorization: Bearer <DEMO_REFRESH_SECRET> (ou ?key=…).
+router.all('/refresh', async (req, res) => {
+  const secret = process.env.DEMO_REFRESH_SECRET || process.env.CRON_SECRET;
+  const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const key = bearer || String(req.query.key || '');
+  if (!secret || key !== secret) return res.status(401).json({ error: 'unauthorized' });
+
+  const step = String(req.query.step || 'all');
+  const profile = req.query.profile ? String(req.query.profile) : null;
+  if (profile && !DEMO_PROFILES[profile]) return res.status(400).json({ error: 'profil inconnu' });
+
+  const t0 = Date.now();
+  const done = [];
+  try {
+    if (step === 'rss' || step === 'all') {
+      const { fetchAllFeeds } = require('./rss'); // require tardif — pas de cycle
+      const results = await fetchAllFeeds();
+      done.push('rss:+' + (results || []).reduce((s, x) => s + (x.inserted ?? 0), 0));
+    }
+    if (step === 'board' || step === 'all') {
+      const { scoreForCompte } = require('./scoring');
+      await refreshDemoVeille(scoreForCompte, profile);
+      done.push('board:' + (profile || 'all'));
+    }
+    console.log('[Demo/refresh]', done.join(' '), (Date.now() - t0) + 'ms');
+    res.json({ ok: true, done, ms: Date.now() - t0 });
+  } catch (e) {
+    console.error('[Demo/refresh]', e.message);
+    res.status(500).json({ ok: false, done, error: e.message });
+  }
+});
+
 // ─── Cron : alimentation du board démo ────────────────────────────────────────
-// Toutes les 10 min (appelé par server.js) : rescoring incrémental des deux
-// comptes démo via le pipeline existant, puis snapshot des 8 meilleures actus
-// (score ≥ 60 affiché, i.e. score_total ≥ 6) dans demo_veille.
-async function refreshDemoVeille(scoreForCompte) {
-  for (const [key, profile] of Object.entries(DEMO_PROFILES)) {
+// Toutes les 10 min (setInterval en local, /api/demo/refresh en prod) :
+// rescoring incrémental des comptes démo via le pipeline existant, puis
+// snapshot des 8 meilleures actus (score ≥ 60 affiché, i.e. score_total ≥ 6)
+// dans demo_veille. onlyKey : limite à un profil (étapes du cron serverless).
+async function refreshDemoVeille(scoreForCompte, onlyKey = null) {
+  const profiles = Object.entries(DEMO_PROFILES).filter(([k]) => !onlyKey || k === onlyKey);
+  for (const [key, profile] of profiles) {
     try {
       if (typeof scoreForCompte === 'function') {
         await scoreForCompte(profile.compteId, 20, 24).catch(e =>

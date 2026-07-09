@@ -4,12 +4,13 @@
     {
       "src": "server.js",
       "use": "@vercel/node",
-      "config": { "maxLambdaSize": "50mb" }
+      "config": { "maxLambdaSize": "50mb", "maxDuration": 60 }
     },
     { "src": "*.html",        "use": "@vercel/static" },
     { "src": "*.{jsx,css}",   "use": "@vercel/static" },
     { "src": "assets/**",     "use": "@vercel/static" },
-    { "src": "client/**",     "use": "@vercel/static" }
+    { "src": "client/**",     "use": "@vercel/static" },
+    { "src": "legal/**",      "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/(.*)",    "dest": "server.js" },

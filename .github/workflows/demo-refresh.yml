@@ -1,0 +1,43 @@
+# Board de veille démo (landing) — rafraîchissement en prod.
+# Vercel est serverless : les setInterval de server.js ne tournent pas une
+# fois déployé. Ce workflow appelle /api/demo/refresh toutes les 10 min
+# (cadence best-effort côté GitHub : en pratique ~10-20 min).
+# Secret requis : DEMO_REFRESH_SECRET (repo → Settings → Secrets → Actions),
+# la même valeur que la variable d'env DEMO_REFRESH_SECRET sur Vercel.
+name: demo-board-refresh
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: demo-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      # Étapes séparées : chaque appel tient dans la limite de durée (60 s)
+      # d'une fonction Vercel. L'ingestion RSS peut échouer sans bloquer le
+      # rescoring (le board se refait alors sur les news déjà en base).
+      - name: Ingestion RSS
+        run: |
+          curl -sS -m 90 -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEMO_REFRESH_SECRET }}" \
+            "https://www.forje.studio/api/demo/refresh?step=rss" \
+            || echo "::warning::ingestion RSS en échec (non bloquant)"
+
+      - name: Board Ballon Bleu
+        run: |
+          curl -sSf -m 90 -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEMO_REFRESH_SECRET }}" \
+            "https://www.forje.studio/api/demo/refresh?step=board&profile=ballon_bleu"
+
+      - name: Board FRAME
+        run: |
+          curl -sSf -m 90 -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEMO_REFRESH_SECRET }}" \
+            "https://www.forje.studio/api/demo/refresh?step=board&profile=frame"
