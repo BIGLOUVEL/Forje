@@ -10,7 +10,9 @@
     { "src": "*.{jsx,css}",   "use": "@vercel/static" },
     { "src": "assets/**",     "use": "@vercel/static" },
     { "src": "client/**",     "use": "@vercel/static" },
-    { "src": "legal/**",      "use": "@vercel/static" }
+    { "src": "legal/**",      "use": "@vercel/static" },
+    { "src": "vendor/**",     "use": "@vercel/static" },
+    { "src": "lib/fonts.js",  "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/(.*)",    "dest": "server.js" },
