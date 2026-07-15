@@ -373,17 +373,37 @@ router.all('/refresh', async (req, res) => {
   const t0 = Date.now();
   const done = [];
   try {
-    if (step === 'rss' || step === 'all') {
+    if (step === 'rss' || step === 'veille' || step === 'all') {
       const { fetchAllFeeds } = require('./rss'); // require tardif — pas de cycle
-      const results = await fetchAllFeeds();
-      done.push('rss:+' + (results || []).reduce((s, x) => s + (x.inserted ?? 0), 0));
+      const results  = await fetchAllFeeds();
+      const inserted = (results || []).reduce((s, x) => s + (x.inserted ?? 0), 0);
+      done.push('rss:+' + inserted);
+
+      // step=veille : scoring de TOUS les comptes (le pendant prod du rssLoop
+      // local — sur Vercel les setInterval de server.js ne tournent pas).
+      if (step === 'veille' && inserted > 0) {
+        const { scoreForCompte } = require('./scoring');
+        const { data: comptes }  = await supabase.from('comptes').select('id');
+        const outcomes = await Promise.allSettled(
+          (comptes || []).map(c => scoreForCompte(c.id, 25, 24))
+        );
+        done.push('veille:' + outcomes.filter(o => o.status === 'fulfilled').length + '/' + outcomes.length);
+      }
+
+      // Purge quotidienne (7 j de rétention) — pendant ~4h UTC uniquement
+      if (step === 'veille' && new Date().getUTCHours() === 4) {
+        const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+        await supabase.from('news_scored').delete().lt('created_at', cutoff);
+        await supabase.from('news_raw').delete().lt('created_at', cutoff);
+        done.push('purge');
+      }
     }
     if (step === 'board' || step === 'all') {
       const { scoreForCompte } = require('./scoring');
       await refreshDemoVeille(scoreForCompte, profile);
       done.push('board:' + (profile || 'all'));
     }
-    if (step === 'rss' || step === 'all') {
+    if (step === 'rss' || step === 'veille' || step === 'all') {
       // Watchdog de coûts adossé au cron : sur Vercel (serverless) les
       // setInterval de server.js ne tournent pas — c'est CE passage toutes
       // les 10 min qui surveille budgets/jour, solde OpenRouter et fallback

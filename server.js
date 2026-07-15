@@ -134,23 +134,31 @@ async function dailyPurge() {
   if (e1 || e2) console.error('[Purge] erreur:', e1?.message || e2?.message);
   else console.log(`[Purge] -${c1 ?? '?'} news_raw | -${c2 ?? '?'} news_scored`);
 }
-setInterval(dailyPurge, 24 * 60 * 60 * 1000);
-dailyPurge();
-
-rssLoop();
-setInterval(rssLoop, RSS_INTERVAL_MS);
-
-// ─── Watchdog de coûts API : budgets/jour, solde OpenRouter, fallback Haiku ──
-// Alerte en console + table cost_alerts (visible dans /admin). Seuils via env :
-// BUDGET_ANTHROPIC_JOUR_USD, BUDGET_TOTAL_JOUR_USD, OPENROUTER_SOLDE_MIN_USD.
+// ─── Boucles de fond : UNIQUEMENT hors Vercel ─────────────────────────────────
+// Sur Vercel (serverless), ce module est rechargé à CHAQUE cold start de lambda :
+// exécuter rssLoop()/dailyPurge() ici déclenchait un scoring complet de tous les
+// comptes à chaque visite → rafales d'appels IA h24 constatées le 15/07 (drain
+// crédits). En prod, la cadence est assurée par le cron GitHub Actions qui
+// appelle /api/demo/refresh (steps veille/rss/board — voir routes/demo.js).
 const { runCostWatchdog } = require('./lib/costWatchdog');
-setTimeout(() => runCostWatchdog(getBreakerState), 30 * 1000);
-setInterval(() => runCostWatchdog(getBreakerState), 60 * 60 * 1000);
+if (!process.env.VERCEL) {
+  setInterval(dailyPurge, 24 * 60 * 60 * 1000);
+  dailyPurge();
 
-// ─── Board de veille démo (landing) — rescoring + snapshot toutes les 10 min ─
-const DEMO_VEILLE_INTERVAL_MS = 10 * 60 * 1000;
-setTimeout(() => refreshDemoVeille(scoreForCompte), 20 * 1000); // premier passage juste après le boot
-setInterval(() => refreshDemoVeille(scoreForCompte), DEMO_VEILLE_INTERVAL_MS);
+  rssLoop();
+  setInterval(rssLoop, RSS_INTERVAL_MS);
+
+  // Watchdog de coûts : budgets/jour, solde OpenRouter, fallback Haiku.
+  // Seuils via env : BUDGET_ANTHROPIC_JOUR_USD, BUDGET_TOTAL_JOUR_USD,
+  // OPENROUTER_SOLDE_MIN_USD. (En prod : adossé au cron demo/refresh.)
+  setTimeout(() => runCostWatchdog(getBreakerState), 30 * 1000);
+  setInterval(() => runCostWatchdog(getBreakerState), 60 * 60 * 1000);
+
+  // Board de veille démo (landing) — rescoring + snapshot toutes les 10 min
+  const DEMO_VEILLE_INTERVAL_MS = 10 * 60 * 1000;
+  setTimeout(() => refreshDemoVeille(scoreForCompte), 20 * 1000); // premier passage juste après le boot
+  setInterval(() => refreshDemoVeille(scoreForCompte), DEMO_VEILLE_INTERVAL_MS);
+}
 
 // ─── Admin (caché, pas indexé dans le SPA) ───────────────────────────────────
 app.get('/admin', (_req, res) => res.sendFile(path.join(ROOT, 'admin.html')));

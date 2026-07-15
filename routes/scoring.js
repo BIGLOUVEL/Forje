@@ -151,6 +151,7 @@ async function runOpenRouter(compte, newsLot) {
     body: JSON.stringify({
       model:      SCORING_MODEL,
       max_tokens: 6000,
+      usage:      { include: true }, // coût exact facturé dans usage.cost
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: buildSystemPrompt(compte) },
@@ -173,7 +174,9 @@ async function runOpenRouter(compte, newsLot) {
     feature: 'scoring', model: SCORING_MODEL,
     inputTokens:  data.usage?.prompt_tokens,
     outputTokens: data.usage?.completion_tokens,
-    costUsd:      data.usage?.cost, // coût exact facturé par OpenRouter
+    // usage.cost = coût exact facturé par OpenRouter. Un 0 avec des tokens
+    // consommés = cost absent/pas encore calculé → retomber sur la grille locale.
+    costUsd: (typeof data.usage?.cost === 'number' && data.usage.cost > 0) ? data.usage.cost : null,
     compteId: compte.id,
   });
 

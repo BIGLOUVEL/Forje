@@ -23,12 +23,12 @@ jobs:
       # Étapes séparées : chaque appel tient dans la limite de durée (60 s)
       # d'une fonction Vercel. L'ingestion RSS peut échouer sans bloquer le
       # rescoring (le board se refait alors sur les news déjà en base).
-      - name: Ingestion RSS
+      - name: Ingestion RSS + scoring veille (tous comptes)
         run: |
           curl -sS -m 90 -X POST \
             -H "Authorization: Bearer ${{ secrets.DEMO_REFRESH_SECRET }}" \
-            "https://www.forje.studio/api/demo/refresh?step=rss" \
-            || echo "::warning::ingestion RSS en échec (non bloquant)"
+            "https://www.forje.studio/api/demo/refresh?step=veille" \
+            || echo "::warning::ingestion/scoring veille en échec (non bloquant)"
 
       - name: Board Ballon Bleu
         run: |
