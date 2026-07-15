@@ -27,6 +27,10 @@ const FLOAT_POSTS = [
   },
 ];
 
+// Visuel du hero : 'forgeron' (mascotte détourée) ou 'mockup' (screenshot app).
+// Repasser à 'mockup' pour retrouver l'ancien hero à l'identique.
+const HERO_VISUAL = 'forgeron';
+
 const Hero = () => {
   const scrollToDemo = (e) => {
     e.preventDefault();
@@ -72,25 +76,45 @@ const Hero = () => {
       </div>
 
       <div className="hero-visual-col">
-        <div className="hero-mockup-stage">
-          <div className="hero-mockup">
-            <div className="hero-mockup-chrome">
-              <span /><span /><span />
-              <div className="hero-mockup-url">app.forje.studio</div>
-            </div>
-            <img src="assets/demo/dashboard-4k.webp" alt="Dashboard Forje Studio — veille en temps réel" loading="eager" />
+        {HERO_VISUAL === 'forgeron' ? (
+          <div className="hero-forge-stage">
+            <div className="hero-forge-halo" />
+            <img className="hero-forgeron"
+                 src="assets/forgeron-hero.webp"
+                 alt="Le Forgeron Forje martèle un post Instagram incandescent sur son enclume"
+                 loading="eager" />
+
+            {FLOAT_POSTS.map((p) => (
+              <div key={p.cls} className={'float-post ' + p.cls} style={{ '--fp-bg': p.bg }}>
+                <div className="fp-head"><span className="fp-av" />{p.brand}</div>
+                <div className="fp-title">{p.title}</div>
+                <div className="fp-tag">{p.tag}</div>
+              </div>
+            ))}
+
+            <div className="hero-forge-floor" />
           </div>
-
-          {FLOAT_POSTS.map((p) => (
-            <div key={p.cls} className={'float-post ' + p.cls} style={{ '--fp-bg': p.bg }}>
-              <div className="fp-head"><span className="fp-av" />{p.brand}</div>
-              <div className="fp-title">{p.title}</div>
-              <div className="fp-tag">{p.tag}</div>
+        ) : (
+          <div className="hero-mockup-stage">
+            <div className="hero-mockup">
+              <div className="hero-mockup-chrome">
+                <span /><span /><span />
+                <div className="hero-mockup-url">app.forje.studio</div>
+              </div>
+              <img src="assets/demo/dashboard-4k.webp" alt="Dashboard Forje Studio — veille en temps réel" loading="eager" />
             </div>
-          ))}
 
-          <div className="hero-mockup-floor" />
-        </div>
+            {FLOAT_POSTS.map((p) => (
+              <div key={p.cls} className={'float-post ' + p.cls} style={{ '--fp-bg': p.bg }}>
+                <div className="fp-head"><span className="fp-av" />{p.brand}</div>
+                <div className="fp-title">{p.title}</div>
+                <div className="fp-tag">{p.tag}</div>
+              </div>
+            ))}
+
+            <div className="hero-mockup-floor" />
+          </div>
+        )}
       </div>
     </section>
   );

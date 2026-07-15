@@ -288,6 +288,8 @@ const StepIdentityA = ({ onNext, onBack }) => {
       var clientId = await upsertClient({
         name:             name.trim(),
         logo_url:         finalLogoUrl || null,
+        logo_badge_url:   finalLogoUrl || null, // variante badge = logo importé tel quel
+        logo_style:       'badge',
         instagram_handle: handle.trim() || null,
         mood:             mood,
         topics:           topics,
@@ -427,16 +429,26 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
     return () => { window.__obBack = null; };
   }, [sub, onBack]);
 
-  var relogo = async () => {
-    if (!clientId || !brandImg || relogoing) return;
+  // Forge un logo dédié, cohérent avec le brand kit (le kit sert de référence
+  // visuelle à la génération) — badge + version détourée dérivés côté serveur.
+  var relogo = async (kitImg) => {
+    var img = kitImg || brandImg;
+    if (!clientId || !img || relogoing) return;
     setRelogoing(true);
     try {
       var res = await obFetch('/generate/brand-identity/relogo', {
         method: 'POST',
-        body: JSON.stringify({ clientId, imageUrl: brandImg })
+        body: JSON.stringify({ clientId, imageUrl: img })
       });
       var data = await res.json();
-      if (res.ok && data.logoUrl) setLogoUrl(data.logoUrl);
+      if (res.ok && data.logoUrl) {
+        setLogoUrl(data.logoUrl);
+        // Persiste dans l'état confirmé pour survivre au refresh
+        try {
+          var saved = JSON.parse(localStorage.getItem('forje_confirmed_' + clientId) || 'null');
+          if (saved) { saved.logoUrl = data.logoUrl; localStorage.setItem('forje_confirmed_' + clientId, JSON.stringify(saved)); }
+        } catch(_) {}
+      }
     } catch(_) {}
     setRelogoing(false);
   };
@@ -580,6 +592,9 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
         }));
         localStorage.removeItem('forje_kits_draft_' + clientId);
       } catch(_) {}
+      // Pas de logo uploadé par l'utilisateur → forge automatique d'un logo
+      // cohérent avec le kit choisi (s'affiche dans la tuile Logo dès qu'il est prêt)
+      if (!data.logoUrl) relogo(data.imageUrl);
     } catch (err) {
       setError(err.message); setSub(5);
     } finally {
@@ -735,8 +750,8 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
         <div className="ob-forge-mark"><img src="assets/forje-logo.png" alt="Forje"/></div>
         <div className="ob-loading-line"/>
         <p className="ob-loading-text">
-          Extraction en cours...<br/>
-          <span className="ob-loading-detail">Couleurs exactes, police, logo — 15 à 20 secondes</span>
+          Forge de ton identité...<br/>
+          <span className="ob-loading-detail">Couleurs exactes, police — le logo se forge juste après</span>
         </p>
       </div>
     </div>
@@ -752,8 +767,8 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
           <div className="ob-bt ob-bt--img">
             {brandImg && <img src={brandImg} alt="Identité de marque" className="ob-bt-kit-img"/>}
             {brandImg && (
-              <button className="ob-bt-relogo" onClick={relogo} disabled={relogoing}>
-                {relogoing ? 'Extraction...' : '↻ Extraire le logo'}
+              <button className="ob-bt-relogo" onClick={() => relogo()} disabled={relogoing}>
+                {relogoing ? 'Forge en cours...' : '↻ Reforger le logo'}
               </button>
             )}
           </div>
@@ -764,7 +779,7 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
             {logoUrl ? (
               <div style={{ display:'flex', alignItems:'center', gap:8, flex:1, minHeight:0 }}>
                 <img src={logoUrl} alt="Logo" style={{ maxHeight:52, maxWidth:'100%', objectFit:'contain', borderRadius:6, background:'rgba(255,255,255,.05)', padding:4 }}/>
-                <button className="ob-relogo-btn" onClick={relogo} disabled={relogoing} title="Recadrer" style={{ flexShrink:0 }}>
+                <button className="ob-relogo-btn" onClick={() => relogo()} disabled={relogoing} title="Reforger" style={{ flexShrink:0 }}>
                   {relogoing ? '…' : '↻'}
                 </button>
                 <button className="ob-dl4k-btn" onClick={downloadLogo4k} disabled={downloading4k} title="Télécharger en 4K" style={{ flexShrink:0 }}>
@@ -773,7 +788,7 @@ const StepIdentityB = ({ onNext, onBack, existingClientId }) => {
               </div>
             ) : (
               <span style={{ fontSize:11, color:'rgba(150,180,255,.35)', fontStyle:'italic', flex:1 }}>
-                En attente
+                {relogoing ? 'Forge du logo en cours…' : 'En attente'}
               </span>
             )}
           </div>

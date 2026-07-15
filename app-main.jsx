@@ -1,4 +1,4 @@
-/* global React, ReactDOM, AppIcon, Sidebar, Topbar, Btn, GenerateScreen, QueueScreen, BrandScreen, SourcesScreen, OnboardingShell, PulseScreen */
+/* global React, ReactDOM, AppIcon, Sidebar, Topbar, Btn, GenerateScreen, QueueScreen, BrandScreen, SourcesScreen, OnboardingShell */
 var { useState, useEffect, useRef } = React;
 
 const TWEAKS = /*EDITMODE-BEGIN*/{
@@ -6,6 +6,75 @@ const TWEAKS = /*EDITMODE-BEGIN*/{
   "sidebarDensity": "cozy",
   "defaultQueueView": "calendar"
 }/*EDITMODE-END*/;
+
+// ─── Célébration post-paiement (retour Stripe ?checkout=success) ───────────
+// Attend que le webhook ait activé l'abonnement, puis compteur 0 → solde.
+const CheckoutCelebration = ({ onActivated, onDone }) => {
+  const [target,  setTarget]  = useState(null); // solde final (webhook passé)
+  const [display, setDisplay] = useState(0);
+  const [leaving, setLeaving] = useState(false);
+
+  // Poll léger : le webhook Stripe peut mettre 1-2 s à créditer le compte
+  useEffect(() => {
+    let stopped = false, tries = 0;
+    const sb = window.__supabase, user = window.__currentUser;
+    if (!sb || !user) { setTarget(0); return; }
+    const tick = async () => {
+      if (stopped) return;
+      tries++;
+      const { data } = await sb.from('clients')
+        .select('id, credits, subscription_status')
+        .eq('user_id', user.id).order('created_at');
+      const saved = localStorage.getItem('forje_active_client_' + user.id);
+      const c = (data || []).find(x => x.id === saved) || (data || [])[0];
+      if (c && (c.subscription_status === 'active' || tries >= 8)) {
+        setTarget(c.credits ?? 0);
+        onActivated?.();
+      } else {
+        setTimeout(tick, 1200);
+      }
+    };
+    tick();
+    return () => { stopped = true; };
+  }, []);
+
+  // Compteur ease-out ~1,1 s, pause, puis sortie
+  useEffect(() => {
+    if (target === null) return;
+    const dur = 1100, t0 = performance.now();
+    let raf;
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / dur);
+      setDisplay(Math.round((1 - Math.pow(1 - p, 3)) * target));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    const toLeave = setTimeout(() => setLeaving(true), dur + 1500);
+    const toDone  = setTimeout(onDone, dur + 1500 + 320);
+    return () => { cancelAnimationFrame(raf); clearTimeout(toLeave); clearTimeout(toDone); };
+  }, [target]);
+
+  return (
+    <div className={'checkout-cheer' + (leaving ? ' checkout-cheer--out' : '')} onClick={onDone}>
+      <div className="checkout-cheer-card" onClick={e => e.stopPropagation()}>
+        <div className="checkout-cheer-badge">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#fff"
+               strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path className="checkout-cheer-check" d="M4 12.5 9.5 18 20 6.5"/>
+          </svg>
+        </div>
+        <div className="checkout-cheer-title">Paiement confirmé</div>
+        <div className="checkout-cheer-sub">Ton abonnement Forje Studio est actif.</div>
+        <div className={'checkout-cheer-count' + (target !== null && display === target ? ' checkout-cheer-count--done' : '')}>
+          <span className={'checkout-cheer-num' + (target === null ? ' checkout-cheer-num--wait' : '')}>
+            {target === null ? '· · ·' : display}
+          </span>
+          <span className="checkout-cheer-unit">crédits</span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const App = () => {
   // Read ?screen= on mount
@@ -27,11 +96,28 @@ const App = () => {
   const [genToast, setGenToast] = useState(null); // { status:'generating'|'ready', label, presetId }
   const presetRef = useRef(null); // keeps last active preset alive across screen changes
 
+  // Retour de Stripe Checkout (?checkout=success) → célébration, puis URL nettoyée
+  const [celebrate, setCelebrate] = useState(() => {
+    try { return new URLSearchParams(location.search).get('checkout') === 'success'; }
+    catch (_) { return false; }
+  });
+  useEffect(() => {
+    const p = new URLSearchParams(location.search);
+    if (!p.has('checkout')) return;
+    p.delete('checkout');
+    const qs = p.toString();
+    history.replaceState({}, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+  }, []);
+
   // Onboarding state
   const [showOnboarding,      setShowOnboarding]      = useState(false);
   const [obStep,              setObStep]              = useState(1);
   const [obProfileType,       setObProfileType]       = useState(null);
   const [obClientId,          setObClientId]          = useState(null);
+
+  // PP de l'utilisateur : concept user-level stocké sur les lignes clients —
+  // on prend la première renseignée, peu importe le compte actif.
+  const userAvatar = (list) => (list.find(c => c.avatar_url) || {}).avatar_url || null;
 
   const computeBrandScore = (c) => {
     if (!c) return 0;
@@ -48,7 +134,7 @@ const App = () => {
       .then(({ data }) => {
         const list = data || [];
         setClients(list);
-        if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status, credits_unlimited: list[0].credits_unlimited, avatar_url: list[0].avatar_url });
+        if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status, credits_unlimited: list[0].credits_unlimited, avatar_url: userAvatar(list) });
         if (onDone) onDone(list);
       });
   };
@@ -139,6 +225,10 @@ const App = () => {
     setScreen('brand');
   };
 
+  // Recharge la liste clients (sidebar, avatars…) depuis n'importe quel écran —
+  // utilisé après un changement de logo pour que le sidebar reflète la DB.
+  useEffect(() => { window.__reloadClients = loadClients; });
+
   const handleClientSaved = (savedId) => {
     setActiveClientId(savedId);
     window.__activeClientId = savedId;
@@ -163,7 +253,7 @@ const App = () => {
       if (user && newActive) localStorage.setItem('forje_active_client_' + user.id, newActive);
       else if (user) localStorage.removeItem('forje_active_client_' + user.id);
       setBrandScore(computeBrandScore(list[0] || null));
-      if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status, credits_unlimited: list[0].credits_unlimited, avatar_url: list[0].avatar_url });
+      if (list[0]) setProfile({ plan: list[0].plan, credits: list[0].credits, subscription_status: list[0].subscription_status, credits_unlimited: list[0].credits_unlimited, avatar_url: userAvatar(list) });
       setScreen('generate');
     });
   };
@@ -178,17 +268,12 @@ const App = () => {
     loadClients((list) => {
       const c = list.find(x => x.id === clientId) || list[0] || null;
       setBrandScore(computeBrandScore(c));
-      if (c) setProfile({ plan: c.plan, credits: c.credits, subscription_status: c.subscription_status, credits_unlimited: c.credits_unlimited, avatar_url: c.avatar_url });
+      if (c) setProfile({ plan: c.plan, credits: c.credits, subscription_status: c.subscription_status, credits_unlimited: c.credits_unlimited, avatar_url: userAvatar(list) });
     });
     setScreen('generate');
   };
 
   useEffect(() => { if (preset) presetRef.current = preset; }, [preset]);
-
-  // Redirect away from Pulse if trader mode is disabled
-  useEffect(() => {
-    if (screen === 'pulse' && !prefs.pulseMode) setScreen('generate');
-  }, [prefs.pulseMode]);
 
   useEffect(() => {
     localStorage.setItem('forje_app_screen', screen);
@@ -279,10 +364,16 @@ const App = () => {
           {screen === 'published' && <QueueScreen defaultView="grid"/>}
           {screen === 'brand' && <BrandScreen clientId={activeClientId} onSaved={handleClientSaved} onDeleted={handleClientDeleted}/>}
           {screen === 'sources' && <SourcesScreen authUser={window.__currentUser}/>}
-          {screen === 'pulse'   && <PulseScreen onCreateFromSource={(a) => { window.__goToGenerate?.(a); }}/>}
           {screen === 'settings' && <SettingsScreen prefs={prefs} onPrefsChange={handlePrefsChange}/>}
         </main>
       </div>
+
+      {celebrate && (
+        <CheckoutCelebration
+          onActivated={loadClients}
+          onDone={() => setCelebrate(false)}
+        />
+      )}
 
       {genToast && (
         <div

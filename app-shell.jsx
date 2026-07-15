@@ -61,7 +61,6 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
 const CMD_ITEMS = [
   { label: 'Générer un post',       icon: 'sparkle',  nav: 'generate' },
   { label: 'Calendrier',            icon: 'calendar', nav: 'calendar'  },
-  { label: 'Pulse — Veille live',    icon: 'flame',    nav: 'pulse'     },
   { label: 'Sources & veille',      icon: 'news',     nav: 'sources'   },
   { label: 'Identité de marque',    icon: 'palette',  nav: 'brand'     },
   { label: 'Paramètres',            icon: 'settings', nav: 'settings'  },
@@ -140,7 +139,6 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
 
   const mainItems = [
     { key: 'generate', icon: 'sparkle',  label: 'Générer' },
-    ...(prefs.pulseMode ? [{ key: 'pulse', icon: 'flame', label: 'Pulse', badge: true, count: counts.pulse || null }] : []),
     { key: 'calendar', icon: 'calendar', label: 'Calendrier' },
   ];
   const bottomItems = [

@@ -11,7 +11,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const router = express.Router();
 const genai  = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-const GEMINI_MODEL = 'gemini-2.5-pro';
+// Alias auto-mis-à-jour par Google — évite les 404 quand un modèle daté est retiré
+// (gemini-2.5-pro a été retiré de l'inférence en juillet 2026)
+const GEMINI_MODEL = 'gemini-pro-latest';
 let openaiClient;
 try { openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); } catch (_) {}
 const haiku = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -61,55 +63,126 @@ async function gemini(prompt) {
   return result.response.text();
 }
 
-async function geminiExtractLogo(imgBuf) {
-  // Essaie plusieurs modèles — certains supportent mieux image→image
-  const MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash-image', 'gemini-3.1-flash-image'];
-  for (const modelId of MODELS) {
-    try {
-      const model = genai.getGenerativeModel({
-        model: modelId,
-        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-      });
-      const b64 = imgBuf.toString('base64');
-      const result = await model.generateContent([
-        { inlineData: { mimeType: 'image/png', data: b64 } },
-        [
-          'Task: background removal + perspective circle correction.',
-          '',
-          'Step 1 — Remove the background: the dark area, outer ring/glow, and any Instagram interface border must become fully transparent.',
-          'Step 2 — Fix the ellipse: the logo badge in this image may appear as a slight ellipse due to the phone mockup perspective. Output the badge as a PERFECT CIRCLE (equal width and height, no distortion).',
-          '',
-          'STRICT RULES — zero exceptions:',
-          '- Do NOT change any color in the logo.',
-          '- Do NOT change any shape or letter inside the badge.',
-          '- Do NOT redesign or redraw anything inside the badge.',
-          '- Only the background becomes transparent, and the outer shape is corrected to a circle.',
-          '- Output the result centered on a transparent square canvas.',
-        ].join('\n')
-      ]);
-      const part = result.response.candidates?.[0]?.content?.parts?.find(
-        p => p.inlineData && p.inlineData.mimeType.startsWith('image')
-      );
-      if (part) {
-        console.log('[crop logo] Gemini image OK via', modelId);
-        return Buffer.from(part.inlineData.data, 'base64');
-      }
-      console.warn('[crop logo] Gemini no image from', modelId);
-    } catch(e) {
-      console.warn('[crop logo] Gemini failed', modelId, e.message.slice(0, 80));
+// ─── Détourage "logo nu" — 100% algorithmique, AUCUN modèle génératif ─────────
+// Un modèle image→image peut réinventer le logo ou son fond : interdit ici.
+// Le fond est identifié par sa couleur dominante et retiré par croissance de
+// région connectée (flood-fill), avec bord adouci. Déterministe et fidèle.
+
+function _colorDist2(r, g, b, ref) {
+  const dr = r - ref.r, dg = g - ref.g, db = b - ref.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+// Retire UNE couche de fond connectée aux seeds.
+// mode 'border'   : fond extérieur (seeds = bord de l'image)
+// mode 'boundary' : fond du badge (seeds = pixels opaques au contact de la transparence)
+// Retourne le nombre de pixels retirés.
+function removeConnectedBackground(data, W, H, mode) {
+  const S = 4, N = W * H;
+  const alphaAt = (p) => data[p * S + 3];
+
+  const seeds = [];
+  if (mode === 'border') {
+    for (let x = 0; x < W; x++) { seeds.push(x, (H - 1) * W + x); }
+    for (let y = 0; y < H; y++) { seeds.push(y * W, y * W + W - 1); }
+  } else {
+    for (let p = 0; p < N; p++) {
+      if (alphaAt(p) < 16) continue;
+      const x = p % W, y = (p / W) | 0;
+      if ((x > 0 && alphaAt(p - 1) < 16) || (x < W - 1 && alphaAt(p + 1) < 16) ||
+          (y > 0 && alphaAt(p - W) < 16) || (y < H - 1 && alphaAt(p + W) < 16)) seeds.push(p);
     }
   }
-  throw new Error('geminiExtractLogo: aucun modèle na retourné dimage');
+
+  // Couleur dominante des seeds opaques (histogramme quantifié /24) = le fond
+  const buckets = new Map();
+  for (const p of seeds) {
+    if (alphaAt(p) < 16) continue;
+    const i = p * S;
+    const key = ((data[i] / 24) | 0) * 10000 + ((data[i + 1] / 24) | 0) * 100 + ((data[i + 2] / 24) | 0);
+    const b = buckets.get(key) || { n: 0, r: 0, g: 0, b: 0 };
+    b.n++; b.r += data[i]; b.g += data[i + 1]; b.b += data[i + 2];
+    buckets.set(key, b);
+  }
+  let bg = null, best = 0;
+  for (const b of buckets.values()) if (b.n > best) { best = b.n; bg = { r: b.r / b.n, g: b.g / b.n, b: b.b / b.n }; }
+  if (!bg) return 0;
+
+  // Pelage du badge : uniquement si cette couleur est vraiment un FOND
+  // (assez présente pour être un aplat, pas assez pour être tout le logo)
+  if (mode === 'boundary') {
+    let close = 0, opaque = 0;
+    for (let p = 0; p < N; p++) {
+      if (alphaAt(p) < 16) continue;
+      opaque++;
+      const i = p * S;
+      if (_colorDist2(data[i], data[i + 1], data[i + 2], bg) < 90 * 90) close++;
+    }
+    if (!opaque || close / opaque < 0.18 || close / opaque > 0.97) return 0;
+  }
+
+  const HARD = 72 * 72;   // distance au fond → transparent
+  const SOFT = 112 * 112; // zone de transition → alpha partiel (anti-halo)
+  const visited = new Uint8Array(N);
+  const queue = [];
+  for (const p of seeds) { if (!visited[p]) { visited[p] = 1; queue.push(p); } }
+
+  let removed = 0, head = 0;
+  while (head < queue.length) {
+    const p = queue[head++];
+    const i = p * S;
+    const a = data[i + 3];
+    let pass = false;
+    if (a < 16) {
+      pass = true; // déjà transparent : on traverse pour atteindre le fond
+    } else {
+      const d2 = _colorDist2(data[i], data[i + 1], data[i + 2], bg);
+      if (d2 < HARD) { data[i + 3] = 0; pass = true; removed++; }
+      else if (d2 < SOFT) {
+        // bord anti-aliasé : alpha proportionnel à l'éloignement du fond
+        const t = (Math.sqrt(d2) - 72) / (112 - 72);
+        data[i + 3] = Math.min(a, Math.round(255 * t));
+        pass = true; removed++;
+      }
+    }
+    if (!pass) continue;
+    const x = p % W, y = (p / W) | 0;
+    if (x > 0     && !visited[p - 1]) { visited[p - 1] = 1; queue.push(p - 1); }
+    if (x < W - 1 && !visited[p + 1]) { visited[p + 1] = 1; queue.push(p + 1); }
+    if (y > 0     && !visited[p - W]) { visited[p - W] = 1; queue.push(p - W); }
+    if (y < H - 1 && !visited[p + W]) { visited[p + W] = 1; queue.push(p + W); }
+  }
+  return removed;
 }
 
 async function getClientBrand(userId, clientId) {
   if (!userId) return null;
   let q = supabase.from('clients').select(
-    'id,name,logo_url,brand_colors,font_primary,font_body,font_id,font_set,font_custom_url,font_is_custom,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url'
+    'id,name,logo_url,logo_badge_url,logo_nu_url,logo_style,brand_colors,font_primary,font_body,font_id,font_set,font_custom_url,font_is_custom,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url,style_ref_urls'
   ).eq('user_id', userId);
   if (clientId) q = q.eq('id', clientId);
   const { data } = await q.order('created_at').limit(1).maybeSingle();
   return data || null;
+}
+
+// Variante de logo à composer sur les posts, selon le choix du client :
+// logo_style = 'badge' (avec fond) | 'logo_nu' (détouré) | 'none' (masqué).
+// Fallback sur logo_url (colonne legacy) pour les clients d'avant les variantes.
+function pickLogoUrl(client) {
+  if (!client) return null;
+  const style = client.logo_style || 'badge';
+  if (style === 'none') return null;
+  if (style === 'logo_nu') return client.logo_nu_url || client.logo_url || null;
+  return client.logo_badge_url || client.logo_url || null;
+}
+
+// Refs visuelles actives (max 3) — nouvelle colonne tableau, fallback legacy
+function pickStyleRefUrls(client) {
+  if (!client) return [];
+  if (Array.isArray(client.style_ref_urls) && client.style_ref_urls.length) {
+    return client.style_ref_urls.filter(Boolean).slice(0, 3);
+  }
+  return client.style_ref_url ? [client.style_ref_url] : [];
 }
 
 function buildBrandContext(client) {
@@ -499,7 +572,7 @@ async function describeReferenceImages(imageBuffers) {
   }
 }
 
-async function generateImageGPT(prompt, styleRefBuffer = null, referenceBuffers = []) {
+async function generateImageGPT(prompt, styleRefBuffers = null, referenceBuffers = []) {
   if (!openaiClient) throw new Error('OpenAI client not initialized');
   let finalPrompt = prompt;
 
@@ -511,11 +584,14 @@ async function generateImageGPT(prompt, styleRefBuffer = null, referenceBuffers 
     }
   }
 
-  // Injecter le style de référence utilisateur si fourni
-  if (styleRefBuffer) {
-    const styleDesc = await extractStyleDescriptors(styleRefBuffer);
-    if (styleDesc) {
-      finalPrompt = finalPrompt + ` Visual style (aesthetic only, not content): ${styleDesc}`;
+  // Injecter les styles de référence utilisateur (1 à 3 refs, descripteurs fusionnés)
+  const styleBufs = Array.isArray(styleRefBuffers)
+    ? styleRefBuffers.filter(Boolean)
+    : (styleRefBuffers ? [styleRefBuffers] : []);
+  if (styleBufs.length) {
+    const descs = (await Promise.all(styleBufs.slice(0, 3).map(b => extractStyleDescriptors(b)))).filter(Boolean);
+    if (descs.length) {
+      finalPrompt = finalPrompt + ` Visual style (aesthetic only, not content): ${descs.join(' ')}`;
     }
   }
 
@@ -664,13 +740,14 @@ async function runActuPipeline(client, {
     serperBuffers = await keepUsablePhotos(sane);
     if (!serperBuffers.length) console.warn('[Actu] aucune photo Serper exploitable → dégradé de marque');
   }
-  // 3. Style ref : one-shot (request) > persistent (brand)
-  let styleRefBuffer = null;
+  // 3. Style refs : one-shot (request) > persistantes (brand, jusqu'à 3 fusionnées)
+  let styleRefBuffers = [];
   if (styleRefData) {
     const b64 = styleRefData.split(',')[1] || styleRefData;
-    if (b64) styleRefBuffer = Buffer.from(b64, 'base64');
-  } else if (client?.style_ref_url) {
-    try { styleRefBuffer = await downloadBuffer(client.style_ref_url); } catch (_) {}
+    if (b64) styleRefBuffers.push(Buffer.from(b64, 'base64'));
+  } else {
+    const refUrls = pickStyleRefUrls(client);
+    styleRefBuffers = (await Promise.all(refUrls.map(u => downloadBuffer(u).catch(() => null)))).filter(Boolean);
   }
 
   // 4. Image : AI mode ou classic
@@ -678,7 +755,7 @@ async function runActuPipeline(client, {
   if (imageMode === 'ai' && visual_brief) {
     const prompt = buildImagePrompt(brief, client);
     try {
-      photoBuffer = await withTimeout(generateImageGPT(prompt, styleRefBuffer, serperBuffers), 90000, 'GPT-Image-1');
+      photoBuffer = await withTimeout(generateImageGPT(prompt, styleRefBuffers, serperBuffers), 90000, 'GPT-Image-1');
       console.log('[Actu] GPT image OK');
     } catch (gptErr) {
       console.warn('[Actu] GPT failed:', gptErr.message, '— falling back to Serper');
@@ -729,13 +806,14 @@ async function runActuPipeline(client, {
     { input: accentBar, left: 0, top: H - 8 },
   ];
 
-  // Logo : fichier local (presets démo) ou URL (clients réels)
+  // Logo : fichier local (presets démo) ou variante choisie (badge/nu/masqué)
   let logoBuf = null;
+  const activeLogoUrl = pickLogoUrl(client);
   if (client?.logo_local_path) {
     try { logoBuf = fs.readFileSync(client.logo_local_path); } catch (_) { /* logo optionnel */ }
   }
-  if (!logoBuf && client?.logo_url) {
-    try { logoBuf = await downloadBuffer(client.logo_url); } catch (_) { /* logo optionnel */ }
+  if (!logoBuf && activeLogoUrl) {
+    try { logoBuf = await downloadBuffer(activeLogoUrl); } catch (_) { /* logo optionnel */ }
   }
   if (logoBuf) {
     try {
@@ -929,10 +1007,11 @@ router.post('/citation', async (req, res) => {
     //        côté client sur Canvas avec la vraie police (voir renderCitationCanvas). ──
     const composites = [{ input: vignette }];
 
-    // Logo du média (haut à droite)
-    if (client?.logo_url) {
+    // Logo du média (haut à droite) — variante badge/nu selon le choix client
+    const citLogoUrl = pickLogoUrl(client);
+    if (citLogoUrl) {
       try {
-        const logoBuf  = await downloadBuffer(client.logo_url);
+        const logoBuf  = await downloadBuffer(citLogoUrl);
         const logoPng  = await sharp(logoBuf).resize(null, 56, { fit: 'inside' }).png().toBuffer();
         const logoMeta = await sharp(logoPng).metadata();
         const logoX    = W - 56 - logoMeta.width;
@@ -1232,7 +1311,7 @@ router.post('/deepdive', async (req, res) => {
       primary: client?.brand_colors?.[0] || '#FF3B30',
       accent:  client?.brand_colors?.[1] || '#FFFFFF',
     };
-    const logoResized = await loadDDLogo(client?.logo_url);
+    const logoResized = await loadDDLogo(pickLogoUrl(client));
 
     // 3. Images en parallèle (Serper + éventuelle génération IA pour hook/climax en premium)
     const imgData = await Promise.all(slides.map(async (slide) => {
@@ -1309,7 +1388,7 @@ router.post('/deepdive', async (req, res) => {
         letterSpacing: clientFont.letterSpacing,
       },
       // logo inclus → le Canvas client peut redessiner le logo sur un fond importé manuellement
-      brand: { ...brand, logo: client?.logo_url || null },
+      brand: { ...brand, logo: pickLogoUrl(client) },
       creditsLeft: charge.charged ? charge.balance : undefined,
     });
     creditCtx = null; // carousel livré → pas de remboursement
@@ -1337,7 +1416,7 @@ router.post('/regenerate-slide', async (req, res) => {
       primary: client?.brand_colors?.[0] || '#FF3B30',
       accent:  client?.brand_colors?.[1] || '#FFFFFF',
     };
-    const logoResized = await loadDDLogo(client?.logo_url);
+    const logoResized = await loadDDLogo(pickLogoUrl(client));
 
     let photoBuffer = null;
     if (!clear) {
@@ -1817,95 +1896,148 @@ router.post('/brand-identity', async (req, res) => {
   }
 });
 
-// ─── Crop logo depuis le brand kit ───────────────────────────────────────────
-// Workflow :
-//   1. Claude Vision  → localise la PP Instagram (petit cercle, guard taille)
-//   2. Sharp           → crop carré avec padding
-//   2b. Gemini        → extrait logo intérieur, supprime ring IG, recentre sur blanc
-//   2c. removeBackground → retire le fond blanc Gemini
-//   3. Sharp dest-in  → masque circulaire final transparent
-async function cropLogoFromBrandKit(imageUrl) {
-  try {
-    const imgBuf = await downloadBuffer(imageUrl);
-    const meta   = await sharp(imgBuf).metadata();
-    const imgW   = meta.width, imgH = meta.height;
+// ═══════════════════════════════════════════════════════════════════════════
+// FORGE DE LOGO — génération dédiée (remplace l'ancien crop depuis le mockup)
+// Le badge est généré directement (rond plein aux couleurs de la marque), le
+// brand kit sert de référence visuelle pour la cohérence. Le "logo nu" est
+// dérivé du badge par détourage façon remove.bg (Gemini + flood-fill).
+// ═══════════════════════════════════════════════════════════════════════════
 
-    // ── Étape 1 : Vision → trouver la PP dans le quart bas-droit (proto téléphone) ──
-    const rLeft = Math.round(imgW * 0.35);
-    const rTop  = Math.round(imgH * 0.38);
-    const rW    = imgW - rLeft;
-    const rH    = imgH - rTop;
+function buildLogoPrompt(client, userPrompt, variantSeed) {
+  const name   = client?.name || 'the brand';
+  const colors = client?.brand_colors || [];
+  return [
+    `Professional flat vector logo badge for the Instagram media brand "${name}".`,
+    'A bold, iconic, memorable mark: monogram, lettermark or simple abstract symbol — flat 2D graphic design, crisp clean edges, instantly readable at avatar size.',
+    colors.length >= 2
+      ? `Brand palette: primary ${colors[0]}, accent ${colors[1]}. The badge fill must be a solid color from this palette (or a near-black/near-white that complements it).`
+      : 'Solid color badge fill.',
+    client?.mood ? `Brand mood: ${client.mood}.` : '',
+    client?.topics?.length ? `The media covers: ${client.topics.slice(0, 4).join(', ')}.` : '',
+    userPrompt ? `Creative direction from the user (top priority): ${userPrompt}.` : '',
+    variantSeed ? `Creative variation #${variantSeed}: explore a visually distinct direction (different mark concept or composition) from other variations.` : '',
+    'Composition: the mark centered inside ONE filled circle badge occupying ~85% of the canvas, on a PLAIN UNIFORM single-color background outside the badge.',
+    'STRICT: flat design only — no photo, no 3D, no mockup, no shadows outside the badge, no watermark. Text limited to the brand initials or short name.',
+  ].filter(Boolean).join(' ');
+}
 
-    const regionBuf = await sharp(imgBuf)
-      .extract({ left: rLeft, top: rTop, width: rW, height: rH })
-      .jpeg({ quality: 85 })
-      .toBuffer();
+// Génère UNE image de logo — brand kit en référence si dispo (cohérence),
+// sinon génération pure. Retourne un buffer PNG/JPEG brut (fond uni à détourer).
+async function generateLogoImage(client, userPrompt, variantSeed, kitBuf) {
+  if (!openaiClient) throw new Error('OpenAI client not initialized');
+  const prompt = buildLogoPrompt(client, userPrompt, variantSeed);
 
-    const resp = await haiku.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 120,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: regionBuf.toString('base64') } },
-          { type: 'text',  text: `This is a cropped portion (${rW}x${rH}px) of a brand identity sheet showing an Instagram profile inside a phone mockup. Locate ONLY the circular profile picture avatar — a SMALL circle containing a photo or logo, positioned at the very top of the phone screen content area, above the username. It is NOT the full header card, NOT the username, NOT the bio. Its width should be roughly 5-15% of the image width (between 30px and 160px). Return ONLY valid JSON: {"x":N,"y":N,"w":N,"h":N} in pixels relative to THIS image. CONSTRAINT: w and h must each be between 30 and 160. No markdown, no explanation.` }
-        ]
-      }]
-    });
-
-    let coords;
+  if (kitBuf) {
     try {
-      const raw   = resp.content[0].text.trim();
-      const match = raw.match(/\{[^{}]*\}/);
-      if (!match) throw new Error('Pas de JSON trouve dans : ' + raw.slice(0, 120));
-      coords = JSON.parse(match[0]);
-    } catch(e) {
-      console.error('[crop logo] Vision coord parse failed:', e.message);
-      return null;
+      const file = await toFile(kitBuf, 'brandkit.jpg', { type: 'image/jpeg' });
+      const r = await openaiClient.images.edit({
+        model: 'gpt-image-2', image: file, size: '1024x1024', quality: 'high',
+        prompt: 'Use this brand identity board ONLY as style, color and mood reference — do not copy its layout or reproduce the board itself. ' + prompt,
+      });
+      const b64 = r.data?.[0]?.b64_json;
+      if (b64) return Buffer.from(b64, 'base64');
+    } catch (e) {
+      console.warn('[logo-forge] edit avec brand kit échoué → génération pure:', e.message);
     }
+  }
 
-    // Coords relatives a la region → referentiel image complete
-    const x = Math.max(0, Math.round(Number(coords.x) || 0) + rLeft);
-    const y = Math.max(0, Math.round(Number(coords.y) || 0) + rTop);
-    const w = Math.min(Math.round(Number(coords.w) || 0), imgW - x);
-    const h = Math.min(Math.round(Number(coords.h) || 0), imgH - y);
-    if (w < 20 || h < 20) { console.error('[crop logo] bbox invalide', {x,y,w,h}); return null; }
-    // Guard: si Vision a retourné une zone trop grande (header complet), on abandonne plutôt que de cropper le mauvais élément
-    const maxPPSize = Math.round(rW * 0.22);
-    if (w > maxPPSize || h > maxPPSize) {
-      console.error('[crop logo] Vision bbox trop large — probablement pas la PP:', {x,y,w,h}, 'max attendu:', maxPPSize);
-      return null;
-    }
-    console.log('[crop logo] PP trouvee →', {x,y,w,h});
+  const r = await openaiClient.images.generate({
+    model: 'gpt-image-2', prompt, size: '1024x1024', quality: 'high', n: 1,
+  });
+  if (r.data?.[0]?.b64_json) return Buffer.from(r.data[0].b64_json, 'base64');
+  if (r.data?.[0]?.url) {
+    const fetched = await fetch(r.data[0].url);
+    return Buffer.from(await fetched.arrayBuffer());
+  }
+  throw new Error('Aucune image retournée par gpt-image-2');
+}
 
-    // ── Etape 2 : Crop centré sur le centre exact de la PP ───────────────────────
-    const ppCx  = x + Math.round(w / 2);
-    const ppCy  = y + Math.round(h / 2);
-    const ppR   = Math.round(Math.min(w, h) / 2);
-    const cropR = ppR; // crop exact sur la PP, le texte sous la PP est hors zone
-    const cl    = Math.max(0, ppCx - cropR);
-    const ct    = Math.max(0, ppCy - cropR);
-    const cr    = Math.min(imgW, ppCx + cropR);
-    const cb    = Math.min(imgH, ppCy + cropR);
-    const csz   = Math.min(cr - cl, cb - ct);
+// Retire uniquement le fond uni EXTÉRIEUR (autour d'un badge généré)
+async function removeOuterBackground(pngBuf) {
+  const { data, info } = await sharp(pngBuf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  removeConnectedBackground(data, info.width, info.height, 'border');
+  return sharp(Buffer.from(data), { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
 
-    const cropBuf = await sharp(imgBuf)
-      .extract({ left: cl, top: ct, width: csz, height: csz })
-      .resize(400, 400)
+// Dérive la variante "logo nu" depuis le badge — remove.bg déterministe :
+// pass 1 retire le fond extérieur, pass 2 pèle la couleur de fond du disque.
+// Le résultat est recadré sur la marque et recentré sur un canvas carré.
+async function deriveLogoNu(badgeBuf) {
+  const { data, info } = await sharp(badgeBuf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height;
+
+  // UNE seule couche de fond est retirée : si le passage par le bord a déjà
+  // enlevé un vrai fond (photo, disque plein-cadre), on s'arrête là — sinon on
+  // pèle le fond du badge. Jamais deux couches : la 2e serait le sujet lui-même.
+  const removedOuter = removeConnectedBackground(data, W, H, 'border');
+  if (removedOuter < W * H * 0.02) {
+    removeConnectedBackground(data, W, H, 'boundary');
+  }
+
+  const cut = await sharp(Buffer.from(data), { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
+
+  // Recadre sur le contenu restant puis recentre sur un carré avec marge
+  try {
+    const trimmed = await sharp(cut).trim({ threshold: 12 }).png().toBuffer();
+    const meta = await sharp(trimmed).metadata();
+    const side = Math.max(meta.width || 1, meta.height || 1);
+    const pad  = Math.round(side * 0.08);
+    return await sharp(trimmed)
+      .extend({
+        top:    Math.round((side - (meta.height || side)) / 2) + pad,
+        bottom: Math.round((side - (meta.height || side)) / 2) + pad,
+        left:   Math.round((side - (meta.width  || side)) / 2) + pad,
+        right:  Math.round((side - (meta.width  || side)) / 2) + pad,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
       .png()
       .toBuffer();
-
-    // ── Etape 2b : Gemini — retire le fond (retourne fond blanc ou transparent) ──
-    const geminiOut = await geminiExtractLogo(cropBuf);
-
-    // ── Etape 2c : flood-fill depuis coins → retire fond blanc Gemini ────────────
-    const buf = await removeBackground(geminiOut, 30);
-    console.log('[crop logo] OK');
-    return buf;
-  } catch(e) {
-    console.error('[crop logo] FAILED:', e.message);
-    return null;
+  } catch (_) {
+    return cut; // trim impossible (image vide ?) → version détourée brute
   }
+}
+
+async function uploadLogoAsset(clientId, kind, buf) {
+  const path = `logos/${clientId}/${kind}.png`;
+  const { error } = await supabase.storage.from('brand-assets').upload(path, buf, { contentType: 'image/png', upsert: true });
+  if (error) throw new Error(`Upload ${kind} échoué: ${error.message}`);
+  return supabase.storage.from('brand-assets').getPublicUrl(path).data.publicUrl;
+}
+
+// Applique une image de logo comme identité : badge normalisé ROND (façon PP
+// Instagram) + nu dérivé, upload des deux variantes et mise à jour du client
+// (logo_url = legacy badge).
+async function applyLogoVariants(clientId, rawBuf) {
+  // Plein cadre AVANT tout : sans trim, un badge avec marges transparentes
+  // paraît minuscule partout (posts, sidebar, démo) à taille de boîte égale.
+  let framed = rawBuf;
+  try { framed = await sharp(rawBuf).trim({ threshold: 10 }).png().toBuffer(); } catch (_) {}
+  const badgeSquare = await sharp(framed)
+    .resize(800, 800, { fit: 'cover', position: 'centre' })
+    .png()
+    .toBuffer();
+  // Masque circulaire — le badge est toujours un disque, coins transparents
+  const circleMask = Buffer.from(
+    '<svg width="800" height="800" xmlns="http://www.w3.org/2000/svg"><circle cx="400" cy="400" r="400" fill="#fff"/></svg>'
+  );
+  const badgeBuf = await sharp(badgeSquare)
+    .composite([{ input: circleMask, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+
+  let nuBuf = null;
+  try { nuBuf = await deriveLogoNu(badgeBuf); } catch (e) { console.warn('[logo nu] dérivation échouée:', e.message); }
+
+  const ts = Date.now();
+  const badgeUrl = await uploadLogoAsset(clientId, `badge-${ts}`, badgeBuf);
+  const nuUrl    = nuBuf ? await uploadLogoAsset(clientId, `nu-${ts}`, nuBuf) : null;
+
+  const upd = { logo_badge_url: badgeUrl, logo_url: badgeUrl };
+  if (nuUrl) upd.logo_nu_url = nuUrl;
+  const { error } = await supabase.from('clients').update(upd).eq('id', clientId);
+  if (error) console.error('[logo apply] db:', error.message);
+
+  return { badgeUrl, nuUrl };
 }
 // ─── Brand Identity Confirm — Vision extraction + logo + save DB ──────────────
 router.post('/brand-identity/confirm', async (req, res) => {
@@ -1952,8 +2084,93 @@ router.post('/brand-identity/confirm', async (req, res) => {
   res.json({ ok: true, imageUrl: selectedKit.imageUrl, logoUrl, config: finalConfig });
 });
 
-// ─── Relogo — re-crop uniquement le logo depuis le brand kit ─────────────────
+// ─── Relogo — forge UN logo cohérent avec le brand kit (gratuit, inclus) ─────
+// Remplace l'ancien crop de la PP du mockup (fragile). Le kit sert de référence
+// visuelle à la génération — même palette, même univers.
 router.post('/brand-identity/relogo', async (req, res) => {
+  const { clientId, imageUrl } = req.body;
+  if (!clientId) return res.status(400).json({ error: 'clientId requis' });
+
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+  const authResult = await supabase.auth.getUser(token);
+  const user = authResult.data?.user;
+  if (!user) return res.status(401).json({ error: 'Non autorisé' });
+
+  const { data: client } = await supabase.from('clients').select('*').eq('id', clientId).eq('user_id', user.id).maybeSingle();
+  if (!client) return res.status(403).json({ error: 'Accès interdit' });
+
+  try {
+    let kitBuf = null;
+    const kitUrl = imageUrl || client.brand_kit_url;
+    if (kitUrl) { try { kitBuf = await downloadBuffer(kitUrl); } catch (_) {} }
+
+    const rawLogo  = await generateLogoImage(client, null, null, kitBuf);
+    // Retire le fond uni autour du disque badge → badge transparent hors cercle
+    const badgeCut = await removeOuterBackground(await sharp(rawLogo).png().toBuffer());
+    const { badgeUrl, nuUrl } = await applyLogoVariants(clientId, badgeCut);
+
+    res.json({ ok: true, logoUrl: badgeUrl, badgeUrl, nuUrl });
+  } catch(e) {
+    console.error('[relogo]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Logo Forge — 3 propositions IA guidées par la marque (payant : crédits) ─
+router.post('/brand-identity/logo-forge', async (req, res) => {
+  const { clientId, userPrompt } = req.body;
+  if (!clientId) return res.status(400).json({ error: 'clientId requis' });
+
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+  const authResult = await supabase.auth.getUser(token);
+  const user = authResult.data?.user;
+  if (!user) return res.status(401).json({ error: 'Non autorisé' });
+
+  const { data: client } = await supabase.from('clients').select('*').eq('id', clientId).eq('user_id', user.id).maybeSingle();
+  if (!client) return res.status(403).json({ error: 'Accès interdit' });
+
+  const charge = await chargeCredits(clientId, 'logo_forge');
+  if (!charge.ok) return insufficientCredits(res, charge.cost);
+  let creditCtx = { clientId, postType: 'logo_forge', cost: charge.cost, charged: charge.charged };
+
+  try {
+    let kitBuf = null;
+    if (client.brand_kit_url) { try { kitBuf = await downloadBuffer(client.brand_kit_url); } catch (_) {} }
+
+    // 3 propositions en parallèle — chaque variante explore une direction distincte
+    const rawResults = await Promise.all([1, 2, 3].map(v =>
+      generateLogoImage(client, (userPrompt || '').trim() || null, v, kitBuf)
+        .catch(e => { console.error(`[logo-forge] variante ${v}:`, e.message); return null; })
+    ));
+
+    // Détourage du fond uni → badges transparents hors cercle, puis upload
+    const ts = Date.now();
+    const candidates = (await Promise.all(rawResults.map(async (raw, i) => {
+      if (!raw) return null;
+      try {
+        const cut = await removeOuterBackground(await sharp(raw).resize(800, 800, { fit: 'inside' }).png().toBuffer());
+        return await uploadLogoAsset(clientId, `forge-${ts}-${i + 1}`, cut);
+      } catch (e) { console.error(`[logo-forge] post-process ${i + 1}:`, e.message); return null; }
+    }))).filter(Boolean);
+
+    if (!candidates.length) {
+      await refundCredits(creditCtx);
+      return res.status(500).json({ error: 'La forge a échoué — réessaie dans quelques secondes.', refunded: true });
+    }
+
+    res.json({ ok: true, candidates, creditsLeft: charge.charged ? charge.balance : undefined });
+  } catch (e) {
+    console.error('[logo-forge]', e.message);
+    await refundCredits(creditCtx);
+    if (!res.headersSent) res.status(500).json({ error: e.message, refunded: true });
+  }
+});
+
+// ─── Logo Apply — adopte une image comme logo : badge + nu dérivé ────────────
+// imageUrl : proposition de la forge OU image importée/recadrée par le client.
+router.post('/brand-identity/logo-apply', async (req, res) => {
   const { clientId, imageUrl } = req.body;
   if (!clientId || !imageUrl) return res.status(400).json({ error: 'clientId et imageUrl requis' });
 
@@ -1963,20 +2180,15 @@ router.post('/brand-identity/relogo', async (req, res) => {
   const user = authResult.data?.user;
   if (!user) return res.status(401).json({ error: 'Non autorisé' });
 
+  const { data: client } = await supabase.from('clients').select('id').eq('id', clientId).eq('user_id', user.id).maybeSingle();
+  if (!client) return res.status(403).json({ error: 'Accès interdit' });
+
   try {
-    const logoBuffer = await cropLogoFromBrandKit(imageUrl);
-    if (!logoBuffer) return res.status(500).json({ error: 'Crop échoué' });
-
-    const logoPath = `logos/${clientId}/logo-${Date.now()}.png`;
-    const { error: le } = await supabase.storage.from('brand-assets').upload(logoPath, logoBuffer, { contentType: 'image/png', upsert: true });
-    if (le) return res.status(500).json({ error: 'Upload échoué' });
-
-    const { data: { publicUrl: logoUrl } } = supabase.storage.from('brand-assets').getPublicUrl(logoPath);
-    await supabase.from('clients').update({ logo_url: logoUrl }).eq('id', clientId);
-
-    res.json({ ok: true, logoUrl });
-  } catch(e) {
-    console.error('[relogo]', e.message);
+    const raw = await downloadBuffer(imageUrl);
+    const { badgeUrl, nuUrl } = await applyLogoVariants(clientId, raw);
+    res.json({ ok: true, badgeUrl, nuUrl });
+  } catch (e) {
+    console.error('[logo-apply]', e.message);
     res.status(500).json({ error: e.message });
   }
 });

@@ -1463,11 +1463,6 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
         <div style={{ display:'flex', alignItems:'center', gap:6, padding:'0 14px', flexShrink:0, borderLeft:'1px solid var(--app-line)', height:42 }}>
           {learning && <span style={{ fontSize:11, color:'var(--app-accent)', fontWeight:600, whiteSpace:'nowrap' }}>⚡ Apprentissage</span>}
           {!learning && scoringMsg && <span style={{ fontSize:11, color:'var(--app-fg-3)', whiteSpace:'nowrap', maxWidth:240, overflow:'hidden', textOverflow:'ellipsis' }}>{scoringMsg}</span>}
-          {window.__goToScreen && (
-            <button className="btn btn-ghost btn-sm" onClick={() => window.__goToScreen('pulse')} title="Pulse Terminal" style={{ fontFamily:'JetBrains Mono, monospace', fontSize:10, letterSpacing:'0.05em', gap:4 }}>
-              <span style={{ color:'#FF6B4A', fontSize:9 }}>●</span> PULSE
-            </button>
-          )}
           <button
             className="feed-filter-icon"
             title={twitterRefreshing ? 'Fetch X…' : 'Fetch Twitter (~160 crédits)'}

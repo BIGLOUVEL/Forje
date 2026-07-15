@@ -44,6 +44,10 @@ const App = () => {
 
   // rotation speed — no-op (hero is static now)
 
+  // ATTENTION : ce filter est STRUCTUREL, même à 0deg. Il fait de ce wrapper
+  // un bloc conteneur pour .page-bg / .horizon / .cursor-halo (position:fixed)
+  // → leur inset:0 s'étire sur TOUTE la page (dégradé sombre en haut qui
+  // défile) au lieu d'un fond 100vh figé au viewport. Ne pas le conditionner.
   return (
     <div style={{ filter: `hue-rotate(${tweaks.hueShift}deg)` }}>
       <div className="page-bg">
@@ -77,8 +81,7 @@ const App = () => {
 
         <div data-screen-label="01 Hero"><Hero /></div>
         <div data-screen-label="02 Social Proof"><SocialProof /></div>
-        <div data-screen-label="03 Veille Live"><LiveBoard /></div>
-        <div data-screen-label="04 Démo Interactive"><InteractiveDemo /></div>
+        <LiveDemoScroll />
         <div data-screen-label="05 How It Works"><HowItWorks /></div>
         <div data-screen-label="06 Formats"><Formats /></div>
         <div data-screen-label="07 Pricing"><Pricing /></div>

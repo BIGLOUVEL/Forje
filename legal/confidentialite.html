@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Politique de confidentialité — Forje Studio</title>
+<meta name="description" content="Comment Forje Studio collecte, utilise et protège vos données personnelles, conformément au RGPD."/>
+<link rel="icon" type="image/png" href="/assets/favicon.png?v=4"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --bg-deep:#050D2E; --card:rgba(10,25,80,.5); --card-strong:rgba(12,28,84,.72);
+    --border:rgba(80,130,255,.15); --border-strong:rgba(110,160,255,.28);
+    --fg:#EEF4FF; --fg-dim:rgba(210,225,255,.82); --muted:rgba(150,190,255,.55);
+    --chromatic-line:linear-gradient(90deg,#6A5BFF 0%,#3EC7FF 28%,#F5F0CB 52%,#FF9ED3 78%,#FFB061 100%);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg-deep);color:var(--fg);
+    font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      radial-gradient(900px 600px at 78% -5%, rgba(110,150,255,.18), transparent 60%),
+      radial-gradient(800px 500px at 12% 30%, rgba(60,90,220,.15), transparent 65%),
+      linear-gradient(180deg,#02061c 0%,#061235 45%,#050c30 100%);
+    background-attachment:fixed; min-height:100vh;
+  }
+  .wrap{max-width:780px;margin:0 auto;padding:0 24px 96px;}
+  header.top{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:26px 0 20px;position:sticky;top:0;z-index:5;
+    background:linear-gradient(180deg,rgba(5,13,46,.92),rgba(5,13,46,.0));
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  }
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fg);font-weight:600;}
+  .brand img{width:26px;height:26px;border-radius:7px;}
+  .back{font-size:13px;color:var(--muted);text-decoration:none;
+    border:1px solid var(--border);border-radius:999px;padding:7px 14px;transition:.18s;}
+  .back:hover{color:var(--fg);border-color:var(--border-strong);}
+  .doc-head{padding:36px 0 8px;}
+  .kicker{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:14px;}
+  h1{font-size:40px;line-height:1.08;margin:0 0 12px;letter-spacing:-.02em;
+    background:var(--chromatic-line);-webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;}
+  .updated{font-size:13px;color:var(--muted);}
+  .lead{color:var(--fg-dim);font-size:16px;line-height:1.7;margin:22px 0 8px;}
+  section{padding:30px 0 4px;border-top:1px solid var(--border);margin-top:26px;scroll-margin-top:90px;}
+  section:first-of-type{border-top:none;}
+  h2{font-size:21px;margin:0 0 14px;letter-spacing:-.01em;display:flex;gap:12px;align-items:baseline;}
+  h2 .n{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--fg);}
+  p,li{color:var(--fg-dim);font-size:15px;line-height:1.72;}
+  p{margin:12px 0;}
+  ul{margin:12px 0;padding-left:22px;}
+  li{margin:7px 0;}
+  strong{color:var(--fg);font-weight:600;}
+  a.inline{color:#3EC7FF;text-decoration:none;}
+  a.inline:hover{text-decoration:underline;}
+  .note{border:1px solid var(--border);background:var(--card);border-left:2px solid #6A5BFF;
+    border-radius:12px;padding:14px 18px;margin:16px 0;font-size:14px;color:var(--fg-dim);}
+  .fill{color:#FFB061;font-family:'JetBrains Mono',monospace;font-size:13px;}
+  .table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:var(--radius);}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-size:13.5px;}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--fg-dim);}
+  th{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted);background:var(--card);}
+  tr:last-child td{border-bottom:none;}
+  td strong{color:var(--fg);}
+  footer.legal-foot{margin-top:54px;padding-top:26px;border-top:1px solid var(--border);
+    display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between;}
+  .legal-foot .links{display:flex;gap:20px;flex-wrap:wrap;}
+  .legal-foot a{color:var(--muted);text-decoration:none;font-size:13.5px;}
+  .legal-foot a:hover{color:var(--fg);}
+  .legal-foot .copy{font-size:13px;color:var(--muted);}
+  @media(max-width:640px){h1{font-size:30px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/"><img src="/assets/forje-logo.png" alt=""/>Forje <span style="color:var(--muted);font-weight:400;">Studio</span></a>
+    <a class="back" href="/">← Retour au site</a>
+  </header>
+
+  <div class="doc-head">
+    <div class="kicker">RGPD · Vie privée</div>
+    <h1>Politique de confidentialité</h1>
+    <div class="updated">Dernière mise à jour : 8 juillet 2026 · Version 1.0</div>
+    <p class="lead">Cette politique explique quelles données personnelles Forje Studio collecte, pourquoi, avec qui elles sont partagées et quels sont vos droits. Nous appliquons le Règlement Général sur la Protection des Données (RGPD) et la loi française Informatique et Libertés.</p>
+  </div>
+
+  <section>
+    <h2><span class="n">01</span> Responsable du traitement</h2>
+    <p>Le responsable du traitement des données est l'éditeur de Forje Studio, dont l'identité complète figure dans les <a class="inline" href="/legal/mentions-legales.html">mentions légales</a>.</p>
+    <p>Pour toute question relative à vos données ou à l'exercice de vos droits, vous pouvez nous écrire à <a class="inline" href="mailto:contact@forje.studio">contact@forje.studio</a>.</p>
+    <div class="note">Délégué à la protection des données (DPO), le cas échéant : <span class="fill">[À COMPLÉTER : nom / e-mail du DPO si désigné]</span>.</div>
+  </section>
+
+  <section>
+    <h2><span class="n">02</span> Données que nous collectons</h2>
+    <ul>
+      <li><strong>Données de compte</strong> : adresse e-mail, mot de passe (chiffré), nom d'affichage.</li>
+      <li><strong>Données de marque</strong> : nom de marque, logo, avatar, style graphique, ton, thématiques, préférences — les éléments que vous configurez pour personnaliser vos contenus.</li>
+      <li><strong>Contenus</strong> : textes, actualités, images importées et contenus générés à votre demande.</li>
+      <li><strong>Données de facturation</strong> : statut d'abonnement, historique de transactions et de crédits. Les données de carte bancaire sont collectées et conservées directement par Stripe ; nous n'y avons jamais accès.</li>
+      <li><strong>Données de connexion Instagram</strong> (si vous l'activez) : identifiants techniques et jetons d'accès nécessaires à la publication, via les interfaces de Meta.</li>
+      <li><strong>Données d'usage techniques</strong> : journaux de connexion, adresse IP, type de navigateur, actions réalisées dans le Service, à des fins de sécurité et d'amélioration.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">03</span> Finalités & bases légales</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Finalité</th><th>Base légale (RGPD)</th></tr></thead>
+        <tbody>
+          <tr><td>Fournir le Service, gérer votre compte et générer vos contenus</td><td>Exécution du contrat (art. 6.1.b)</td></tr>
+          <tr><td>Gérer l'abonnement, la facturation et le recouvrement</td><td>Exécution du contrat & obligation légale (art. 6.1.b et 6.1.c)</td></tr>
+          <tr><td>Sécuriser le Service, prévenir la fraude et les abus</td><td>Intérêt légitime (art. 6.1.f)</td></tr>
+          <tr><td>Améliorer et développer le Service</td><td>Intérêt légitime (art. 6.1.f)</td></tr>
+          <tr><td>Vous envoyer des communications relatives au Service</td><td>Exécution du contrat / intérêt légitime</td></tr>
+          <tr><td>Envoyer des communications marketing facultatives</td><td>Consentement (art. 6.1.a)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">04</span> Sous-traitants & destinataires</h2>
+    <p>Nous ne vendons pas vos données. Nous faisons appel à des prestataires techniques (sous-traitants au sens du RGPD) strictement nécessaires au fonctionnement du Service, encadrés par des accords de traitement des données :</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Prestataire</th><th>Rôle</th><th>Données concernées</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Supabase</strong></td><td>Hébergement de la base de données, authentification, stockage de fichiers</td><td>Compte, marque, contenus, historique</td></tr>
+          <tr><td><strong>Vercel</strong></td><td>Hébergement de l'application</td><td>Données techniques de connexion</td></tr>
+          <tr><td><strong>Stripe</strong></td><td>Paiement et facturation</td><td>Données de facturation et de carte bancaire</td></tr>
+          <tr><td><strong>OpenAI</strong></td><td>Génération d'images (GPT-Image)</td><td>Requêtes et éléments transmis pour la génération</td></tr>
+          <tr><td><strong>Google</strong></td><td>Génération d'images (modèles Gemini / « Nano Banana »)</td><td>Requêtes et éléments transmis pour la génération</td></tr>
+          <tr><td><strong>Anthropic</strong></td><td>Génération et traitement de texte (Claude)</td><td>Requêtes textuelles transmises pour la génération</td></tr>
+          <tr><td><strong>Meta / Instagram</strong></td><td>Publication (si connexion activée)</td><td>Contenus publiés, identifiants de compte</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Nous pouvons également communiquer vos données si la loi l'exige ou pour protéger nos droits.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">05</span> Transferts hors Union européenne</h2>
+    <p>Certains de nos prestataires sont situés en dehors de l'Union européenne, notamment aux États-Unis. Dans ce cas, les transferts sont encadrés par des garanties appropriées : clauses contractuelles types de la Commission européenne, ou adhésion au cadre <em>EU-U.S. Data Privacy Framework</em> lorsque le prestataire y est certifié.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">06</span> Durées de conservation</h2>
+    <ul>
+      <li><strong>Données de compte et de marque</strong> : pendant toute la durée de vie du compte, puis supprimées ou anonymisées dans un délai raisonnable après sa clôture.</li>
+      <li><strong>Contenus générés</strong> : conservés tant que le compte est actif, sauf suppression de votre part.</li>
+      <li><strong>Données de facturation</strong> : conservées jusqu'à 10 ans conformément aux obligations comptables et fiscales.</li>
+      <li><strong>Journaux techniques</strong> : conservés pour une durée limitée à des fins de sécurité (généralement 12 mois maximum).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">07</span> Vos droits</h2>
+    <p>Conformément au RGPD, vous disposez des droits suivants sur vos données : droit d'accès, de rectification, d'effacement, de limitation, d'opposition, de portabilité, et le droit de retirer votre consentement à tout moment (pour les traitements fondés sur celui-ci).</p>
+    <p>Pour exercer ces droits, écrivez-nous à <a class="inline" href="mailto:contact@forje.studio">contact@forje.studio</a>. Nous répondrons dans un délai d'un mois. Une pièce justificative d'identité pourra être demandée en cas de doute raisonnable sur votre identité.</p>
+    <p>Vous pouvez également introduire une réclamation auprès de la <strong>CNIL</strong> (Commission Nationale de l'Informatique et des Libertés), 3 place de Fontenoy, 75007 Paris — <a class="inline" href="https://www.cnil.fr" target="_blank" rel="noopener">www.cnil.fr</a>.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">08</span> Cookies & traceurs</h2>
+    <p>Le Service utilise des cookies et technologies similaires strictement nécessaires à son fonctionnement (maintien de votre session d'authentification, préférences). Ces cookies essentiels ne requièrent pas de consentement préalable.</p>
+    <p>Si des cookies de mesure d'audience ou marketing venaient à être utilisés, votre consentement serait recueilli au préalable via un bandeau dédié, et vous pourriez le retirer à tout moment. <span class="fill">[À COMPLÉTER : préciser les éventuels outils de mesure d'audience utilisés, ex. analytics]</span></p>
+  </section>
+
+  <section>
+    <h2><span class="n">09</span> Sécurité</h2>
+    <p>Nous mettons en œuvre des mesures techniques et organisationnelles adaptées pour protéger vos données : chiffrement des mots de passe et des échanges, contrôle d'accès, cloisonnement des données par compte au niveau de la base (règles de sécurité au niveau des lignes). Aucun système n'étant infaillible, nous ne pouvons toutefois garantir une sécurité absolue.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">10</span> Modifications</h2>
+    <p>Cette politique peut être mise à jour pour refléter l'évolution du Service ou de la réglementation. Toute modification substantielle vous sera notifiée. La date de dernière mise à jour figure en tête de ce document.</p>
+    <p style="margin-top:20px;">Une question sur vos données ? <a class="inline" href="mailto:contact@forje.studio">contact@forje.studio</a>.</p>
+  </section>
+
+  <footer class="legal-foot">
+    <span class="copy">© 2026 Forje Studio</span>
+    <div class="links">
+      <a href="/legal/cgu.html">CGU</a>
+      <a href="/legal/confidentialite.html">Confidentialité</a>
+      <a href="/legal/mentions-legales.html">Mentions légales</a>
+      <a href="/">Retour au site →</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

@@ -2597,17 +2597,31 @@ const PackMiniCard = function(props) {
 };
 
 // Live preview panel (right column)
+// highlight : zone allumée au survol d'une tuile ('logo'|'palette'|'typo'|'style'|null)
 const BrandPostPreview = function(props) {
   var isCustom     = props.graphicStyle === 'custom';
   var pack         = isCustom ? null : FONT_PACKS.find(function(p) { return p.id === props.graphicStyle; });
   var primaryColor = props.primaryColor;
   var accentColor  = props.accentColor;
-  var logoUrl      = props.logoUrl;
   var name         = props.name;
   var badgeVisible = props.badgeVisible !== false;
   var barVisible   = props.barVisible !== false;
   var fontTitle    = props.fontPrimary || (pack ? pack.headStyle.fontFamily : 'DM Sans');
   var fontBody     = props.fontSecondary || (pack ? pack.bodyStyle.fontFamily : 'DM Sans');
+
+  // Variante de logo affichée selon le mode choisi (badge / nu / masqué)
+  var logoStyle = props.logoStyle || 'badge';
+  var logoUrl   = logoStyle === 'none' ? null
+    : logoStyle === 'logo_nu' ? (props.logoNuUrl || props.logoUrl)
+    : (props.logoBadgeUrl || props.logoUrl);
+
+  // Halo de mise en évidence quand la tuile correspondante est survolée
+  var hl = function(zone) {
+    return props.highlight === zone
+      ? { outline:'2px solid rgba(79,91,213,.95)', outlineOffset:3, borderRadius:5,
+          boxShadow:'0 0 18px rgba(79,91,213,.55)' }
+      : {};
+  };
 
   if (isCustom) {
     return (
@@ -2616,25 +2630,29 @@ const BrandPostPreview = function(props) {
         <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, transparent 30%, rgba(0,0,0,.85) 100%)' }}/>
         {logoUrl && (
           <img src={logoUrl} alt="" style={{ position:'absolute', top:14, right:14,
-            height:40, width:'auto', objectFit:'contain', zIndex:2 }}/>
+            height:34, width:34,
+            borderRadius: logoStyle === 'badge' ? '50%' : 0,
+            objectFit: logoStyle === 'badge' ? 'cover' : 'contain',
+            filter: logoStyle === 'logo_nu' ? 'drop-shadow(0 1px 4px rgba(0,0,0,.4))' : 'none',
+            zIndex:2, transition:'box-shadow .15s', ...hl('logo') }}/>
         )}
         <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'16px 14px', zIndex:1 }}>
           {badgeVisible && (
             <div style={{ display:'inline-block', padding:'2px 8px', borderRadius:3,
               background: accentColor || primaryColor, fontSize:9, fontWeight:700, color:'#fff',
-              letterSpacing:1.5, marginBottom:8, textTransform:'uppercase', fontFamily:'DM Sans,sans-serif' }}>
+              letterSpacing:1.5, marginBottom:8, textTransform:'uppercase', fontFamily:'DM Sans,sans-serif', ...hl('palette') }}>
               SPORT
             </div>
           )}
           <div style={{ fontFamily:"'" + fontTitle + "',Impact,sans-serif", fontSize:22, fontWeight:700,
-            color:'#fff', lineHeight:1.05, marginBottom:6, textTransform:'uppercase' }}>
+            color:'#fff', lineHeight:1.05, marginBottom:6, textTransform:'uppercase', ...hl('typo') }}>
             {name ? name.toUpperCase() : 'TON TITRE ICI'}
           </div>
           <div style={{ fontFamily:"'" + fontBody + "',DM Sans,sans-serif", fontSize:10, color:'rgba(255,255,255,.55)', lineHeight:1.5 }}>
             L'actu en temps réel.
           </div>
           {barVisible && (
-            <div style={{ position:'absolute', bottom:0, left:0, right:0, height:3, background: accentColor || primaryColor }}/>
+            <div style={{ position:'absolute', bottom:0, left:0, right:0, height:3, background: accentColor || primaryColor, ...hl('palette') }}/>
           )}
         </div>
       </div>
@@ -2675,21 +2693,23 @@ const BrandPostPreview = function(props) {
             background:'linear-gradient(to bottom, transparent 30%, rgba(0,0,0,.75) 100%)' }}/>
         )}
         {logoUrl && (
-          <img src={logoUrl} alt="" style={{ position:'absolute', top:14, right:14, height:22,
-            width:'auto', objectFit:'contain', zIndex:2,
-            filter: isLight ? 'none' : 'brightness(0) invert(1)' }}/>
+          <img src={logoUrl} alt="" style={{ position:'absolute', top:14, right:14,
+            height:30, width:30,
+            borderRadius: logoStyle === 'badge' ? '50%' : 0,
+            objectFit: logoStyle === 'badge' ? 'cover' : 'contain', zIndex:2,
+            filter: (logoStyle === 'logo_nu' && !isLight) ? 'drop-shadow(0 1px 4px rgba(0,0,0,.4))' : 'none', ...hl('logo') }}/>
         )}
         <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'16px 14px', zIndex:1 }}>
           {badgeVisible && (
             <div style={{ display:'inline-block', padding:'2px 8px',
               background:primaryColor, fontSize:9, fontWeight:700, color:'#fff',
               letterSpacing:1.5, marginBottom:8, textTransform:'uppercase',
-              fontFamily:pack.catStyle.fontFamily }}>
+              fontFamily:pack.catStyle.fontFamily, ...hl('palette') }}>
               SPORT
             </div>
           )}
           <div style={{ ...pack.headStyle, fontFamily: fontTitle, fontSize: Math.round(pack.headStyle.fontSize * .65), marginBottom:6,
-            color: isLight ? '#0a0a0a' : pack.headStyle.color }}>
+            color: isLight ? '#0a0a0a' : pack.headStyle.color, ...hl('typo') }}>
             {name ? name.toUpperCase() : pack.sampleHead}
           </div>
           <div style={{ ...pack.bodyStyle, fontFamily: fontBody, fontSize: Math.round(pack.bodyStyle.fontSize * 1.3),
@@ -2697,7 +2717,7 @@ const BrandPostPreview = function(props) {
             L'actu en temps reel.
           </div>
           {barVisible && (
-            <div style={{ position:'absolute', bottom:0, left:0, right:0, height:3, background:accentColor }}/>
+            <div style={{ position:'absolute', bottom:0, left:0, right:0, height:3, background:accentColor, ...hl('palette') }}/>
           )}
         </div>
       </div>
@@ -2719,24 +2739,27 @@ const BrandPostPreview = function(props) {
         background:'linear-gradient(to bottom, transparent 35%, rgba(0,0,0,.88) 100%)' }}/>
       {logoUrl && (
         <img src={logoUrl} alt="" style={{ position:'absolute', top:14, right:14,
-          height:22, width:'auto', objectFit:'contain', zIndex:2, filter:'brightness(0) invert(1)' }}/>
+          height:30, width:30,
+          borderRadius: logoStyle === 'badge' ? '50%' : 0,
+          objectFit: logoStyle === 'badge' ? 'cover' : 'contain', zIndex:2,
+          filter: logoStyle === 'logo_nu' ? 'drop-shadow(0 1px 4px rgba(0,0,0,.4))' : 'none', ...hl('logo') }}/>
       )}
       <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'16px 14px', zIndex:1 }}>
         {badgeVisible && (
           <div style={{ display:'inline-block', padding:'2px 8px', borderRadius:3,
             background:primaryColor, fontSize:9, fontWeight:700, color:'#fff',
-            letterSpacing:1.5, marginBottom:8, textTransform:'uppercase' }}>
+            letterSpacing:1.5, marginBottom:8, textTransform:'uppercase', ...hl('palette') }}>
             SPORT
           </div>
         )}
         <div style={{ fontSize:22, fontWeight:900, color:'#fff', lineHeight:1.05,
           marginBottom:6, letterSpacing:-0.5, textTransform:'uppercase',
-          fontFamily: fontTitle + ',sans-serif' }}>
+          fontFamily: fontTitle + ',sans-serif', ...hl('typo') }}>
           {name ? name.toUpperCase().slice(0,12) : 'MON MEDIA'}
         </div>
         <div style={{ fontSize:11, color:'rgba(255,255,255,.6)', fontFamily: fontBody + ',sans-serif' }}>L'actu en temps reel.</div>
         {barVisible && (
-          <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:accentColor }}/>
+          <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:accentColor, ...hl('palette') }}/>
         )}
       </div>
     </div>
@@ -2800,6 +2823,289 @@ const BrandSect = ({ num, title, desc, tip, children }) => (
     )}
   </div>
 );
+
+// ─── Modal de recadrage réutilisable (logo, refs, avatar…) ───────────────────
+// file : File à recadrer · onCropped(blob) : PNG 800×800 · onCancel()
+// shape : 'circle' (façon PP Instagram — pixels hors cercle transparents) | 'square'
+const ImageCropModal = function({ file, title, shape = 'square', onCancel, onCropped }) {
+  var VIEW = 320; // viewport carré en px
+  var [imgUrl, setImgUrl]   = useState(null);
+  var [imgDim, setImgDim]   = useState(null);   // { w, h } naturels
+  var [zoom, setZoom]       = useState(1);      // 1 = cover
+  var [off, setOff]         = useState({ x: 0, y: 0 });
+  var [exporting, setExporting] = useState(false);
+  var imgRef  = useRef(null);
+  var dragRef = useRef(null);
+
+  useEffect(function() {
+    if (!file) return;
+    var url = URL.createObjectURL(file);
+    setImgUrl(url);
+    var im = new Image();
+    im.onload = function() { setImgDim({ w: im.naturalWidth, h: im.naturalHeight }); };
+    im.src = url;
+    return function() { URL.revokeObjectURL(url); };
+  }, [file]);
+
+  if (!file) return null;
+
+  var baseScale = imgDim ? Math.max(VIEW / imgDim.w, VIEW / imgDim.h) : 1;
+  var scale     = baseScale * zoom;
+  var dispW     = imgDim ? imgDim.w * scale : VIEW;
+  var dispH     = imgDim ? imgDim.h * scale : VIEW;
+
+  // Clamp : l'image couvre toujours tout le viewport
+  var clampOff = function(o, z) {
+    var s  = baseScale * z;
+    var dw = imgDim ? imgDim.w * s : VIEW;
+    var dh = imgDim ? imgDim.h * s : VIEW;
+    return {
+      x: Math.min(0, Math.max(VIEW - dw, o.x)),
+      y: Math.min(0, Math.max(VIEW - dh, o.y)),
+    };
+  };
+
+  var centerForZoom = function(z) {
+    // Re-centre le zoom sur le centre du viewport
+    var s0 = baseScale * zoom, s1 = baseScale * z;
+    var cx = (VIEW / 2 - off.x) / s0, cy = (VIEW / 2 - off.y) / s0;
+    return clampOff({ x: VIEW / 2 - cx * s1, y: VIEW / 2 - cy * s1 }, z);
+  };
+
+  var onPointerDown = function(e) {
+    e.preventDefault();
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: off.x, oy: off.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  var onPointerMove = function(e) {
+    var d = dragRef.current;
+    if (!d) return;
+    setOff(clampOff({ x: d.ox + (e.clientX - d.sx), y: d.oy + (e.clientY - d.sy) }, zoom));
+  };
+  var onPointerUp = function() { dragRef.current = null; };
+  var onWheel = function(e) {
+    e.preventDefault();
+    var z = Math.min(4, Math.max(1, zoom * (e.deltaY < 0 ? 1.08 : 0.93)));
+    setOff(centerForZoom(z)); setZoom(z);
+  };
+
+  var doExport = function() {
+    if (!imgDim || !imgRef.current || exporting) return;
+    setExporting(true);
+    var OUT = 800;
+    var cv  = document.createElement('canvas');
+    cv.width = OUT; cv.height = OUT;
+    var ctx = cv.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    // Zone visible du viewport → coordonnées image source
+    var sx = -off.x / scale, sy = -off.y / scale, sw = VIEW / scale;
+    ctx.drawImage(imgRef.current, sx, sy, sw, sw, 0, 0, OUT, OUT);
+    if (shape === 'circle') {
+      // Détourage rond façon PP Instagram : tout ce qui dépasse du cercle devient transparent
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.beginPath();
+      ctx.arc(OUT / 2, OUT / 2, OUT / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    cv.toBlob(function(blob) {
+      setExporting(false);
+      if (blob) onCropped(blob);
+    }, 'image/png');
+  };
+
+  return (
+    <div className="brand-crop-overlay" onClick={onCancel}>
+      <div className="brand-crop-modal" onClick={function(e){ e.stopPropagation(); }} style={{ width: VIEW + 44 }}>
+        <div className="brand-crop-title">{title || 'Recadrer l\'image'}</div>
+        <div className="brand-crop-sub">Glisse pour cadrer · molette ou curseur pour zoomer</div>
+        <div className="brand-crop-view" onWheel={onWheel}
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+          style={{ width: VIEW, height: VIEW }}>
+          {imgUrl && (
+            <img ref={imgRef} src={imgUrl} alt="" draggable={false}
+              style={{ position:'absolute', left:off.x, top:off.y, width:dispW, height:dispH,
+                maxWidth:'none', userSelect:'none', pointerEvents:'none' }}/>
+          )}
+          {/* Grille de tiers */}
+          <div style={{ position:'absolute', inset:0, pointerEvents:'none',
+            backgroundImage:'linear-gradient(rgba(17,24,50,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(17,24,50,.14) 1px,transparent 1px)',
+            backgroundSize:(VIEW/3)+'px '+(VIEW/3)+'px' }}/>
+          {shape === 'circle' && (
+            /* Masque rond façon Instagram : voile sombre hors cercle + liseré */
+            <div style={{ position:'absolute', inset:0, pointerEvents:'none', borderRadius:'50%',
+              boxShadow:'0 0 0 ' + VIEW + 'px rgba(12,14,28,.5)',
+              border:'1.5px solid rgba(255,255,255,.85)' }}/>
+          )}
+        </div>
+        <div className="brand-crop-zoom">
+          <span>Zoom</span>
+          <input type="range" min="1" max="4" step="0.01" value={zoom}
+            onChange={function(e){ var z = Number(e.target.value); setOff(centerForZoom(z)); setZoom(z); }}/>
+        </div>
+        <div style={{ display:'flex', gap:8, marginTop:16 }}>
+          <button className="btn btn-ghost" style={{ flex:1 }} onClick={onCancel}>Annuler</button>
+          <button className="btn btn-primary" style={{ flex:1 }} onClick={doExport} disabled={exporting || !imgDim}>
+            {exporting ? '…' : 'Valider le cadrage'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Retouche du détourage : pinceau gomme / restauration (façon remove.bg) ───
+// imageUrl : PNG détouré à nettoyer · onSave(blob) : PNG corrigé · onCancel()
+const LogoEraseModal = function({ imageUrl, onCancel, onSave }) {
+  var VIEW = 400;
+  var canvasRef = useRef(null);
+  var origRef   = useRef(null);   // bitmap original — source du mode Restaurer
+  var undoRef   = useRef([]);     // snapshots pour annuler (max 12 traits)
+  var strokeRef = useRef(false);
+  var [ready,   setReady]   = useState(false);
+  var [mode,    setMode]    = useState('erase');  // 'erase' | 'restore'
+  var [brush,   setBrush]   = useState(28);       // diamètre affiché (px)
+  var [canUndo, setCanUndo] = useState(false);
+  var [saving,  setSaving]  = useState(false);
+  var [cursor,  setCursor]  = useState(null);
+  var [loadErr, setLoadErr] = useState('');
+
+  useEffect(function() {
+    var alive = true;
+    (async function() {
+      try {
+        var resp = await fetch(imageUrl, { mode: 'cors' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        var bmp  = await createImageBitmap(blob);
+        if (!alive) return;
+        origRef.current = bmp;
+        var cv = canvasRef.current;
+        cv.width = bmp.width; cv.height = bmp.height;
+        cv.getContext('2d').drawImage(bmp, 0, 0);
+        setReady(true);
+      } catch(e) { if (alive) setLoadErr('Chargement impossible : ' + e.message); }
+    })();
+    return function(){ alive = false; };
+  }, [imageUrl]);
+
+  var toCanvasXY = function(e) {
+    var cv = canvasRef.current;
+    var r  = cv.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (cv.width / r.width),
+      y: (e.clientY - r.top)  * (cv.height / r.height),
+      scale: cv.width / r.width,
+    };
+  };
+
+  var applyBrush = function(e) {
+    var cv = canvasRef.current;
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var p   = toCanvasXY(e);
+    var rad = (brush / 2) * p.scale;
+    if (mode === 'erase') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    } else if (origRef.current) {
+      ctx.save();
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2); ctx.clip();
+      ctx.clearRect(p.x - rad, p.y - rad, rad * 2, rad * 2);
+      ctx.drawImage(origRef.current, 0, 0);
+      ctx.restore();
+    }
+  };
+
+  var onDown = function(e) {
+    if (!ready) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    var cv = canvasRef.current, ctx = cv.getContext('2d');
+    undoRef.current.push(ctx.getImageData(0, 0, cv.width, cv.height));
+    if (undoRef.current.length > 12) undoRef.current.shift();
+    setCanUndo(true);
+    strokeRef.current = true;
+    applyBrush(e);
+  };
+  var onMove = function(e) {
+    var r = e.currentTarget.getBoundingClientRect();
+    setCursor({ x: e.clientX - r.left, y: e.clientY - r.top });
+    if (strokeRef.current) applyBrush(e);
+  };
+  var endStroke = function() { strokeRef.current = false; };
+  var undo = function() {
+    var snap = undoRef.current.pop();
+    if (snap && canvasRef.current) canvasRef.current.getContext('2d').putImageData(snap, 0, 0);
+    setCanUndo(undoRef.current.length > 0);
+  };
+
+  var save = function() {
+    if (saving || !ready) return;
+    setSaving(true);
+    canvasRef.current.toBlob(function(blob) {
+      if (blob) onSave(blob); else setSaving(false);
+    }, 'image/png');
+  };
+
+  return (
+    <div className="brand-crop-overlay" onClick={onCancel}>
+      <div className="brand-crop-modal" onClick={function(e){ e.stopPropagation(); }} style={{ width: VIEW + 44 }}>
+        <div className="brand-crop-title">Nettoyer le détourage</div>
+        <div className="brand-crop-sub">Gomme les résidus au pinceau · Restaurer récupère ce qui a été effacé de trop.</div>
+        <div className="brand-erase-view" style={{ width: VIEW, height: VIEW }}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={endStroke}
+          onPointerLeave={function(){ setCursor(null); endStroke(); }}>
+          <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block' }}/>
+          {cursor && ready && (
+            <div style={{ position:'absolute', left:cursor.x - brush/2, top:cursor.y - brush/2,
+              width:brush, height:brush, borderRadius:'50%', pointerEvents:'none',
+              border:'1.5px solid ' + (mode === 'erase' ? 'rgba(196,61,61,.9)' : 'rgba(31,163,92,.9)'),
+              background: mode === 'erase' ? 'rgba(196,61,61,.10)' : 'rgba(31,163,92,.10)' }}/>
+          )}
+          {!ready && !loadErr && (
+            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <div className="forje-blob-spin forje-blob-spin--sm"/>
+            </div>
+          )}
+          {loadErr && (
+            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:12, color:'#A83030', padding:20, textAlign:'center' }}>{loadErr}</div>
+          )}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:14 }}>
+          <span className="brand-seg">
+            {[['erase','Gommer'],['restore','Restaurer']].map(function(m) {
+              return (
+                <button key={m[0]} onClick={function(){ setMode(m[0]); }}
+                  className={'brand-seg__opt' + (mode === m[0] ? ' is-active' : '')}>
+                  {m[1]}
+                </button>
+              );
+            })}
+          </span>
+          <div style={{ flex:1, display:'flex', alignItems:'center', gap:8, fontSize:11, color:'var(--app-fg-4)' }}>
+            <span>Taille</span>
+            <input type="range" min="8" max="90" value={brush}
+              onChange={function(e){ setBrush(Number(e.target.value)); }}
+              style={{ flex:1, accentColor:'var(--app-accent)' }}/>
+          </div>
+          <button onClick={undo} disabled={!canUndo} title="Annuler le dernier trait"
+            style={{ all:'unset', cursor: canUndo ? 'pointer' : 'not-allowed', fontSize:15, lineHeight:1,
+              padding:'4px 8px', borderRadius:8, color: canUndo ? 'var(--app-fg-2)' : 'var(--app-fg-4)',
+              opacity: canUndo ? 1 : .4 }}>↩</button>
+        </div>
+        <div style={{ display:'flex', gap:8, marginTop:16 }}>
+          <button className="btn btn-ghost" style={{ flex:1 }} onClick={onCancel}>Annuler</button>
+          <button className="btn btn-primary" style={{ flex:1 }} onClick={save} disabled={saving || !ready}>
+            {saving ? '…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ─── Paper-motion : animations de packs déclenchées au clic ──────────────────
 const PACK_ANIM_CSS = `
@@ -2962,10 +3268,18 @@ const PackAnimatedCard = function(props) {
 
 const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   var [name,            setName]            = useState('');
-  var [logoUrl,         setLogoUrl]         = useState('');
-  var [logoUploading,   setLogoUploading]   = useState(false);
-  var [styleRefUrl,     setStyleRefUrl]     = useState('');
-  var [styleRefUploading, setStyleRefUploading] = useState(false);
+  var [logoBadgeUrl,    setLogoBadgeUrl]    = useState('');   // logo avec son vrai fond
+  var [logoNuUrl,       setLogoNuUrl]       = useState('');   // logo détouré (remove.bg)
+  var [logoBusy,        setLogoBusy]        = useState('');   // '' | 'upload' | 'derive' | 'forge' | url candidate en cours
+  var [logoErr,         setLogoErr]         = useState('');   // erreur affichée dans la tuile Logo
+  var [cropFile,        setCropFile]        = useState(null); // fichier en cours de recadrage
+  var [eraseOpen,       setEraseOpen]       = useState(false); // pinceau de nettoyage du nu
+  var [forgeOpen,       setForgeOpen]       = useState(false);
+  var [forgePrompt,     setForgePrompt]     = useState('');
+  var [forgeCandidates, setForgeCandidates] = useState([]);
+  var [styleRefUrls,    setStyleRefUrls]    = useState([]);   // refs visuelles (max 3)
+  var [refBusy,         setRefBusy]         = useState(false);
+  var [highlightZone,   setHighlightZone]   = useState(null); // hover tuile → zone aperçu
   var [primaryColor,    setPrimaryColor]    = useState('#6366F1');
   var [accentColor,     setAccentColor]     = useState('#10B981');
   var [fontPrimary,     setFontPrimary]     = useState('Bebas Neue');
@@ -3008,7 +3322,8 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   useEffect(function() {
     var sb = window.__supabase; var user = window.__currentUser;
     // Reset du formulaire à chaque changement de compte
-    setName(''); setLogoUrl(''); setStyleRefUrl('');
+    setName(''); setLogoBadgeUrl(''); setLogoNuUrl(''); setStyleRefUrls([]);
+    setLogoBusy(''); setLogoErr(''); setCropFile(null); setEraseOpen(false); setForgeOpen(false); setForgePrompt(''); setForgeCandidates([]);
     setPrimaryColor('#6366F1'); setAccentColor('#10B981'); setFontPrimary('Bebas Neue'); setFontBody('Barlow');
     setFontId('bebas-neue'); setFontSet('impact'); setFontIsCustom(false); setFontCustomUrl(''); setFontBodyUrl(''); setFontMode('packs');
     setFontUploading(''); setFontUploadErr(''); setFontRights(false);
@@ -3026,7 +3341,8 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
         var d = res.data;
         if (d) {
           setName(d.name || '');
-          setLogoUrl(d.logo_url || '');
+          setLogoBadgeUrl(d.logo_badge_url || d.logo_url || '');
+          setLogoNuUrl(d.logo_nu_url || '');
           if (d.brand_colors && d.brand_colors[0]) setPrimaryColor(d.brand_colors[0]);
           if (d.brand_colors && d.brand_colors[1]) setAccentColor(d.brand_colors[1]);
           setFontPrimary(d.font_primary || 'Bebas Neue');
@@ -3051,7 +3367,10 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
           setInstaHandle(d.instagram_handle || '');
           setHashtags(d.hashtags || []);
           setPreferredFormat(d.preferred_format || '4:5');
-          setStyleRefUrl(d.style_ref_url || '');
+          setStyleRefUrls(
+            (Array.isArray(d.style_ref_urls) && d.style_ref_urls.length ? d.style_ref_urls
+              : (d.style_ref_url ? [d.style_ref_url] : [])).slice(0, 3)
+          );
           setBadgeVisible(d.badge_visible !== false);
           setBarVisible(d.bar_visible !== false);
           setBrandKitUrl(d.brand_kit_url || '');
@@ -3071,24 +3390,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
     document.head.appendChild(link);
   }, []);
 
-  // Inject bento CSS once
-  useEffect(function() {
-    var id = 'brand-bento-css';
-    if (document.getElementById(id)) return;
-    var s = document.createElement('style');
-    s.id = id;
-    s.textContent = [
-      '.brand-bento{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}',
-      '.bento-tile{background:var(--app-surface-2);border:1px solid var(--app-line);border-radius:14px;padding:18px 20px;transition:border-color .18s,box-shadow .18s;position:relative;overflow:hidden;box-sizing:border-box;}',
-      '.bento-tile:hover{border-color:rgba(99,102,241,.3);box-shadow:0 0 0 1px rgba(99,102,241,.08),0 4px 24px rgba(0,0,0,.18);}',
-      '.bento-tile--wide{grid-column:span 2;}',
-      '.bento-tile--full{grid-column:span 3;}',
-      '.bento-tile-lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--app-fg-4);margin-bottom:14px;display:flex;align-items:center;gap:6px;}',
-      '.bento-color-block{height:48px;border-radius:9px;cursor:pointer;transition:transform .15s;margin-bottom:7px;}',
-      '.bento-color-block:hover{transform:scaleY(1.04);}',
-    ].join('');
-    document.head.appendChild(s);
-  }, []);
+  // Le style de la page vit dans app-screens.css (section « BRAND — design system »)
 
   var loadCustomFont = function(name) {
     if (!name || !name.trim()) return;
@@ -3201,80 +3503,216 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
     setGraphicStyle('custom');
   };
 
-  var handleRelogo = async function() {
-    if (!brandKitUrl || !clientId || relogoing) return;
-    setRelogoing(true); setSaveErr('');
-    try {
-      var sb = window.__supabase;
-      var token = null;
-      if (sb) { var sess = await sb.auth.getSession(); token = sess.data?.session?.access_token; }
-      var res = await fetch('/api/generate/brand-identity/relogo', {
+  // POST authentifié vers /api/generate/* — utilisé par forge / apply / relogo.
+  // Sur 401 (token expiré, ex. après une coupure réseau), rafraîchit la session
+  // Supabase et rejoue la requête une fois.
+  var apiPost = async function(path, body) {
+    var sb = window.__supabase;
+    var doFetch = async function(token) {
+      return fetch('/api/generate' + path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}) },
-        body: JSON.stringify({ clientId, imageUrl: brandKitUrl }),
+        body: JSON.stringify(body),
       });
-      var data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur');
-      if (data.logoUrl) setLogoUrl(data.logoUrl);
+    };
+    var token = null;
+    if (sb) { var sess = await sb.auth.getSession(); token = sess.data?.session?.access_token; }
+    var res = await doFetch(token);
+    if (res.status === 401 && sb) {
+      try {
+        var ref = await sb.auth.refreshSession();
+        var fresh = ref.data?.session?.access_token;
+        if (fresh) res = await doFetch(fresh);
+      } catch(_) {}
+    }
+    var data = await res.json();
+    if (!res.ok) throw new Error(res.status === 401 ? 'Session expirée — recharge la page' : (data.error || 'Erreur serveur'));
+    return data;
+  };
+
+  // Sidebar & liste de comptes lisent clients.logo_url — on les resynchronise
+  var refreshClientsList = function() {
+    if (window.__reloadClients) { try { window.__reloadClients(); } catch(_) {} }
+  };
+
+  // ↻ Brand kit — reforge un logo cohérent avec l'univers du kit (gratuit)
+  var handleRelogo = async function() {
+    if (!brandKitUrl || !clientId || relogoing) return;
+    setRelogoing(true); setLogoErr('');
+    try {
+      var data = await apiPost('/brand-identity/relogo', { clientId, imageUrl: brandKitUrl });
+      if (data.badgeUrl) setLogoBadgeUrl(data.badgeUrl);
+      if (data.nuUrl)    setLogoNuUrl(data.nuUrl);
+      refreshClientsList();
     } catch(e) {
-      setSaveErr('Relogo échoué : ' + e.message);
+      setLogoErr('Forge du logo échouée : ' + e.message);
     }
     setRelogoing(false);
   };
 
+  // Choix d'affichage sur les posts : 'badge' | 'logo_nu' | 'none'
   var handleLogoStyleChange = async function(newStyle) {
     setLogoStyle(newStyle);
     var sb = window.__supabase; var user = window.__currentUser;
     if (sb && user && clientId) {
       await sb.from('clients').update({ logo_style: newStyle }).eq('id', clientId).eq('user_id', user.id);
     }
-    if (newStyle === 'logo_nu' && brandKitUrl) {
-      handleRelogo();
+    // Variante nu manquante → on la dérive du badge à la volée
+    if (newStyle === 'logo_nu' && !logoNuUrl && logoBadgeUrl && clientId) {
+      setLogoBusy('derive'); setLogoErr('');
+      try {
+        var data = await apiPost('/brand-identity/logo-apply', { clientId, imageUrl: logoBadgeUrl });
+        if (data.nuUrl) setLogoNuUrl(data.nuUrl);
+        refreshClientsList();
+      } catch(e) { setLogoErr('Détourage échoué : ' + e.message); }
+      setLogoBusy('');
     }
   };
 
-  var handleLogoUpload = function(file) {
-    if (!file) return;
-    if (file.type !== 'image/png') { setSaveErr('Logo : PNG uniquement (fond transparent requis)'); return; }
+  // ↻ sur la carte Logo nu — relance le détourage depuis le badge actuel
+  var handleRederiveNu = async function() {
+    if (!clientId || !logoBadgeUrl || logoBusy) return;
+    setLogoBusy('derive'); setLogoErr('');
+    try {
+      var data = await apiPost('/brand-identity/logo-apply', { clientId, imageUrl: logoBadgeUrl });
+      if (data.nuUrl) setLogoNuUrl(data.nuUrl);
+      refreshClientsList();
+    } catch(e) { setLogoErr('Détourage échoué : ' + e.message); }
+    setLogoBusy('');
+  };
+
+  // ✎ Nettoyage manuel du nu (pinceau) → upload direct + DB, aucun re-traitement
+  var handleNuEdited = async function(blob) {
+    setEraseOpen(false);
     var sb = window.__supabase; var user = window.__currentUser;
     if (!sb || !user) return;
-    setLogoUploading(true); setSaveErr('');
-    var folder = clientId ? user.id + '/' + clientId : user.id + '/draft';
-    var path = folder + '/logo.png';
-    sb.storage.from('brand-assets').upload(path, file, { upsert:true, contentType:'image/png' })
-      .then(function(res) {
-        if (res.error) { setSaveErr('Upload echoué : ' + res.error.message); setLogoUploading(false); return; }
-        var pub = sb.storage.from('brand-assets').getPublicUrl(path);
-        var url = pub.data.publicUrl + '?t=' + Date.now();
-        setLogoUrl(url);
-        if (clientId) {
-          sb.from('clients').update({ logo_url: url }).eq('id', clientId).eq('user_id', user.id)
-            .then(function(r) { if (r.error) setSaveErr('Logo sauvegardé localement, erreur DB : ' + r.error.message); });
-        }
-        setLogoUploading(false);
-      });
+    setLogoBusy('derive'); setLogoErr('');
+    try {
+      var folder = clientId ? user.id + '/' + clientId : user.id + '/draft';
+      var path = folder + '/logo-nu-edit-' + Date.now() + '.png';
+      var up = await sb.storage.from('brand-assets').upload(path, blob, { upsert:true, contentType:'image/png' });
+      if (up.error) throw up.error;
+      var url = sb.storage.from('brand-assets').getPublicUrl(path).data.publicUrl;
+      setLogoNuUrl(url);
+      if (clientId) {
+        var r = await sb.from('clients').update({ logo_nu_url: url }).eq('id', clientId).eq('user_id', user.id);
+        if (r.error) throw r.error;
+        refreshClientsList();
+      }
+    } catch(e) {
+      setLogoErr('Sauvegarde du nettoyage échouée : ' + (e.message || e));
+    }
+    setLogoBusy('');
+  };
+
+  // Import : n'importe quelle image → modal de recadrage rond → upload → badge + nu
+  var handleLogoFilePick = function(file) {
+    if (!file || !file.type.startsWith('image/')) { setLogoErr('Choisis une image (PNG, JPG, WebP…)'); return; }
+    setLogoErr('');
+    setCropFile(file);
+  };
+
+  var handleLogoCropped = async function(blob) {
+    setCropFile(null);
+    var sb = window.__supabase; var user = window.__currentUser;
+    if (!sb || !user) return;
+    setLogoBusy('upload'); setLogoErr('');
+    try {
+      var folder = clientId ? user.id + '/' + clientId : user.id + '/draft';
+      var path = folder + '/logo-import-' + Date.now() + '.png';
+      var up = await sb.storage.from('brand-assets').upload(path, blob, { upsert:true, contentType:'image/png' });
+      if (up.error) throw up.error;
+      var url = sb.storage.from('brand-assets').getPublicUrl(path).data.publicUrl;
+      setLogoBadgeUrl(url); setLogoNuUrl('');
+      if (clientId) {
+        // Le serveur normalise le badge (rond) et dérive le logo nu (remove.bg)
+        setLogoBusy('derive');
+        var data = await apiPost('/brand-identity/logo-apply', { clientId, imageUrl: url });
+        if (data.badgeUrl) setLogoBadgeUrl(data.badgeUrl);
+        if (data.nuUrl)    setLogoNuUrl(data.nuUrl);
+        refreshClientsList();
+      }
+    } catch(e) {
+      setLogoErr('Import du logo échoué : ' + (e.message || e));
+    }
+    setLogoBusy('');
+  };
+
+  // ✦ Forge IA — 3 propositions guidées par la marque (coûte des crédits)
+  var handleForge = async function() {
+    if (!clientId || logoBusy === 'forge') return;
+    setLogoBusy('forge'); setLogoErr(''); setForgeCandidates([]);
+    try {
+      var data = await apiPost('/brand-identity/logo-forge', { clientId, userPrompt: forgePrompt });
+      setForgeCandidates(data.candidates || []);
+      if (typeof data.creditsLeft === 'number' && window.__setCredits) window.__setCredits(data.creditsLeft);
+    } catch(e) {
+      setLogoErr('Forge échouée : ' + e.message);
+    }
+    setLogoBusy('');
+  };
+
+  var handleApplyCandidate = async function(url) {
+    if (!clientId || logoBusy) return;
+    setLogoBusy(url); setLogoErr('');
+    try {
+      var data = await apiPost('/brand-identity/logo-apply', { clientId, imageUrl: url });
+      if (data.badgeUrl) setLogoBadgeUrl(data.badgeUrl);
+      if (data.nuUrl)    setLogoNuUrl(data.nuUrl);
+      setForgeCandidates([]); setForgeOpen(false); setForgePrompt('');
+      refreshClientsList();
+    } catch(e) {
+      setLogoErr('Application du logo échouée : ' + e.message);
+    }
+    setLogoBusy('');
+  };
+
+  var handleDeleteLogo = function() {
+    setLogoBadgeUrl(''); setLogoNuUrl(''); setLogoErr('');
+    var sb = window.__supabase; var user = window.__currentUser;
+    if (sb && user && clientId) {
+      sb.from('clients').update({ logo_url: null, logo_badge_url: null, logo_nu_url: null })
+        .eq('id', clientId).eq('user_id', user.id)
+        .then(function(r) {
+          if (r.error) setLogoErr('Suppression : ' + r.error.message);
+          else refreshClientsList();
+        });
+    }
+  };
+
+  // Refs visuelles — jusqu'à 3, persistées immédiatement quand le compte existe
+  var persistStyleRefs = function(urls) {
+    var sb = window.__supabase; var user = window.__currentUser;
+    if (!sb || !user || !clientId) return;
+    sb.from('clients').update({ style_ref_urls: urls, style_ref_url: urls[0] || null })
+      .eq('id', clientId).eq('user_id', user.id)
+      .then(function(r) { if (r.error) setSaveErr('Refs sauvegardées localement, erreur DB : ' + r.error.message); });
   };
 
   var handleStyleRefUpload = function(file) {
     if (!file || !file.type.startsWith('image/')) return;
+    if (styleRefUrls.length >= 3) return;
     var sb = window.__supabase; var user = window.__currentUser;
     if (!sb || !user) return;
-    setStyleRefUploading(true); setSaveErr('');
+    setRefBusy(true); setSaveErr('');
     var ext = file.type === 'image/png' ? 'png' : 'jpg';
     var folder = clientId ? user.id + '/' + clientId : user.id + '/draft';
-    var path = folder + '/style-ref.' + ext;
+    var path = folder + '/style-ref-' + Date.now() + '.' + ext;
     sb.storage.from('brand-assets').upload(path, file, { upsert:true, contentType:file.type })
       .then(function(res) {
-        if (res.error) { setSaveErr('Upload echoué : ' + res.error.message); setStyleRefUploading(false); return; }
-        var pub = sb.storage.from('brand-assets').getPublicUrl(path);
-        var url = pub.data.publicUrl + '?t=' + Date.now();
-        setStyleRefUrl(url);
-        if (clientId) {
-          sb.from('clients').update({ style_ref_url: url }).eq('id', clientId).eq('user_id', user.id)
-            .then(function(r) { if (r.error) setSaveErr('Style ref sauvegardé localement, erreur DB : ' + r.error.message); });
-        }
-        setStyleRefUploading(false);
+        if (res.error) { setSaveErr('Upload echoué : ' + res.error.message); setRefBusy(false); return; }
+        var url = sb.storage.from('brand-assets').getPublicUrl(path).data.publicUrl;
+        var next = styleRefUrls.concat([url]).slice(0, 3);
+        setStyleRefUrls(next);
+        persistStyleRefs(next);
+        setRefBusy(false);
       });
+  };
+
+  var removeStyleRef = function(idx) {
+    var next = styleRefUrls.filter(function(_, i){ return i !== idx; });
+    setStyleRefUrls(next);
+    persistStyleRefs(next);
   };
 
   var analyzeInstagram = function() {
@@ -3309,7 +3747,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
 
   var completedCount = [
     name.trim().length > 0,
-    logoUrl.length > 0,
+    logoBadgeUrl.length > 0 || logoStyle === 'none',
     !!(primaryColor && accentColor),
     !!graphicStyle,
     !!mood,
@@ -3334,7 +3772,9 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
     var row = {
       user_id:          user.id,
       name:             name,
-      logo_url:         logoUrl,
+      logo_url:         logoBadgeUrl || null,
+      logo_badge_url:   logoBadgeUrl || null,
+      logo_nu_url:      logoNuUrl || null,
       brand_colors:     [primaryColor, accentColor],
       font_primary:     fontPrimary,
       font_body:        fontBody || null,
@@ -3354,7 +3794,8 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
       instagram_handle: instaHandle,
       hashtags:         hashtags,
       preferred_format: preferredFormat,
-      style_ref_url:    styleRefUrl || null,
+      style_ref_urls:   styleRefUrls,
+      style_ref_url:    styleRefUrls[0] || null,
     };
     var query = clientId
       ? sb.from('clients').update(row).eq('id', clientId).eq('user_id', user.id).select('id').maybeSingle()
@@ -3436,14 +3877,11 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0, marginTop:4 }}>
           {/* Progress pill */}
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 14px',
-            borderRadius:20, background:'var(--app-surface-2)', border:'1px solid var(--app-line)',
-            fontSize:12, color:'var(--app-fg-3)' }}>
-            <div style={{ width:36, height:3.5, background:'var(--app-line)', borderRadius:2, position:'relative', overflow:'hidden' }}>
-              <div style={{ position:'absolute', left:0, top:0, height:'100%',
+          <div className="brand-progress">
+            <div className="brand-progress__track">
+              <div className="brand-progress__fill" style={{
                 width:(completedCount / 7 * 100) + '%',
-                background: completedCount === 7 ? '#22c55e' : 'var(--app-accent)',
-                borderRadius:2, transition:'width .3s ease' }}/>
+                background: completedCount === 7 ? '#1FA35C' : 'var(--app-accent)' }}/>
             </div>
             <span style={{ fontVariantNumeric:'tabular-nums' }}>
               {completedCount}<span style={{ opacity:.45 }}>/7</span>
@@ -3451,11 +3889,10 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
           </div>
           {clientId && (
             <Btn
-              variant="ghost"
+              variant={confirmingDelete ? 'danger' : 'ghost'}
               disabled={deleting}
               onClick={confirmingDelete ? handleDelete : () => setConfirmingDelete(true)}
-              onBlur={() => setTimeout(() => setConfirmingDelete(false), 200)}
-              style={confirmingDelete ? { borderColor:'var(--app-danger)', color:'var(--app-danger)', background:'rgba(209,69,69,.07)' } : {}}>
+              onBlur={() => setTimeout(() => setConfirmingDelete(false), 200)}>
               {deleting ? 'Suppression...' : confirmingDelete ? 'Confirmer ?' : 'Supprimer'}
             </Btn>
           )}
@@ -3543,77 +3980,176 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
             )}
           </div>
 
-          {/* TILE 2 — Logo */}
-          <div className="bento-tile" style={{ display:'flex', flexDirection:'column', minHeight:200 }}>
+          {/* TILE 2 — LOGO STUDIO (wide) */}
+          <div className="bento-tile bento-tile--wide" style={{ display:'flex', flexDirection:'column', minHeight:220 }}
+            onMouseEnter={function(){ setHighlightZone('logo'); }} onMouseLeave={function(){ setHighlightZone(null); }}>
             <div className="bento-tile-lbl"><AppIcon name="image" size={11}/>Logo</div>
-            {logoUrl ? (
-              <div style={{ flex:1, display:'flex', flexDirection:'column', gap:8 }}>
-                <div style={{ flex:1, background:'#0a0a15', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', padding:16, minHeight:100, border:'1px solid rgba(255,255,255,.06)' }}>
-                  <img src={logoUrl} style={{ maxWidth:'100%', maxHeight:80, objectFit:'contain' }}/>
-                </div>
-                <div style={{ display:'flex', gap:6 }}>
-                  {brandKitUrl && (
-                    <Btn variant="ghost" size="sm" disabled={relogoing} onClick={handleRelogo} style={{ flex:1, justifyContent:'center' }}>
-                      {relogoing ? '↻ ...' : '↻ Brand kit'}
-                    </Btn>
-                  )}
-                  <Btn variant="ghost" size="sm" onClick={function(){ setLogoUrl(''); }} style={{ flex:1, justifyContent:'center', color:'#ef4444', borderColor:'rgba(239,68,68,.35)' }}>Supprimer</Btn>
-                </div>
-                <div style={{ display:'flex', gap:4, background:'rgba(255,255,255,.04)', borderRadius:8, padding:'3px' }}>
-                  {[['badge', '⬤  Badge'], ['logo_nu', '◎  Logo nu']].map(function(opt) {
-                    var active = logoStyle === opt[0];
+            <div className="bento-role">Signé en haut à droite de chaque post. Choisis la version qui apparaît.</div>
+
+            {logoBadgeUrl ? (
+              <div style={{ display:'flex', gap:16, flex:1, alignItems:'stretch' }}>
+                {/* Les deux variantes — cliquer = choisir celle affichée sur les posts */}
+                <div style={{ display:'flex', gap:10, flex:1, opacity: logoStyle === 'none' ? .4 : 1, transition:'opacity .2s' }}>
+                  {[
+                    ['badge',   'Badge',   logoBadgeUrl, 'dark',  'Avec son fond'],
+                    ['logo_nu', 'Logo nu', logoNuUrl,    'alpha', 'Détouré'],
+                  ].map(function(v) {
+                    var kind = v[0], lbl = v[1], url = v[2], canvas = v[3], sub = v[4];
+                    var active = logoStyle === kind && logoStyle !== 'none';
+                    var deriving = kind === 'logo_nu' && !url && logoBusy === 'derive';
                     return (
-                      <button key={opt[0]} onClick={function(){ handleLogoStyleChange(opt[0]); }}
-                        style={{ flex:1, padding:'5px 0', borderRadius:6, border:'none', cursor:'pointer', fontSize:11, fontWeight:active?700:400,
-                          background: active ? 'rgba(99,102,241,.35)' : 'transparent',
-                          color: active ? '#a5b4fc' : 'var(--app-fg-4)',
-                          transition:'background .15s,color .15s' }}>
-                        {opt[1]}
-                      </button>
+                      <div key={kind} onClick={function(){ if (logoStyle !== kind) handleLogoStyleChange(kind); }}
+                        className={'brand-logo-variant' + (active ? ' is-active' : '')}>
+                        <div className={'brand-logo-variant__canvas brand-logo-variant__canvas--' + canvas}>
+                          {url
+                            ? (kind === 'badge'
+                                ? <div style={{ width:'68%', maxWidth:180, aspectRatio:'1', borderRadius:'50%', overflow:'hidden', flexShrink:0,
+                                    boxShadow:'0 0 0 1px rgba(255,255,255,.18), 0 10px 26px -10px rgba(0,0,0,.6)' }}>
+                                    <img src={url} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                                  </div>
+                                : <img src={url} style={{ maxWidth:'78%', maxHeight:150, objectFit:'contain' }}/>)
+                            : deriving
+                              ? <div className="forje-blob-spin forje-blob-spin--sm"/>
+                              : <span style={{ fontSize:10.5, color:'var(--app-fg-4)', textAlign:'center', lineHeight:1.5 }}>Détourage auto<br/>au premier clic</span>
+                          }
+                        </div>
+                        <div className="brand-logo-variant__meta">
+                          <div>
+                            <div className="brand-logo-variant__name">{lbl}</div>
+                            <div className="brand-logo-variant__sub">{sub}</div>
+                          </div>
+                          <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+                            {kind === 'logo_nu' && url && (
+                              <button title="Nettoyer au pinceau"
+                                onClick={function(ev){ ev.stopPropagation(); setEraseOpen(true); }}
+                                disabled={!!logoBusy}
+                                style={{ all:'unset', cursor:'pointer', lineHeight:1, padding:'3px 5px',
+                                  borderRadius:6, color:'var(--app-fg-4)', display:'inline-flex' }}>
+                                <AppIcon name="edit" size={12}/>
+                              </button>
+                            )}
+                            {kind === 'logo_nu' && url && clientId && (
+                              <button title="Relancer le détourage auto"
+                                onClick={function(ev){ ev.stopPropagation(); handleRederiveNu(); }}
+                                disabled={!!logoBusy}
+                                style={{ all:'unset', cursor:'pointer', fontSize:12, lineHeight:1, padding:'3px 5px',
+                                  borderRadius:6, color:'var(--app-fg-4)' }}>
+                                {logoBusy === 'derive' ? '…' : '↻'}
+                              </button>
+                            )}
+                            {active && <div className="brand-logo-variant__check">✓</div>}
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
+
+                {/* Actions */}
+                <div style={{ width:158, display:'flex', flexDirection:'column', gap:7, flexShrink:0 }}>
+                  <Btn variant="accent" size="sm" disabled={!clientId || logoBusy === 'forge'}
+                    onClick={function(){ setForgeOpen(!forgeOpen); }}>
+                    <AppIcon name="sparkle" size={12}/> Forger avec l'IA
+                  </Btn>
+                  <Btn variant="ghost" size="sm" disabled={!!logoBusy}
+                    onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleLogoFilePick(e.target.files[0]); }; inp.click(); }}>
+                    {logoBusy === 'upload' || logoBusy === 'derive' ? 'Import…' : 'Remplacer'}
+                  </Btn>
+                  {brandKitUrl && (
+                    <Btn variant="ghost" size="sm" disabled={relogoing} onClick={handleRelogo}>
+                      {relogoing ? 'Forge…' : '↻ Depuis le brand kit'}
+                    </Btn>
+                  )}
+                  <Btn variant="danger" size="sm" onClick={handleDeleteLogo}>Supprimer</Btn>
+                  <div style={{ display:'flex', alignItems:'center', gap:9, marginTop:'auto', paddingTop:8 }}>
+                    <button className={'brand-switch' + (logoStyle === 'none' ? ' is-on' : '')}
+                      onClick={function(){ handleLogoStyleChange(logoStyle === 'none' ? 'badge' : 'none'); }}
+                      aria-label="Masquer le logo sur les posts"/>
+                    <span style={{ fontSize:10.5, lineHeight:1.4, userSelect:'none', cursor:'pointer',
+                      color: logoStyle === 'none' ? 'var(--app-fg-2)' : 'var(--app-fg-4)' }}
+                      onClick={function(){ handleLogoStyleChange(logoStyle === 'none' ? 'badge' : 'none'); }}>
+                      Masquer sur les posts
+                    </span>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/png'; inp.onchange=function(e){ handleLogoUpload(e.target.files[0]); }; inp.click(); }}
-                style={{ flex:1, border:'1.5px dashed var(--app-line)', borderRadius:10, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, cursor:'pointer', padding:16, background: logoUploading ? 'var(--app-surface-3)' : 'transparent', minHeight:120 }}>
-                {logoUploading
-                  ? <div className="forje-blob-spin forje-blob-spin--sm"/>
-                  : <><div style={{width:36,height:36,borderRadius:9,background:'var(--app-surface-3)',display:'flex',alignItems:'center',justifyContent:'center'}}><AppIcon name="image" size={17}/></div><div style={{fontSize:12,color:'var(--app-fg-4)',lineHeight:1.6,textAlign:'center'}}>Glisse ou clique<br/><span style={{fontSize:10,opacity:.6}}>PNG transparent</span></div></>
-                }
+              <div style={{ display:'flex', gap:10, flex:1 }}>
+                <div className="brand-logo-drop"
+                  onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleLogoFilePick(e.target.files[0]); }; inp.click(); }}>
+                  {(logoBusy === 'upload' || logoBusy === 'derive')
+                    ? <div className="forje-blob-spin forje-blob-spin--sm"/>
+                    : <>
+                        <div className="brand-logo-drop__icon"><AppIcon name="image" size={17}/></div>
+                        <div className="brand-logo-drop__title">Importe ton logo</div>
+                        <div className="brand-logo-drop__hint">toute image — tu recadres ensuite</div>
+                      </>
+                  }
+                </div>
+                <div className={'brand-logo-drop brand-logo-drop--ai'}
+                  style={ clientId ? {} : { opacity:.45, cursor:'not-allowed' } }
+                  onClick={function(){ if (clientId) setForgeOpen(true); }}>
+                  <div className="brand-logo-drop__icon"><AppIcon name="sparkle" size={17}/></div>
+                  <div className="brand-logo-drop__title">Forger avec l'IA</div>
+                  <div className="brand-logo-drop__hint">{clientId ? '3 propositions fidèles à ta marque' : 'enregistre ton identité d\'abord'}</div>
+                </div>
               </div>
             )}
-          </div>
 
-          {/* TILE 3 — Référence visuelle */}
-          <div className="bento-tile" style={{ display:'flex', flexDirection:'column', minHeight:200 }}>
-            <div className="bento-tile-lbl"><AppIcon name="layers" size={11}/>Style de reference</div>
-            {styleRefUrl ? (
-              <div style={{ flex:1, display:'flex', flexDirection:'column', gap:8 }}>
-                <div style={{ flex:1, position:'relative', borderRadius:10, overflow:'hidden', minHeight:100 }}>
-                  <img src={styleRefUrl} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block', minHeight:100 }}/>
-                  <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,.5) 0%, transparent 55%)' }}/>
-                  <div style={{ position:'absolute', bottom:8, left:10, fontSize:10, color:'rgba(255,255,255,.7)', fontWeight:500 }}>Ref active</div>
+            {/* Panneau Forge IA */}
+            {forgeOpen && clientId && (
+              <div className="brand-forge">
+                <div className="brand-forge__row">
+                  <input className="brand-forge__input" value={forgePrompt} onChange={function(e){ setForgePrompt(e.target.value); }}
+                    onKeyDown={function(e){ if (e.key === 'Enter' && logoBusy !== 'forge') handleForge(); }}
+                    placeholder="Décris le logo rêvé (optionnel) — ex : un éclair dans un cercle, minimaliste"/>
+                  <button onClick={handleForge} disabled={logoBusy === 'forge'} className="btn btn-primary btn-sm" style={{ flexShrink:0 }}>
+                    {logoBusy === 'forge'
+                      ? <span style={{width:11,height:11,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'vb-spin .7s linear infinite',display:'inline-block'}}/>
+                      : <AppIcon name="sparkle" size={12}/>}
+                    {logoBusy === 'forge' ? 'Forge en cours…' : 'Forger · ' + ((window.FORJE_CREDITS?.costs?.logo_forge) || 6) + ' cr'}
+                  </button>
                 </div>
-                <div style={{ display:'flex', gap:6 }}>
-                  <Btn variant="ghost" size="sm" onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click(); }} style={{ flex:1, justifyContent:'center', color:'var(--app-accent)', borderColor:'rgba(99,102,241,.35)' }}>Changer</Btn>
-                  <Btn variant="ghost" size="sm" onClick={function(){ setStyleRefUrl(''); }} style={{ color:'#ef4444', borderColor:'rgba(239,68,68,.35)' }}>×</Btn>
-                </div>
+                {logoBusy === 'forge' && (
+                  <div className="brand-forge__note">Trois directions en cours de forge — environ 30 secondes…</div>
+                )}
+                {forgeCandidates.length > 0 && (
+                  <div className="brand-forge__grid">
+                    {forgeCandidates.map(function(url) {
+                      var applying = logoBusy === url;
+                      return (
+                        <div key={url} className="brand-forge-candidate" onClick={function(){ handleApplyCandidate(url); }}>
+                          <img src={url} style={{ width:'74%', aspectRatio:'1', borderRadius:'50%', objectFit:'cover',
+                            boxShadow:'0 0 0 1px rgba(255,255,255,.15)' }}/>
+                          {applying && (
+                            <div className="brand-forge-candidate__veil">
+                              <div className="forje-blob-spin forje-blob-spin--sm"/>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {forgeCandidates.length > 0 && (
+                  <div className="brand-forge__note">Clique une proposition pour l'adopter — la version détourée est dérivée automatiquement.</div>
+                )}
               </div>
-            ) : (
-              <div onClick={function(){ var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click(); }}
-                style={{ flex:1, border:'1.5px dashed var(--app-line)', borderRadius:10, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, cursor:'pointer', padding:16, background: styleRefUploading ? 'var(--app-surface-3)' : 'transparent', minHeight:120 }}>
-                {styleRefUploading
-                  ? <div className="forje-blob-spin forje-blob-spin--sm"/>
-                  : <><div style={{width:36,height:36,borderRadius:9,background:'var(--app-surface-3)',display:'flex',alignItems:'center',justifyContent:'center'}}><AppIcon name="layers" size={17}/></div><div style={{fontSize:12,color:'var(--app-fg-4)',lineHeight:1.6,textAlign:'center'}}>Ref visuelle IA<br/><span style={{fontSize:10,opacity:.6}}>JPG, PNG, WebP</span></div></>
-                }
+            )}
+
+            {logoErr && (
+              <div style={{ marginTop:12, padding:'8px 12px', borderRadius:9, fontSize:11.5, lineHeight:1.5,
+                background:'rgba(196,61,61,.06)', border:'1px solid rgba(196,61,61,.22)', color:'#A83030' }}>
+                {logoErr}
               </div>
             )}
           </div>
 
           {/* TILE 4 — Palette */}
-          <div className="bento-tile" style={{ display:'flex', flexDirection:'column' }}>
+          <div className="bento-tile" style={{ display:'flex', flexDirection:'column' }}
+            onMouseEnter={function(){ setHighlightZone('palette'); }} onMouseLeave={function(){ setHighlightZone(null); }}>
             <div className="bento-tile-lbl"><AppIcon name="palette" size={11}/>Palette</div>
+            <div className="bento-role">Colore le badge catégorie et la barre d'accent.</div>
             <div style={{ display:'flex', flexDirection:'column', gap:10, flex:1 }}>
               {[
                 ['Principale', primaryColor, function(e){ setPrimaryColor(e.target.value); }],
@@ -3622,38 +4158,106 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
                 return (
                   <label key={cfg[0]} style={{ display:'block', cursor:'pointer', position:'relative' }}>
                     <div style={{ fontSize:10, color:'var(--app-fg-4)', marginBottom:5, textTransform:'uppercase', letterSpacing:'.08em' }}>{cfg[0]}</div>
-                    <div className="bento-color-block" style={{ background:cfg[1], boxShadow:'0 2px 10px ' + cfg[1] + '44' }}/>
+                    <div className="bento-color-block" style={{ background:cfg[1] }}/>
                     <input type="color" value={cfg[1]} onChange={cfg[2]} style={{ position:'absolute', opacity:0, width:1, height:1, top:0, left:0, pointerEvents:'none' }}/>
-                    <div style={{ fontSize:11.5, color:'var(--app-fg-3)', fontFamily:'JetBrains Mono,monospace', display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:-2 }}>
+                    <div className="brand-hex">
                       <span>{cfg[1]}</span><AppIcon name="edit" size={11}/>
                     </div>
                   </label>
                 );
               })}
-              <div style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 10px', background:'var(--app-surface-3)', borderRadius:8, marginTop:'auto' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 11px', background:'var(--app-surface-2)', border:'1px solid var(--app-line)', borderRadius:11, marginTop:'auto' }}>
                 {badgeVisible && <div style={{ padding:'3px 8px', borderRadius:3, background:primaryColor, fontSize:9, fontWeight:700, color:'#fff', letterSpacing:1.2, textTransform:'uppercase', flexShrink:0 }}>SPORT</div>}
                 {barVisible && <div style={{ width:24, height:2.5, borderRadius:2, background:accentColor, flexShrink:0 }}/>}
                 {!badgeVisible && !barVisible && <span style={{ fontSize:10, color:'var(--app-fg-4)', fontStyle:'italic', flex:1 }}>Aucun element</span>}
-                <div style={{ marginLeft:'auto', display:'flex', gap:10 }}>
+                <div style={{ marginLeft:'auto', display:'flex', gap:12 }}>
                   {[['Badge', badgeVisible, setBadgeVisible],['Barre', barVisible, setBarVisible]].map(function(t) {
-                    return (<label key={t[0]} style={{ display:'flex', alignItems:'center', gap:4, cursor:'pointer', fontSize:11, color:'var(--app-fg-4)', userSelect:'none' }}><input type="checkbox" checked={t[1]} onChange={function(e){ t[2](e.target.checked); }} style={{ accentColor:'var(--app-accent)', cursor:'pointer' }}/>{t[0]}</label>);
+                    return (
+                      <span key={t[0]} style={{ display:'flex', alignItems:'center', gap:6, userSelect:'none' }}>
+                        <button className={'brand-switch' + (t[1] ? ' is-on' : '')} style={{ transform:'scale(.85)' }}
+                          onClick={function(){ t[2](!t[1]); }} aria-label={t[0]}/>
+                        <span style={{ fontSize:11, color: t[1] ? 'var(--app-fg-3)' : 'var(--app-fg-4)', cursor:'pointer' }}
+                          onClick={function(){ t[2](!t[1]); }}>{t[0]}</span>
+                      </span>
+                    );
                   })}
                 </div>
               </div>
             </div>
           </div>
 
+          {/* TILE 4b — Refs visuelles (jusqu'à 3) */}
+          <div className="bento-tile" style={{ display:'flex', flexDirection:'column' }}
+            onMouseEnter={function(){ setHighlightZone('style'); }} onMouseLeave={function(){ setHighlightZone(null); }}>
+            <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="layers" size={11}/>Refs visuelles</span>
+              <span style={{ fontSize:11, color: styleRefUrls.length ? 'var(--app-accent)' : 'var(--app-fg-4)', fontWeight:500 }}>{styleRefUrls.length}/3</span>
+            </div>
+            <div className="bento-role">L'IA s'inspire de leur esthétique pour générer tes fonds.</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, flex:1 }}>
+              {styleRefUrls.map(function(url, i) {
+                return (
+                  <div key={url + i} className="brand-ref-thumb">
+                    <img src={url}/>
+                    <button className="brand-ref-thumb__x" onClick={function(){ removeStyleRef(i); }} title="Retirer">×</button>
+                  </div>
+                );
+              })}
+              {styleRefUrls.length < 3 && (
+                <div className="brand-ref-add"
+                  onClick={function(){ if (refBusy) return; var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=function(e){ handleStyleRefUpload(e.target.files[0]); }; inp.click(); }}>
+                  {refBusy
+                    ? <div className="forje-blob-spin forje-blob-spin--sm"/>
+                    : <><span className="brand-ref-add__plus">+</span>
+                        <span className="brand-ref-add__lbl">Ajouter</span></>}
+                </div>
+              )}
+            </div>
+            {styleRefUrls.length === 0 && !refBusy && (
+              <div style={{ fontSize:10.5, color:'var(--app-fg-4)', marginTop:8, lineHeight:1.5 }}>Posts d'autres médias, moodboards, screenshots — tout ce qui ressemble à ce que tu veux.</div>
+            )}
+          </div>
+
+          {/* TILE 4c — Mood éditorial */}
+          <div className="bento-tile"
+            onMouseEnter={function(){ setHighlightZone('style'); }} onMouseLeave={function(){ setHighlightZone(null); }}>
+            <div className="bento-tile-lbl"><AppIcon name="bolt" size={11}/>Mood editorial</div>
+            <div className="bento-role">Guide la lumière et l'ambiance des images générées.</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {BRAND_MOODS.map(function(m) {
+                var active = mood === m.id;
+                return (
+                  <div key={m.id} onClick={function(){ setMood(m.id); }}
+                    className={'brand-mood-opt' + (active ? ' is-active' : '')}>
+                    <span className="brand-mood-opt__lbl">{m.label}</span>
+                    {active && <div className="brand-mood-opt__dot"/>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* TILE 4d — Sujets couverts */}
+          <div className="bento-tile">
+            <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="target" size={11}/>Sujets couverts</span>
+              <span style={{ fontSize:11, color: topics.length >= 3 ? '#22c55e' : 'var(--app-fg-4)', letterSpacing:'.05em', textTransform:'lowercase', fontWeight:500 }}>{topics.length}/10{topics.length < 3 ? ' — min 3' : ''}</span>
+            </div>
+            <div className="bento-role">Cadre la veille, les angles et les hashtags.</div>
+            <BrandTagInput tags={topics} setTags={setTopics} placeholder="Football, PSG, Transferts..." max={10}/>
+          </div>
+
           {/* TILE 5 — Typographie : Packs (rapide) OU Personnalisé (titre+corps, import) */}
-          <div className={'bento-tile ' + (fontMode === 'packs' ? 'bento-tile--full' : 'bento-tile--wide')}>
+          <div className="bento-tile bento-tile--full"
+            onMouseEnter={function(){ setHighlightZone('typo'); }} onMouseLeave={function(){ setHighlightZone(null); }}>
             <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
               <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="grid" size={11}/>Typographie</span>
-              <span style={{ display:'inline-flex', background:'var(--app-surface-3)', borderRadius:8, padding:2, gap:2 }}>
+              <span className="brand-seg">
                 {[['packs','Packs'],['custom','Personnalisé']].map(function(m){
                   var active = fontMode === m[0];
                   return (
                     <button key={m[0]} onClick={function(){ setFontMode(m[0]); if (m[0]==='custom') setGraphicStyle('custom'); }}
-                      style={{ all:'unset', cursor:'pointer', padding:'4px 11px', borderRadius:6, fontSize:11, fontWeight: active?600:400,
-                        color: active ? '#fff' : 'var(--app-fg-3)', background: active ? 'var(--app-accent)' : 'transparent', transition:'all .15s' }}>
+                      className={'brand-seg__opt' + (active ? ' is-active' : '')}>
                       {m[1]}
                     </button>
                   );
@@ -3720,50 +4324,25 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
             </div>
           </div>
 
-          {/* TILE 6 — Mood éditorial */}
-          <div className="bento-tile">
-            <div className="bento-tile-lbl"><AppIcon name="bolt" size={11}/>Mood editorial</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-              {BRAND_MOODS.map(function(m) {
-                var active = mood === m.id;
-                return (
-                  <div key={m.id} onClick={function(){ setMood(m.id); }}
-                    style={{ padding:'9px 12px', borderRadius:9, border:'1.5px solid ' + (active ? 'var(--app-accent)' : 'var(--app-line)'), background: active ? 'rgba(99,102,241,.07)' : 'var(--app-surface-3)', cursor:'pointer', transition:'all .15s', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                    <span style={{ fontWeight: active ? 600 : 400, fontSize:13, color: active ? 'var(--app-accent)' : 'var(--app-fg-2)' }}>{m.label}</span>
-                    {active && <div style={{ width:6, height:6, borderRadius:'50%', background:'var(--app-accent)', flexShrink:0 }}/>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* TILE 7 — Ton éditorial (wide 2-col) */}
-          <div className="bento-tile bento-tile--wide">
+          {/* TILE 7 — Ton éditorial (full) */}
+          <div className="bento-tile bento-tile--full">
             <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
               <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="quote" size={11}/>Ton editorial</span>
               <span style={{ fontSize:11, color: toneTags.length >= 3 ? 'var(--app-accent)' : 'var(--app-fg-4)', letterSpacing:'.05em', textTransform:'lowercase', fontWeight:500 }}>{toneTags.length}/3 selectionnes</span>
             </div>
+            <div className="bento-role">Donne sa voix à l'écriture des titres et des captions.</div>
             <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
               {BRAND_TONES.map(function(t) {
                 var active = toneTags.includes(t);
                 var maxed = toneTags.length >= 3 && !active;
                 return (
                   <button key={t} onClick={function(){ if (!maxed) toggleTone(t); }}
-                    style={{ all:'unset', cursor: maxed ? 'not-allowed' : 'pointer', padding:'5px 13px', borderRadius:20, fontSize:12.5, fontWeight: active ? 600 : 400, border:'1.5px solid ' + (active ? 'var(--app-accent)' : 'var(--app-line)'), color: active ? 'var(--app-accent)' : maxed ? 'var(--app-fg-4)' : 'var(--app-fg-2)', background: active ? 'rgba(99,102,241,.08)' : 'var(--app-surface-3)', transition:'all .15s', opacity: maxed ? 0.35 : 1 }}>
+                    className={'brand-chip' + (active ? ' is-active' : '') + (maxed ? ' is-maxed' : '')}>
                     {t}
                   </button>
                 );
               })}
             </div>
-          </div>
-
-          {/* TILE 8 — Sujets couverts */}
-          <div className="bento-tile">
-            <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
-              <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="target" size={11}/>Sujets couverts</span>
-              <span style={{ fontSize:11, color: topics.length >= 3 ? '#22c55e' : 'var(--app-fg-4)', letterSpacing:'.05em', textTransform:'lowercase', fontWeight:500 }}>{topics.length}/10{topics.length < 3 ? ' — min 3' : ''}</span>
-            </div>
-            <BrandTagInput tags={topics} setTags={setTopics} placeholder="Football, PSG, Transferts..." max={10}/>
           </div>
 
           {/* TILE 9 — Options avancées (full width) */}
@@ -3805,8 +4384,19 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
         {/* ── Live Preview (sticky right col) ── */}
         <div style={{ position:'sticky', top:80, display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
           <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2, color:'var(--app-fg-4)', alignSelf:'flex-start' }}>Apercu live</div>
-          <BrandPostPreview name={name} primaryColor={primaryColor} accentColor={accentColor} fontPrimary={fontPrimary} fontSecondary={fontBody} mood={mood} logoUrl={logoUrl} graphicStyle={graphicStyle} badgeVisible={badgeVisible} barVisible={barVisible}/>
-          <div style={{ fontSize:11, color:'var(--app-fg-4)', textAlign:'center', lineHeight:1.5 }}>Mise a jour en temps reel<br/><span style={{ opacity:.6 }}>a chaque changement</span></div>
+          <div style={{ borderRadius:14, transition:'box-shadow .2s',
+            boxShadow: highlightZone === 'style' ? '0 0 0 2px rgba(79,91,213,.9), 0 0 26px rgba(79,91,213,.45)' : 'none' }}>
+            <BrandPostPreview name={name} primaryColor={primaryColor} accentColor={accentColor} fontPrimary={fontPrimary} fontSecondary={fontBody} mood={mood}
+              logoBadgeUrl={logoBadgeUrl} logoNuUrl={logoNuUrl} logoStyle={logoStyle}
+              graphicStyle={graphicStyle} badgeVisible={badgeVisible} barVisible={barVisible} highlight={highlightZone}/>
+          </div>
+          <div style={{ fontSize:11, color:'var(--app-fg-4)', textAlign:'center', lineHeight:1.5 }}>
+            {highlightZone === 'logo'    ? 'Ton logo, signé sur chaque post.'
+              : highlightZone === 'palette' ? 'Tes couleurs : badge et barre d\'accent.'
+              : highlightZone === 'typo'    ? 'Tes polices de titre et de texte.'
+              : highlightZone === 'style'   ? 'L\'ambiance visuelle de tes images.'
+              : <>Mise a jour en temps reel<br/><span style={{ opacity:.6 }}>a chaque changement</span></>}
+          </div>
         </div>
 
       </div>
@@ -3816,6 +4406,18 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
       )}
       {saveMsg && (
         <div style={{ marginTop:14, padding:'12px 16px', borderRadius:8, fontSize:13, lineHeight:1.5, background:'rgba(34,197,94,.07)', border:'1px solid rgba(34,197,94,.2)', color:'#16a34a' }}>{saveMsg}</div>
+      )}
+
+      {/* Modal de recadrage — import de logo (rond, façon PP Instagram) */}
+      {cropFile && (
+        <ImageCropModal file={cropFile} title="Recadre ton logo" shape="circle"
+          onCancel={function(){ setCropFile(null); }} onCropped={handleLogoCropped}/>
+      )}
+
+      {/* Pinceau de nettoyage du détourage */}
+      {eraseOpen && logoNuUrl && (
+        <LogoEraseModal imageUrl={logoNuUrl}
+          onCancel={function(){ setEraseOpen(false); }} onSave={handleNuEdited}/>
       )}
 
     </div>
@@ -3898,10 +4500,11 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   var [savingName, setSavingName] = useState(false);
   var avatarInputRef = useRef(null);
   var [defFormat, setDefFormat] = useState(prefs.defaultFormat || 'Actualité');
-  var [pulseMode, setPulseMode] = useState(prefs.pulseMode !== undefined ? prefs.pulseMode : false);
   var [notif, setNotif] = useState(DEFAULT_NOTIF);
   var [checkoutLoading, setCheckoutLoading] = useState(false);
   var [portalLoading, setPortalLoading] = useState(false);
+  var [retainOpen, setRetainOpen] = useState(false);      // modal de rétention (-50%)
+  var [retainLoading, setRetainLoading] = useState(false);
   var [tx, setTx] = useState([]);
   var [txPage, setTxPage] = useState(0);
   var [txDone, setTxDone] = useState(false);
@@ -3929,7 +4532,7 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
 
   function loadProfile() {
     if (!sb || !user) return;
-    var q = sb.from('clients').select('id,name,avatar_url,logo_url,credits,subscription_status,credits_unlimited,credits_reset_at,stripe_customer_id,notif_prefs,instagram_connected,instagram_username').eq('user_id', user.id);
+    var q = sb.from('clients').select('id,name,avatar_url,logo_url,credits,subscription_status,credits_unlimited,credits_reset_at,stripe_customer_id,notif_prefs,instagram_connected,instagram_username,cancel_at,retention_offer_used_at').eq('user_id', user.id);
     if (window.__activeClientId) q = q.eq('id', window.__activeClientId);
     q.order('created_at').limit(1).maybeSingle().then(function(r){
       if (r.data) { setProfile(r.data); setNameField(r.data.name || ''); setNotif(Object.assign({}, DEFAULT_NOTIF, r.data.notif_prefs || {})); }
@@ -3957,6 +4560,8 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   function fmtShort(d){ try { var dt = new Date(d); return dt.toLocaleDateString('fr-FR', { day:'numeric', month:'short' }) + ' ' + dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }); } catch(_) { return ''; } }
   var nextRenew = profile?.credits_reset_at ? (function(){ var d = new Date(profile.credits_reset_at); d.setMonth(d.getMonth()+1); return d; })() : null;
   var daysToRenew = nextRenew ? Math.max(0, Math.ceil((nextRenew - new Date())/86400000)) : null;
+  var cancelAt = profile?.cancel_at || null;               // annulation programmée (fin d'accès)
+  var offerAvailable = !profile?.retention_offer_used_at;  // -50% encore jouable ?
 
   async function saveName() {
     if (!sb || !profile) return;
@@ -3982,13 +4587,16 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
     var up = await sb.storage.from('brand-assets').upload(path, f, { upsert:true });
     if (up.error) { alert(up.error.message); return; }
     var pub = sb.storage.from('brand-assets').getPublicUrl(path);
-    await sb.from('clients').update({ avatar_url: pub.data.publicUrl }).eq('id', profile.id);
+    // PP de l'UTILISATEUR (pas d'un média) → synchronisée sur tous ses comptes
+    await sb.from('clients').update({ avatar_url: pub.data.publicUrl }).eq('user_id', user.id);
     showToast('Photo mise à jour ✓'); loadProfile();
+    if (window.__reloadClients) { try { window.__reloadClients(); } catch(_) {} }
   }
   async function selectPreset(src) {
     if (!sb || !profile) return;
-    await sb.from('clients').update({ avatar_url: src }).eq('id', profile.id);
+    await sb.from('clients').update({ avatar_url: src }).eq('user_id', user.id);
     showToast('Avatar mis à jour ✓'); loadProfile();
+    if (window.__reloadClients) { try { window.__reloadClients(); } catch(_) {} }
   }
 
   async function toggleNotif(key) {
@@ -4009,15 +4617,43 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
       else { alert(json.error || 'Paiement indisponible pour le moment.'); setCheckoutLoading(false); }
     } catch (e) { alert('Erreur : ' + e.message); setCheckoutLoading(false); }
   }
-  async function openPortal() {
+  async function openPortal(flow) {
     if (!profile) return;
+    flow = flow === 'cancel' ? 'cancel' : undefined; // onClick passe un event — on ne garde que 'cancel'
     setPortalLoading(true);
     try {
-      var res = await veilleFetch('/billing/create-portal', { method:'POST', body: JSON.stringify({ clientId: profile.id }) });
+      var res = await veilleFetch('/billing/create-portal', { method:'POST', body: JSON.stringify({ clientId: profile.id, flow: flow }) });
       var json = await res.json();
       if (json.url) window.location.href = json.url;
       else { alert(json.error || 'Portail indisponible.'); setPortalLoading(false); }
     } catch (e) { alert('Erreur : ' + e.message); setPortalLoading(false); }
+  }
+
+  // Désabonnement : on tente d'abord de retenir avec -50% (une seule fois),
+  // sinon direction le flux d'annulation du portail Stripe.
+  function askCancel() {
+    if (offerAvailable) setRetainOpen(true);
+    else openPortal('cancel');
+  }
+  async function acceptOffer() {
+    if (!profile) return;
+    setRetainLoading(true);
+    try {
+      var res = await veilleFetch('/billing/retention-offer', { method:'POST', body: JSON.stringify({ clientId: profile.id }) });
+      var json = await res.json();
+      if (res.ok) {
+        setRetainOpen(false);
+        showToast('Réduction appliquée — prochain mois à 34,50 € ✓');
+        loadProfile();
+      } else {
+        alert(json.error || 'Impossible d\'appliquer l\'offre.');
+      }
+    } catch (e) { alert('Erreur : ' + e.message); }
+    setRetainLoading(false);
+  }
+  function declineOffer() {
+    setRetainOpen(false);
+    openPortal('cancel');
   }
 
   async function loadTx(reset) {
@@ -4205,9 +4841,6 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
                     </select>
                   }
                 />
-                <SettingsRow label="Mode Trader · Pulse" sub="Active un terminal veille façon Bloomberg dans la navigation."
-                  right={<SettingsToggle checked={pulseMode} onChange={function(v){ setPulseMode(v); savePref('pulseMode', v); }}/>}
-                />
               </SettingsSection>
             </div>
           )}
@@ -4231,25 +4864,39 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
                       {unlimited ? 'À titre spécial · aucun débit' : subStatus === 'active' ? '69 €/mois · 700 crédits' : subStatus === 'canceled' ? 'Abonnement terminé' : '50 crédits d\'essai'}
                     </div>
                   </div>
-                  <span className={'set-bill-badge set-bill-badge--' + (unlimited ? 'unlim' : subStatus)}>
-                    {unlimited ? '∞ ILLIMITÉ' : subStatus === 'active' ? 'ACTIF' : subStatus === 'trial' ? 'ESSAI · ' + credits + ' cr.' : subStatus === 'past_due' ? 'IMPAYÉ' : 'TERMINÉ'}
+                  <span className={'set-bill-badge set-bill-badge--' + (unlimited ? 'unlim' : subStatus === 'active' && cancelAt ? 'ending' : subStatus)}>
+                    {unlimited ? '∞ ILLIMITÉ' : subStatus === 'active' ? (cancelAt ? 'SE TERMINE' : 'ACTIF') : subStatus === 'trial' ? 'ESSAI · ' + credits + ' cr.' : subStatus === 'past_due' ? 'IMPAYÉ' : 'TERMINÉ'}
                   </span>
                 </div>
 
-                {subStatus === 'active' && !unlimited && nextRenew && (
+                {subStatus === 'active' && !unlimited && (cancelAt ? (
+                  <div className="set-bill-meta">Ton abonnement se termine le <strong>{fmtDate(cancelAt)}</strong> — tes crédits restent utilisables jusque-là.</div>
+                ) : nextRenew && (
                   <div className="set-bill-meta">Prochain renouvellement : {fmtDate(nextRenew)}</div>
-                )}
+                ))}
 
                 <div className="set-bill-actions">
                   {unlimited ? (
                     <span className="set-bill-note">Tu génères sans compter. 💛</span>
                   ) : subStatus === 'active' ? (
-                    <>
-                      <button className="btn btn-primary" onClick={openPortal} disabled={portalLoading}>
-                        {portalLoading ? 'Ouverture…' : 'Gérer mon abonnement →'}
-                      </button>
-                      <span className="set-bill-note">Moyen de paiement, factures, annulation — géré par Stripe.</span>
-                    </>
+                    cancelAt ? (
+                      <>
+                        <button className="btn btn-primary" onClick={openPortal} disabled={portalLoading}>
+                          {portalLoading ? 'Ouverture…' : 'Reprendre mon abonnement →'}
+                        </button>
+                        <span className="set-bill-note">Change d'avis quand tu veux avant le {fmtDate(cancelAt)}.</span>
+                      </>
+                    ) : (
+                      <>
+                        <button className="btn btn-primary" onClick={openPortal} disabled={portalLoading}>
+                          {portalLoading ? 'Ouverture…' : 'Gérer mon abonnement →'}
+                        </button>
+                        <button className="btn btn-ghost set-bill-cancel" onClick={askCancel} disabled={portalLoading}>
+                          Se désabonner
+                        </button>
+                        <span className="set-bill-note">Moyen de paiement, factures, annulation — géré par Stripe.</span>
+                      </>
+                    )
                   ) : subStatus === 'past_due' ? (
                     <button className="btn btn-primary" onClick={openPortal} disabled={portalLoading}>{portalLoading ? '…' : 'Mettre à jour ma carte →'}</button>
                   ) : (
@@ -4428,6 +5075,29 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
         </div>
       </div>
       {toast && <div className="settings-toast"><AppIcon name="check" size={12}/> {toast}</div>}
+
+      {/* Modal de rétention : -50% le mois suivant avant de partir vers l'annulation */}
+      {retainOpen && (
+        <div className="retain-modal" onClick={function(){ if (!retainLoading) setRetainOpen(false); }}>
+          <div className="retain-card" onClick={function(e){ e.stopPropagation(); }}>
+            <div className="retain-pct">-50&nbsp;%</div>
+            <div className="retain-title">Reste avec nous, on t'offre la moitié</div>
+            <div className="retain-sub">
+              Ton prochain mois à <strong>34,50&nbsp;€</strong> au lieu de 69&nbsp;€ —
+              mêmes 700 crédits, rien d'autre ne change.
+            </div>
+            <div className="retain-actions">
+              <button className="btn btn-primary" onClick={acceptOffer} disabled={retainLoading}>
+                {retainLoading ? 'Application…' : 'J\'accepte -50 % sur mon prochain mois'}
+              </button>
+              <button className="btn btn-ghost retain-leave" onClick={declineOffer} disabled={retainLoading}>
+                Me désabonner quand même
+              </button>
+            </div>
+            <div className="retain-note">Offre unique, appliquée immédiatement. Tu restes libre d'annuler à tout moment.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

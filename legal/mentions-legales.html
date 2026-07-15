@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mentions légales — Forje Studio</title>
+<meta name="description" content="Mentions légales de Forje Studio : éditeur, hébergement et informations légales."/>
+<link rel="icon" type="image/png" href="/assets/favicon.png?v=4"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --bg-deep:#050D2E; --card:rgba(10,25,80,.5); --card-strong:rgba(12,28,84,.72);
+    --border:rgba(80,130,255,.15); --border-strong:rgba(110,160,255,.28);
+    --fg:#EEF4FF; --fg-dim:rgba(210,225,255,.82); --muted:rgba(150,190,255,.55);
+    --chromatic-line:linear-gradient(90deg,#6A5BFF 0%,#3EC7FF 28%,#F5F0CB 52%,#FF9ED3 78%,#FFB061 100%);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg-deep);color:var(--fg);
+    font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      radial-gradient(900px 600px at 78% -5%, rgba(110,150,255,.18), transparent 60%),
+      radial-gradient(800px 500px at 12% 30%, rgba(60,90,220,.15), transparent 65%),
+      linear-gradient(180deg,#02061c 0%,#061235 45%,#050c30 100%);
+    background-attachment:fixed; min-height:100vh;
+  }
+  .wrap{max-width:780px;margin:0 auto;padding:0 24px 96px;}
+  header.top{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:26px 0 20px;position:sticky;top:0;z-index:5;
+    background:linear-gradient(180deg,rgba(5,13,46,.92),rgba(5,13,46,.0));
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  }
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fg);font-weight:600;}
+  .brand img{width:26px;height:26px;border-radius:7px;}
+  .back{font-size:13px;color:var(--muted);text-decoration:none;
+    border:1px solid var(--border);border-radius:999px;padding:7px 14px;transition:.18s;}
+  .back:hover{color:var(--fg);border-color:var(--border-strong);}
+  .doc-head{padding:36px 0 8px;}
+  .kicker{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:14px;}
+  h1{font-size:40px;line-height:1.08;margin:0 0 12px;letter-spacing:-.02em;
+    background:var(--chromatic-line);-webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;}
+  .updated{font-size:13px;color:var(--muted);}
+  .lead{color:var(--fg-dim);font-size:16px;line-height:1.7;margin:22px 0 8px;}
+  section{padding:30px 0 4px;border-top:1px solid var(--border);margin-top:26px;}
+  section:first-of-type{border-top:none;}
+  h2{font-size:21px;margin:0 0 14px;letter-spacing:-.01em;display:flex;gap:12px;align-items:baseline;}
+  h2 .n{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);}
+  p,li{color:var(--fg-dim);font-size:15px;line-height:1.72;}
+  p{margin:12px 0;}
+  strong{color:var(--fg);font-weight:600;}
+  a.inline{color:#3EC7FF;text-decoration:none;}
+  a.inline:hover{text-decoration:underline;}
+  .fill{color:#FFB061;font-family:'JetBrains Mono',monospace;font-size:13px;}
+  .idcard{border:1px solid var(--border);background:var(--card);border-radius:var(--radius);
+    padding:6px 22px;margin:16px 0;}
+  .idrow{display:flex;gap:18px;padding:13px 0;border-bottom:1px solid var(--border);font-size:14.5px;}
+  .idrow:last-child{border-bottom:none;}
+  .idrow .k{flex:0 0 190px;color:var(--muted);font-family:'JetBrains Mono',monospace;
+    font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;padding-top:2px;}
+  .idrow .v{color:var(--fg-dim);}
+  footer.legal-foot{margin-top:54px;padding-top:26px;border-top:1px solid var(--border);
+    display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between;}
+  .legal-foot .links{display:flex;gap:20px;flex-wrap:wrap;}
+  .legal-foot a{color:var(--muted);text-decoration:none;font-size:13.5px;}
+  .legal-foot a:hover{color:var(--fg);}
+  .legal-foot .copy{font-size:13px;color:var(--muted);}
+  @media(max-width:640px){h1{font-size:30px;}.idrow{flex-direction:column;gap:4px;}.idrow .k{flex-basis:auto;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/"><img src="/assets/forje-logo.png" alt=""/>Forje <span style="color:var(--muted);font-weight:400;">Studio</span></a>
+    <a class="back" href="/">← Retour au site</a>
+  </header>
+
+  <div class="doc-head">
+    <div class="kicker">Informations légales</div>
+    <h1>Mentions légales</h1>
+    <div class="updated">Dernière mise à jour : 8 juillet 2026</div>
+    <p class="lead">Conformément à l'article 6 de la loi n° 2004-575 du 21 juin 2004 pour la confiance dans l'économie numérique (LCEN), les informations suivantes sont portées à la connaissance des utilisateurs du site Forje Studio.</p>
+  </div>
+
+  <section>
+    <h2><span class="n">01</span> Éditeur du site</h2>
+    <div class="idcard">
+      <div class="idrow"><div class="k">Dénomination</div><div class="v"><span class="fill">[À COMPLÉTER : raison sociale]</span> — exploitant le service « Forje Studio »</div></div>
+      <div class="idrow"><div class="k">Forme juridique</div><div class="v"><span class="fill">[À COMPLÉTER : SAS, SASU, EURL, auto-entrepreneur…]</span></div></div>
+      <div class="idrow"><div class="k">Capital social</div><div class="v"><span class="fill">[À COMPLÉTER : montant, le cas échéant]</span></div></div>
+      <div class="idrow"><div class="k">Siège social</div><div class="v"><span class="fill">[À COMPLÉTER : adresse complète]</span></div></div>
+      <div class="idrow"><div class="k">RCS / SIREN</div><div class="v"><span class="fill">[À COMPLÉTER : n° RCS et ville d'immatriculation / SIREN]</span></div></div>
+      <div class="idrow"><div class="k">TVA intracommunautaire</div><div class="v"><span class="fill">[À COMPLÉTER : n° TVA, le cas échéant]</span></div></div>
+      <div class="idrow"><div class="k">Contact</div><div class="v"><a class="inline" href="mailto:contact@forje.studio">contact@forje.studio</a></div></div>
+      <div class="idrow"><div class="k">Téléphone</div><div class="v"><span class="fill">[À COMPLÉTER : numéro, le cas échéant]</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">02</span> Directeur de la publication</h2>
+    <p><span class="fill">[À COMPLÉTER : nom et prénom du représentant légal / directeur de la publication]</span></p>
+  </section>
+
+  <section>
+    <h2><span class="n">03</span> Hébergement</h2>
+    <p>L'application est hébergée par :</p>
+    <div class="idcard">
+      <div class="idrow"><div class="k">Hébergeur applicatif</div><div class="v"><strong>Vercel Inc.</strong> — 340 S Lemon Ave #4133, Walnut, CA 91789, États-Unis — <a class="inline" href="https://vercel.com" target="_blank" rel="noopener">vercel.com</a></div></div>
+      <div class="idrow"><div class="k">Base de données</div><div class="v"><strong>Supabase, Inc.</strong> — 970 Toa Payoh North, Singapour / San Francisco — <a class="inline" href="https://supabase.com" target="_blank" rel="noopener">supabase.com</a></div></div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);"><span class="fill">[À VÉRIFIER : confirmez l'hébergeur réel de production et son adresse exacte avant mise en ligne.]</span></p>
+  </section>
+
+  <section>
+    <h2><span class="n">04</span> Propriété intellectuelle</h2>
+    <p>L'ensemble des éléments composant le site et le service Forje Studio (marque, logo, interface, textes, code, éléments graphiques, bases de données) est protégé par le droit de la propriété intellectuelle et demeure la propriété exclusive de l'éditeur ou de ses partenaires. Toute reproduction, représentation, modification ou exploitation, totale ou partielle, sans autorisation préalable écrite, est interdite et constitue une contrefaçon.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">05</span> Données personnelles</h2>
+    <p>Le traitement des données personnelles des utilisateurs est décrit en détail dans notre <a class="inline" href="/legal/confidentialite.html">Politique de confidentialité</a>. Vous y disposez notamment de droits d'accès, de rectification et d'effacement conformément au RGPD.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">06</span> Conditions d'utilisation</h2>
+    <p>L'utilisation du service est régie par nos <a class="inline" href="/legal/cgu.html">Conditions Générales d'Utilisation et de Vente</a>.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">07</span> Cookies</h2>
+    <p>Le site utilise des cookies strictement nécessaires à son fonctionnement. Les modalités sont précisées dans la <a class="inline" href="/legal/confidentialite.html#cookies">Politique de confidentialité</a>.</p>
+  </section>
+
+  <footer class="legal-foot">
+    <span class="copy">© 2026 Forje Studio</span>
+    <div class="links">
+      <a href="/legal/cgu.html">CGU</a>
+      <a href="/legal/confidentialite.html">Confidentialité</a>
+      <a href="/legal/mentions-legales.html">Mentions légales</a>
+      <a href="/">Retour au site →</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

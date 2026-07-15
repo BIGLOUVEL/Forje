@@ -117,7 +117,7 @@ router.post('/analyze-instagram', async (req, res) => {
 
   // 3. Gemini analyse et suggere les champs
   try {
-    const model  = genai.getGenerativeModel({ model: 'gemini-2.5-pro' });
+    const model  = genai.getGenerativeModel({ model: 'gemini-pro-latest' });
     const prompt =
       'Analyse ce profil Instagram et genere les parametres de charte editoriale pour Forje Studio.\n\n' +
       'Compte : @' + handle + '\n' +

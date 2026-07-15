@@ -113,7 +113,7 @@ async function rssLoop() {
     if (count > 0) {
       const { data: comptes } = await supabase.from('comptes').select('id, nom');
       for (const c of (comptes || [])) {
-        scoreForCompte(c.id, 10, 24).catch(err => console.error(`[AutoScore] ${c.nom}: ${err.message}`));
+        scoreForCompte(c.id, 25, 24).catch(err => console.error(`[AutoScore] ${c.nom}: ${err.message}`));
       }
     }
   } catch (err) {

@@ -20,18 +20,17 @@
 <link rel="stylesheet" href="app-auth.css"/>
 
 <!-- Landing CSS — désactivé jusqu'à navigation explicite -->
-<link id="css-l1" rel="stylesheet" href="forje.css" media="none"/>
-<link id="css-l2" rel="stylesheet" href="forje-lux.css" media="none"/>
+<link id="css-l1" rel="stylesheet" href="forje.css?v=2" media="none"/>
+<link id="css-l2" rel="stylesheet" href="forje-lux.css?v=2" media="none"/>
 <link id="css-l3" rel="stylesheet" href="forje-mark.css" media="none"/>
-<link id="css-l4" rel="stylesheet" href="forje-live.css?v=3" media="none"/>
+<link id="css-l4" rel="stylesheet" href="forje-live.css?v=16" media="none"/>
 
 <!-- App CSS — désactivé par défaut -->
-<link id="css-a1" rel="stylesheet" href="app.css?v=8" media="none"/>
+<link id="css-a1" rel="stylesheet" href="app.css?v=12" media="none"/>
 <link id="css-a2" rel="stylesheet" href="app-dashboard.css?v=7" media="none"/>
-<link id="css-a3" rel="stylesheet" href="app-screens.css?v=18" media="none"/>
+<link id="css-a3" rel="stylesheet" href="app-screens.css?v=23" media="none"/>
 <link id="css-a4" rel="stylesheet" href="app-sources.css?v=9" media="none"/>
 <link id="css-a5" rel="stylesheet" href="app-onboarding.css?v=7" media="none"/>
-<link id="css-a6" rel="stylesheet" href="app-pulse.css?v=2" media="none"/>
 
 <style>
   body { margin:0; background:#000004; }
@@ -50,7 +49,7 @@
     try {
       var raw = localStorage.getItem('sb-tmsbtjczvjdwzfkoprwq-auth-token');
       if (raw && JSON.parse(raw).access_token) {
-        ['css-a1','css-a2','css-a3','css-a4','css-a5','css-a6'].forEach(function(id) {
+        ['css-a1','css-a2','css-a3','css-a4','css-a5'].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) el.media = '';
         });
@@ -63,7 +62,7 @@
 
   // ─── Crédits (doit refléter lib/credits.js côté serveur) ───
   window.FORJE_CREDITS = {
-    costs: { actu: 2, citation: 1, deep_dive_light: 3, deep_dive_premium: 8 },
+    costs: { actu: 2, citation: 1, deep_dive_light: 3, deep_dive_premium: 8, logo_forge: 6 },
     // Plafond mensuel affiché dans la barre : 700 abonné / 50 essai
     cap: function (status) { return status === 'active' ? 700 : 50; },
   };
@@ -88,15 +87,11 @@
   } catch(e) { console.error('[Forje] Supabase init failed:', e); }
 </script>
 
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
-        integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
-        crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
-        integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
-        crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
-        integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
-        crossorigin="anonymous"></script>
+<!-- React PRODUCTION servi en local — ~3× plus rapide à l'exécution que les builds development -->
+<script src="/vendor/react/react.production.min.js"></script>
+<script src="/vendor/react/react-dom.production.min.js"></script>
+<!-- Babel standalone chargé À LA DEMANDE par le loader ci-dessous, uniquement
+     si le cache localStorage du JSX compilé est absent ou périmé. -->
 
 <!-- Bibliothèque typographique partagée (window.ForjeFonts) — avant le chargement des JSX -->
 <script src="lib/fonts.js?v=7"></script>
@@ -117,19 +112,54 @@
     'app-dashboard.jsx',
     'app-screens.jsx',
     'app-sources.jsx',
-    'app-pulse.jsx',
     'app-onboarding.jsx',
     'app-main.jsx',
     'app-auth.jsx',
     'root.jsx',
   ];
 
-  const V = '?v=22';
+  const V = '?v=45';
+
+  // Cache du JSX compilé : Babel (~2 Mo de JS) n'est chargé et exécuté que si
+  // un fichier manque au cache — les visites suivantes démarrent instantanément.
+  // Désactivé en local : en dev on modifie les JSX sans bumper V.
+  const CACHE = 'forje-jsx:';
+  const useCache = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(CACHE) && !k.endsWith(V)) localStorage.removeItem(k);
+    }
+  } catch (e) {}
+
+  let babelReady = null;
+  const ensureBabel = () => {
+    if (window.Babel) return Promise.resolve();
+    if (!babelReady) {
+      babelReady = new Promise((ok, err) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/@babel/standalone@7.29.0/babel.min.js';
+        s.integrity = 'sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y';
+        s.crossOrigin = 'anonymous';
+        s.onload = ok; s.onerror = err;
+        document.head.appendChild(s);
+      });
+    }
+    return babelReady;
+  };
+
   for (const src of files) {
     try {
-      const res  = await fetch(src + V);
-      const jsx  = await res.text();
-      const { code } = Babel.transform(jsx, { presets: ['react'] });
+      const key = CACHE + src + V;
+      let code = null;
+      if (useCache) { try { code = localStorage.getItem(key); } catch (e) {} }
+      if (!code) {
+        const res  = await fetch(src + V);
+        const jsx  = await res.text();
+        await ensureBabel();
+        code = Babel.transform(jsx, { presets: ['react'] }).code;
+        if (useCache) { try { localStorage.setItem(key, code); } catch (e) { /* quota : on compile à chaque fois */ } }
+      }
       const el = document.createElement('script');
       el.text = `(function(){\n${code}\n})();`;
       document.head.appendChild(el);

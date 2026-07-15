@@ -101,7 +101,6 @@ const StepShot = ({ kind }) => {
   if (!shot || !ok) return <StepArt kind={kind} />;
   return (
     <div className="how-shot">
-      <div className="how-shot-bar"><i /><i /><i /></div>
       <img src={shot.src} alt={shot.alt} loading="lazy" onError={() => setOk(false)} />
     </div>
   );
@@ -166,7 +165,8 @@ const FormatCard = ({ f, example }) => (
       {example ? (
         <img src={example} alt={'Exemple de post ' + f.name + ' généré par Forje'} loading="lazy" />
       ) : (
-        <video src={f.video} poster={f.poster} autoPlay loop muted playsInline />
+        /* Image fixe — les vidéos en boucle coûtaient trop cher en fluidité */
+        <img src={f.poster} alt={'Format ' + f.name} loading="lazy" />
       )}
     </div>
     <div className="format-head">
@@ -308,9 +308,9 @@ const Foot = () => (
       <a href="#pricing">Tarifs</a>
       <a href="#faq">FAQ</a>
       <a href="mailto:contact@forje.studio">Contact</a>
-      <a href="#">CGU</a>
-      <a href="#">Confidentialité</a>
-      <a href="#">Mentions légales</a>
+      <a href="/legal/cgu.html">CGU</a>
+      <a href="/legal/confidentialite.html">Confidentialité</a>
+      <a href="/legal/mentions-legales.html">Mentions légales</a>
     </div>
   </footer>
 );

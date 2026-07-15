@@ -87,18 +87,75 @@
   padding: 3px 7px; border-radius: 5px;
   background: rgba(0, 0, 0, 0.32); color: rgba(255, 255, 255, 0.85);
 }
-.float-post.fp-1 { top: 2%;   left: -30px;  transform: rotate(-7deg); animation-delay: 0.4s; }
-.float-post.fp-2 { top: 34%;  right: -34px; transform: rotate(5deg);  animation-delay: 1.6s; }
-.float-post.fp-3 { bottom: 0; left: 6%;     transform: rotate(-3deg); animation-delay: 2.8s; }
+.float-post.fp-1 { top: 2%;   left: -30px;  --fp-rot: -7deg; animation-delay: 0.4s; }
+.float-post.fp-2 { top: 34%;  right: -34px; --fp-rot: 5deg;  animation-delay: 1.6s; }
+.float-post.fp-3 { bottom: 0; left: 6%;     --fp-rot: -3deg; animation-delay: 2.8s; }
+/* transform (composité) plutôt que margin-top (layout à chaque frame) */
 @keyframes fpFloat {
-  0%, 100% { margin-top: 0; }
-  50%      { margin-top: -12px; }
+  0%, 100% { transform: rotate(var(--fp-rot, 0deg)) translateY(0); }
+  50%      { transform: rotate(var(--fp-rot, 0deg)) translateY(-12px); }
 }
+
+/* ───── Hero v2 : le Forgeron (mascotte détourée, HERO_VISUAL='forgeron') ── */
+.hero-forge-stage {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  padding: 10px 10px 30px;
+}
+.hero-forgeron {
+  position: relative; z-index: 2;
+  display: block; width: 100%; height: auto;
+  filter: drop-shadow(0 40px 70px rgba(0, 0, 6, 0.55));
+  animation:
+    forgeronIn .9s cubic-bezier(.2, .8, .25, 1) both,
+    forgeronFloat 9s ease-in-out 1.2s infinite;
+}
+@keyframes forgeronIn {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes forgeronFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+/* Halo chromatique discret derrière le personnage + lueur chaude de la forge */
+.hero-forge-halo {
+  position: absolute; z-index: 1; inset: 4% 6% 12%;
+  background:
+    radial-gradient(50% 45% at 50% 38%, rgba(106, 91, 255, 0.2), transparent 70%),
+    radial-gradient(42% 36% at 58% 72%, rgba(255, 176, 97, 0.14), transparent 70%);
+  filter: blur(30px);
+  pointer-events: none;
+}
+.hero-forge-floor {
+  position: absolute; z-index: 0; left: 50%; bottom: 16px;
+  width: 82%; height: 46px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, rgba(120, 150, 255, 0.3), rgba(255, 176, 97, 0.1) 55%, transparent 72%);
+  filter: blur(14px);
+}
+/* Posts flottants recalés autour du personnage (rotations héritées de fp-N) */
+.hero-forge-stage .float-post { z-index: 3; }
+.hero-forge-stage .float-post.fp-1 { top: 5%;  left: -26px; }
+.hero-forge-stage .float-post.fp-2 { top: 30%; right: -30px; }
+.hero-forge-stage .float-post.fp-3 { bottom: 5%; left: -4px; }
+
+/* ───── Fluidité : ne pas peindre ce qui est hors écran ──────────────────
+   Le navigateur saute entièrement le rendu (y compris les animations
+   infinies : sweeps, glows, shimmer) des sections invisibles. Les sections
+   veille/démo sont exclues : leur transition scroll-horizontal gère déjà
+   sa propre visibilité. */
+#how, #formats, #pricing, #faq, .closing, .foot {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 900px;
+}
+.foot { contain-intrinsic-size: auto 120px; }
 
 /* ───── Sections produit : headers compacts, accent sobre ───────────────── */
 /* Le gradient chromatique reste au hero et au closing ; sur les sections
    produit, l'accent devient une teinte unie — moins démo, plus outil. */
-.section-live h2, .section-demo h2, #how h2 {
+.section-live h2, .section-demo h2, #how h2,
+#formats h2, #pricing h2, #faq h2 {
   font-size: 40px;
   max-width: 720px;
 }
@@ -202,7 +259,7 @@
   flex-shrink: 0;
 }
 .dm-tab-avatar.media-avatar-fallback { font-size: 9px; }
-.dm-id-avatar.media-avatar-fallback { font-size: 16px; }
+.dm-id-avatar.media-avatar-fallback { font-size: 26px; }
 
 /* ───── 3. Board de veille ──────────────────────────────────────────────── */
 .lb-toolbar {
@@ -246,6 +303,30 @@
   100% { background: transparent; }
 }
 
+/* Avant la découverte du board, les lignes préchargées restent invisibles —
+   la cascade se joue au moment où le visiteur arrive dessus. */
+.lb-rows.pre .lb-row { opacity: 0; }
+
+/* Cascade d'entrée : arrivée sur le board + changement d'onglet — les lignes
+   tombent une à une et les jauges de score se remplissent. */
+.lb-rows.enter .lb-row {
+  animation: lbRowIn .5s cubic-bezier(.2, .8, .25, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.lb-rows.enter .lb-row .lb-meter i {
+  transform-origin: left center;
+  animation: lbMeterIn .8s cubic-bezier(.2, .8, .25, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms + .18s);
+}
+@keyframes lbRowIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes lbMeterIn {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
 .lb-score { display: flex; align-items: center; gap: 8px; }
 .lb-num {
   font-family: 'JetBrains Mono', monospace;
@@ -267,6 +348,12 @@
 .lb-row.hot .lb-meter i {
   background: linear-gradient(90deg, rgba(255, 176, 97, 0.85), rgba(255, 140, 130, 0.85));
   box-shadow: 0 0 8px rgba(255, 170, 110, 0.35);
+  animation: lbHotBreath 3s ease-in-out infinite;
+}
+/* Les scores chauds "respirent" doucement entre deux synchros */
+@keyframes lbHotBreath {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 170, 110, 0.35); }
+  50%      { box-shadow: 0 0 15px rgba(255, 170, 110, 0.65); }
 }
 
 .lb-title {
@@ -338,7 +425,7 @@
 }
 .dm-left {
   display: flex; flex-direction: column;
-  padding: 22px;
+  padding: 24px 24px 28px;
   border-right: 1px solid rgba(125, 165, 255, 0.1);
 }
 
@@ -357,15 +444,22 @@
 .dm-media-tabs { align-self: flex-start; }
 .dm-tab-avatar { border-radius: 50%; object-fit: cover; font-size: 9px; }
 
+/* Carte identité : le logo du média déborde du cadre (héros de la carte) */
 .dm-identity {
+  position: relative;
   display: flex; align-items: center; gap: 12px;
-  margin-top: 12px;
-  padding: 12px 14px;
+  margin-top: 16px; margin-left: 12px;
+  padding: 14px 16px 14px 72px;
   border-radius: 9px;
   border: 1px solid rgba(125, 165, 255, 0.12);
   background: rgba(4, 9, 28, 0.45);
 }
-.dm-id-avatar { border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.dm-id-avatar {
+  position: absolute; left: -18px; top: 50%; transform: translateY(-50%);
+  border-radius: 50%; object-fit: cover; flex-shrink: 0;
+  /* drop-shadow suit le contour alpha du logo — aucun conteneur dessiné */
+  filter: drop-shadow(0 12px 22px rgba(0, 0, 8, 0.55));
+}
 .dm-id-main { min-width: 0; }
 .dm-id-name { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
 .dm-id-handle { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
@@ -383,10 +477,10 @@
   font-size: 10px; color: var(--muted); white-space: nowrap;
 }
 .dm-id-tone {
-  margin-top: 8px;
+  margin-top: 11px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px; color: var(--muted-2); letter-spacing: 0.03em;
-  padding-left: 2px;
+  padding-left: 14px;
 }
 
 .dm-input {
@@ -468,7 +562,9 @@
 .dm-out-body {
   flex: 1;
   display: flex; flex-direction: column; justify-content: center;
-  padding: 24px;
+  /* padding bas > haut : compense le bandeau "Sortie" pour un centrage OPTIQUE
+     du post dans la fenêtre entière, pas seulement dans la zone restante */
+  padding: 20px 24px 44px;
 }
 
 .dm-placeholder { display: grid; place-items: center; height: 100%; }
@@ -551,6 +647,123 @@
 .dm-blocked-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 10px; }
 .dm-blocked p { color: var(--fg-dim); font-size: 14px; margin: 0 0 22px; }
 
+/* ───── Transition scroll-horizontal : board → démo ─────────────────────── */
+/* Par défaut (JS off / prefers-reduced-motion) : rien de spécial, les deux
+   sections s'empilent verticalement comme avant. La classe .is-pinned (posée
+   par JS) active le pin + la glisse latérale. */
+.ld-scroll { position: relative; }
+.ld-track { display: flex; flex-direction: column; }
+.ld-panel { width: 100%; }
+/* Rail + indice n'existent que dans le cadre figé — masqués en fallback empilé */
+.ld-rail, .ld-hint { display: none; }
+
+/* Le wrap réserve la course de scroll ; le cadre est épinglé en position:fixed
+   par le JS (position/top/left/width posés en inline). Par défaut le cadre est
+   en absolute au sommet du wrap (état « top » avant l'épinglage). */
+.ld-scroll.is-pinned { height: 260vh; } /* course longue = glisse lente + palier lisible sur la démo */
+.ld-scroll.is-pinned .ld-frame {
+  /* sticky natif = pin par le compositeur, collé au pixel près (un pin JS
+     retarde d'une frame sur le scroll composité → tremblements). Fonctionne
+     car html/body sont en overflow-x: clip, pas hidden (cf. forje.css). */
+  position: sticky; top: 0;
+  width: 100%; height: 100vh;
+  overflow: hidden;
+  z-index: 2;
+}
+.ld-scroll.is-pinned .ld-track {
+  flex-direction: row;
+  height: 100%;
+  width: max-content;
+  will-change: transform;
+}
+.ld-scroll.is-pinned .ld-panel {
+  flex: 0 0 auto;
+  width: var(--ld-w, 1440px);   /* = largeur du cadre figé (.page) */
+  height: 100%;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 0 72px; box-sizing: border-box;
+  overflow: hidden;
+}
+/* Dans le cadre figé, les DEUX sections partagent une géométrie identique :
+   même largeur, même hauteur, header ancré en haut, fenêtre (480px) ancrée en
+   bas → titres face à face, fenêtres face à face pendant la glisse. */
+.ld-scroll.is-pinned .ld-panel > .section {
+  width: 100%; max-width: 1120px; margin: 0 auto;
+  box-sizing: border-box; padding: 0;
+  height: 645px;
+  display: flex; flex-direction: column;
+}
+.ld-scroll.is-pinned .section-label { margin-bottom: 6px; }
+.ld-scroll.is-pinned .section-live h2,
+.ld-scroll.is-pinned .section-demo h2 {
+  font-size: 29px; line-height: 1.12; margin: 4px 0 8px; max-width: 640px;
+}
+.ld-scroll.is-pinned .lede { font-size: 14px; line-height: 1.5; margin: 0; max-width: 560px; }
+.ld-scroll.is-pinned .fs-window {
+  margin-top: auto;              /* ancre la fenêtre en bas de la section */
+  height: 508px;                 /* même hauteur board / démo — assez pour que le CTA respire */
+  display: flex; flex-direction: column;
+}
+
+/* Board : lignes plus serrées + on plafonne à 6 lignes visibles pour tenir.
+   lb-rows absorbe le mou (flex:1) → le footer reste collé en bas des 480px. */
+.ld-scroll.is-pinned .lb-rows { min-height: 0; flex: 1; }
+.ld-scroll.is-pinned .lb-row { padding-top: 7px; padding-bottom: 7px; }
+.ld-scroll.is-pinned .lb-rows > .lb-row:nth-child(n+7) { display: none; }
+
+/* Démo : compactée pour tenir dans les MÊMES 480px que le board — colonne
+   gauche resserrée, 2 suggestions au lieu de 3, textarea plus basse. */
+.ld-scroll.is-pinned .dm-body { flex: 1; min-height: 0; }
+.ld-scroll.is-pinned .dm-right { min-height: 0; }
+.ld-scroll.is-pinned .dm-out-body { padding: 12px 14px 30px; }
+.ld-scroll.is-pinned .dm-left { padding: 14px 16px 18px; }
+.ld-scroll.is-pinned .dm-step { margin-bottom: 8px; }
+.ld-scroll.is-pinned .dm-step + .dm-step,
+.ld-scroll.is-pinned .dm-identity + .dm-step,
+.ld-scroll.is-pinned .dm-id-tone + .dm-step { margin-top: 14px; }
+.ld-scroll.is-pinned .dm-identity { margin-top: 10px; margin-left: 9px; padding: 10px 12px 10px 56px; }
+.ld-scroll.is-pinned .dm-id-avatar { width: 56px !important; height: 56px !important; left: -14px; }
+.ld-scroll.is-pinned .dm-id-tone { margin-top: 7px; padding-left: 11px; }
+.ld-scroll.is-pinned .dm-input { min-height: 56px; }
+.ld-scroll.is-pinned .dm-sugg { margin-top: 10px; }
+.ld-scroll.is-pinned .dm-sugg-row { padding: 6px 12px; }
+.ld-scroll.is-pinned .dm-sugg-row:nth-child(4) { display: none; } /* 3 → 2 suggestions */
+.ld-scroll.is-pinned .dm-generate-btn { margin-top: 12px; padding-top: 12px; padding-bottom: 12px; }
+.ld-scroll.is-pinned .dm-note { margin-top: 8px; }
+.ld-scroll.is-pinned .dm-placeholder-frame { width: 40%; }
+.ld-scroll.is-pinned .dm-post-wrap { width: 44%; }
+
+/* Rail de progression (haut du cadre) */
+.ld-scroll.is-pinned .ld-rail {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 4;
+  height: 2px; background: rgba(125, 165, 255, 0.1);
+  pointer-events: none;
+}
+.ld-scroll.is-pinned .ld-rail i {
+  display: block; height: 100%; transform-origin: left center;
+  transform: scaleX(var(--ld-p, 0));
+  background: linear-gradient(90deg, rgba(120, 150, 255, 0.75), rgba(147, 186, 255, 0.95));
+  box-shadow: 0 0 10px rgba(130, 165, 255, 0.5);
+}
+
+/* Indice de scroll — s'efface au fur et à mesure qu'on avance vers la démo */
+.ld-scroll.is-pinned .ld-hint {
+  position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
+  z-index: 4; pointer-events: none;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 15px; border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; letter-spacing: 0.04em;
+  color: rgba(180, 210, 255, 0.72);
+  background: rgba(6, 11, 34, 0.66);
+  border: 1px solid rgba(125, 165, 255, 0.16);
+  backdrop-filter: blur(6px);
+  opacity: calc(1 - var(--ld-p, 0) * 1.6);
+}
+.ld-scroll.is-pinned .ld-hint svg { width: 12px; height: 12px; }
+@keyframes ldHintNudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(4px); } }
+.ld-scroll.is-pinned .ld-hint svg { animation: ldHintNudge 1.4s ease-in-out infinite; }
+
 /* ───── 5. Comment ça marche ────────────────────────────────────────────── */
 .how-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 56px; }
 .how-card {
@@ -600,10 +813,10 @@
   width: 7px; height: 7px; border-radius: 50%;
   background: rgba(160, 190, 255, 0.18);
 }
-.how-shot img {
+.how-shot img, .how-shot video {
   display: block; width: 100%;
   aspect-ratio: 16 / 10;
-  object-fit: cover; object-position: top left;
+  object-fit: cover; object-position: center;
 }
 
 .how-art { margin-top: auto; }
@@ -679,10 +892,22 @@
 .format-card p { color: var(--fg-dim); font-size: 14px; line-height: 1.55; margin: 0; }
 
 /* ───── 7. Pricing solo ─────────────────────────────────────────────────── */
-.pricing-solo { display: grid; place-items: center; margin-top: 48px; }
-.pricing-solo .price-card { width: 620px; text-align: left; }
-.price-mix { color: var(--fg-dim); font-size: 14.5px; margin-bottom: 22px; }
-.price-compare { margin-top: 20px; font-size: 13px; color: var(--muted); }
+/* Version compacte : la carte doit se lire d'un coup d'œil, pas dominer
+   la section — largeur contenue, densité relevée. */
+.pricing-solo { display: grid; place-items: center; margin-top: 44px; }
+.pricing-solo .price-card {
+  width: 500px; text-align: left;
+  padding: 30px 34px; border-radius: 18px;
+}
+.pricing-solo .price-amount { margin: 14px 0 8px; }
+.pricing-solo .price-amount .num { font-size: 40px; }
+.pricing-solo .price-sub { font-size: 14px; margin-bottom: 10px; }
+.price-mix { color: var(--fg-dim); font-size: 13.5px; margin-bottom: 18px; }
+.pricing-solo .price-list { gap: 9px; margin-bottom: 24px; }
+.pricing-solo .price-list li { font-size: 13.5px; }
+.pricing-solo .btn-lg { width: 100%; justify-content: center; }
+.price-compare { margin-top: 14px; font-size: 12.5px; color: var(--muted); text-align: center; }
+.pricing-solo .price-card.featured::after { inset: -22px; }
 
 /* ───── 8. FAQ ──────────────────────────────────────────────────────────── */
 .section-faq .faq-list { margin-top: 44px; max-width: 860px; }
@@ -717,3 +942,38 @@
 /* ───── Footer v2 ───────────────────────────────────────────────────────── */
 .foot-brand { display: flex; align-items: center; gap: 12px; }
 .foot-logo { width: 22px; height: 22px; object-fit: contain; opacity: 0.85; }
+
+/* ═════ Harmonisation typographique — FAQ, closing ═══════════════════════
+   Les sections produit sont à 40px ; la FAQ redevient du contenu secondaire
+   compact et le closing garde son emphase sans écraser le reste (64px au
+   lieu de 88px, soit 1.6× les sections au lieu de 2.2×). */
+.section-faq .faq-list { margin-top: 36px; max-width: 720px; }
+.faq-item { border-radius: 12px; margin-bottom: 8px; }
+.faq-q { padding: 14px 18px; font-size: 14.5px; }
+.faq-chev { font-size: 18px; width: 20px; }
+.faq-a p { padding: 0 18px 16px; font-size: 13.5px; line-height: 1.6; }
+
+.closing { padding: 116px 72px 96px; }
+.closing h2 { font-size: 64px; }
+
+/* ═════ Nav au scroll — voile pleine largeur, plus de plaque ═════════════
+   La nav vit dans .page (1440px) : son fond s'arrêtait net au milieu des
+   écrans larges. Le voile passe sur un pseudo-élément full-bleed qui fond
+   en dégradé vers le bas — plus aucun bord dur. */
+.nav { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.nav::after {
+  content: ""; position: absolute; top: 0; bottom: -14px; left: 50%;
+  width: max(100vw, 1440px); transform: translateX(-50%);
+  z-index: -1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(4, 10, 32, 0.78) 0%, rgba(4, 10, 32, 0.45) 62%, transparent 100%);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  opacity: 0; transition: opacity .35s ease;
+}
+body.scrolled .nav { background: none; }
+body.scrolled .nav::after { opacity: 1; }
+/* Le hairline suit la même largeur que le voile */
+.nav::before {
+  left: 50%; right: auto; transform: translateX(-50%);
+  width: min(1296px, calc(100vw - 144px));
+}

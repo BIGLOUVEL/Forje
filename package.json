@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "dev:watch": "node --watch server.js"
+    "dev:watch": "node --watch server.js",
+    "stripe:listen": "node scripts/stripe-listen.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
@@ -33,5 +34,8 @@
     "sharp": "^0.34.5",
     "stripe": "^22.3.0",
     "voyageai": "^0.2.1"
+  },
+  "devDependencies": {
+    "@babel/standalone": "^8.0.4"
   }
 }

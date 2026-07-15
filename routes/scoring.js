@@ -36,6 +36,9 @@ function quickKeywordFilter(news, compte) {
 }
 
 // ─── System prompt Agent 2 (injecté dynamiquement) ──────────────────────────
+// Schéma volontairement minimal : la caption/le brief sont générés par le
+// pipeline "Forjer" (/forge-from-article), pas au scoring. Seuls
+// format_suggere et pourquoi_ce_score sont affichés dans l'UI du board.
 function buildSystemPrompt(compte) {
   const arr = (v) => (Array.isArray(v) && v.length ? v.join(', ') : '—');
   const val = (v) => v || '—';
@@ -45,35 +48,23 @@ function buildSystemPrompt(compte) {
 ━━ PROFIL ÉDITORIAL ━━
 Niche : ${val(compte.niche_principale)}
 Sous-niches actives : ${arr(compte.sous_niches)}
-Ton : ${val(compte.ton)}
 Angle : ${val(compte.angle_editorial)}
 Audience : ${val(compte.audience_age)}, ${val(compte.audience_type)}
-Niveau expertise audience : ${val(compte.niveau_expertise_audience)}
-Références culturelles : ${arr(compte.references_culturelles)}
 Formats qui performent : ${arr(compte.formats_favoris)}
-Ratio éditorial : ${val(compte.ratio_contenu)}
+Formats réellement utilisés : ${arr(compte.formats_reellement_utilises)}
 Fenêtre breaking : ${val(compte.fenetre_reaction_breaking)}
 Fenêtre trending : ${val(compte.fenetre_reaction_trending)}
-Créneaux engagement : ${arr(compte.horaires_pic_engagement)}
 SUJETS À ÉVITER : ${arr(compte.sujets_a_eviter)}
 
-━━ CE QUE TU AS APPRIS DE CE USER ━━
-Formats qu'il utilise vraiment : ${arr(compte.formats_reellement_utilises)}
+━━ COMPORTEMENT APPRIS DU USER ━━
 Sujets qu'il traite toujours : ${arr(compte.sujets_toujours_traites)}
 Sujets qu'il ignore systématiquement : ${arr(compte.sujets_ignores_systematiquement)}
-Il modifie les captions pour : ${arr(compte.modifications_frequentes)}
-Taux utilisation captions brutes : ${Math.round((compte.taux_utilisation_captions_brutes || 0) * 100)}%
-Score moyen news qu'il poste : ${val(compte.score_moyen_news_postees)}
-Score moyen news qu'il ignore : ${val(compte.score_moyen_news_ignorees)}
-Sujets bonus (toujours traités) : ${arr(compte.sujets_bonus)}
-Sujets malus (toujours ignorés) : ${arr(compte.sujets_malus)}
+Sujets bonus : ${arr(compte.sujets_bonus)}
+Sujets malus : ${arr(compte.sujets_malus)}
 
-━━ CE QUE TU AS APPRIS DE L'AUDIENCE VIA LES COMMENTAIRES ━━
+━━ AUDIENCE ━━
 Topics qui génèrent le plus d'engagement : ${arr(compte.topics_engageants_concurrents)}
-Émotions dominantes de l'audience : ${arr(compte.emotions_dominantes_audience)}
-Questions fréquentes posées en commentaires : ${arr(compte.questions_frequentes_audience)}
-Vocabulaire et expressions de l'audience : ${arr(compte.vocabulaire_audience)}
-Intègre ces insights dans tes captions.
+Émotions dominantes : ${arr(compte.emotions_dominantes_audience)}
 
 ━━ CONCURRENTS (pour évaluer l'originalité) ━━
 ${arr(compte.concurrents)}
@@ -87,19 +78,9 @@ ${arr(compte.concurrents)}
 
 Seuils : <5 exclure | 5-6.9 faible_priorite | 7-8.4 a_traiter | ≥8.5 urgent
 
-━━ CAPTIONS (urgent ≥ 8.5 uniquement) ━━
-- Pour les articles flag="urgent" SEULEMENT, génère une caption. Les autres : caption=null.
-- Ton : ${val(compte.ton)}
-- Jamais de langue de bois, angle spécifique
-- Utilise le vocabulaire naturel de l'audience : ${arr(compte.vocabulaire_audience)}
-- ${(compte.modifications_frequentes || []).includes('raccourcissement') ? 'Génère déjà COURT (user raccourcit souvent)' : ''}
-- ${(compte.modifications_frequentes || []).includes('ajout_humour') ? 'Intègre de l\'humour directement' : ''}
-- Termine par une question ou un CTA implicite
-
 ━━ FORMAT DE SORTIE ━━
 JSON valide uniquement, aucun texte autour :
 {
-  "timestamp_analyse": "ISO8601",
   "resultats": [
     {
       "news_id": "string",
@@ -112,61 +93,38 @@ JSON valide uniquement, aucun texte autour :
         "bonus_comportemental": number
       },
       "flag": "urgent|a_traiter|faible_priorite",
-      "fenetre": {
-        "age_news_minutes": number,
-        "temps_restant_minutes": number,
-        "code_couleur": "🟢|🟡|🔴"
-      },
-      "suggestion": {
-        "format": "Reel|Carrousel|Story|Post",
-        "raison_format": "string",
-        "caption": "string|null",
-        "hashtags": ["string"],
-        "angle": "string",
-        "timing_optimal": "string"
-      },
-      "pourquoi_ce_score": "string max 2 phrases",
+      "format_suggere": "Reel|Carrousel|Story|Post",
+      "pourquoi_ce_score": "string, 1 phrase courte",
       "alerte_breaking": boolean,
       "alerte_message": "string|null"
     }
-  ],
-  "signaux_tendances": [
-    { "keyword": "string", "intensite": number, "tendance": "montante|stable|descendante", "depuis_minutes": number }
-  ],
-  "meta": {
-    "news_analysees": number,
-    "news_retenues": number,
-    "news_filtrees": number,
-    "raison_filtrage_principale": "string"
-  }
-}`;
+  ]
+}
+Sois concis : pourquoi_ce_score = 1 seule phrase courte, pas de champs supplémentaires.`;
 }
 
 // ─── Appel Agent 2 ────────────────────────────────────────────────────────────
-async function runAgent2(compte, newsLot) {
-  const response = await client.messages.create({
-    model:      'claude-haiku-4-5-20251001',
-    max_tokens: 1500,
-    system: [{ type: 'text', text: buildSystemPrompt(compte), cache_control: { type: 'ephemeral' } }],
-    messages: [{
-      role:    'user',
-      content: JSON.stringify({
-        instructions: 'Score ces news pour ce compte. Ne retourne que celles avec score ≥ 5.',
-        news: newsLot.map(n => ({
-          id:           n.id,
-          titre:        n.titre,
-          description:  n.description,
-          source:       n.source,
-          published_at: n.published_at,
-          age_minutes:  Math.round((Date.now() - new Date(n.created_at).getTime()) / 60000),
-        })),
-      }),
-    }],
+// Le scoring passe par OpenRouter (modèle cheap, ~10x moins cher que Haiku) si
+// OPENROUTER_API_KEY est défini. Fallback automatique sur Haiku (Anthropic) en
+// cas d'erreur, de timeout ou de JSON invalide — le board ne casse jamais.
+const SCORING_MODEL   = process.env.SCORING_MODEL || 'google/gemini-2.5-flash-lite';
+const SCORING_TIMEOUT = 45_000;
+
+function buildUserMessage(newsLot) {
+  return JSON.stringify({
+    instructions: 'Score ces news pour ce compte. Ne retourne que celles avec score ≥ 5.',
+    news: newsLot.map(n => ({
+      id:           n.id,
+      titre:        n.titre,
+      description:  n.description,
+      source:       n.source,
+      published_at: n.published_at,
+      age_minutes:  Math.round((Date.now() - new Date(n.created_at).getTime()) / 60000),
+    })),
   });
+}
 
-  track({ feature: 'scoring', model: 'claude-haiku-4-5-20251001', inputTokens: response.usage?.input_tokens, outputTokens: response.usage?.output_tokens, compteId: compte.id });
-
-  const text = response.content.find(b => b.type === 'text')?.text || '';
+function parseAgent2Json(text) {
   const match = text.match(/(\{[\s\S]*\})/);
   if (!match) throw new Error('Pas de JSON dans la réponse Agent 2');
   try {
@@ -175,10 +133,72 @@ async function runAgent2(compte, newsLot) {
     // Tentative de récupération : extraire juste le tableau resultats
     const arrMatch = text.match(/"resultats"\s*:\s*(\[[\s\S]*?\])\s*[,}]/);
     if (arrMatch) {
-      try { return { resultats: JSON.parse(arrMatch[1]), signaux_tendances: [], meta: {} }; } catch {}
+      try { return { resultats: JSON.parse(arrMatch[1]) }; } catch {}
     }
     throw new Error(`JSON Agent 2 invalide : ${e.message}`);
   }
+}
+
+async function runOpenRouter(compte, newsLot) {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    signal: AbortSignal.timeout(SCORING_TIMEOUT),
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type':  'application/json',
+      'X-Title':       'Forje Studio - scoring veille',
+    },
+    body: JSON.stringify({
+      model:      SCORING_MODEL,
+      max_tokens: 6000,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: buildSystemPrompt(compte) },
+        { role: 'user',   content: buildUserMessage(newsLot) },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+
+  if (data.choices?.[0]?.finish_reason === 'length') {
+    console.warn(`[Agent 2] Réponse tronquée à max_tokens (lot ${newsLot.length} news) — les dernières news du lot peuvent être perdues`);
+  }
+
+  track({
+    feature: 'scoring', model: SCORING_MODEL,
+    inputTokens:  data.usage?.prompt_tokens,
+    outputTokens: data.usage?.completion_tokens,
+    costUsd:      data.usage?.cost, // coût exact facturé par OpenRouter
+    compteId: compte.id,
+  });
+
+  return parseAgent2Json(data.choices?.[0]?.message?.content || '');
+}
+
+async function runHaiku(compte, newsLot) {
+  const response = await client.messages.create({
+    model:      'claude-haiku-4-5-20251001',
+    max_tokens: 6000,
+    system:     buildSystemPrompt(compte),
+    messages:   [{ role: 'user', content: buildUserMessage(newsLot) }],
+  });
+
+  track({ feature: 'scoring', model: 'claude-haiku-4-5-20251001', inputTokens: response.usage?.input_tokens, outputTokens: response.usage?.output_tokens, compteId: compte.id });
+
+  const text = response.content.find(b => b.type === 'text')?.text || '';
+  return parseAgent2Json(text);
+}
+
+async function runAgent2(compte, newsLot) {
+  if (process.env.OPENROUTER_API_KEY) {
+    try {
+      return await runOpenRouter(compte, newsLot);
+    } catch (err) {
+      console.error(`[Agent 2] OpenRouter (${SCORING_MODEL}) KO → fallback Haiku :`, err.message);
+    }
+  }
+  return runHaiku(compte, newsLot);
 }
 
 // ─── INSERT résultats en DB ───────────────────────────────────────────────────
@@ -195,15 +215,8 @@ async function saveScores(compteId, resultats) {
     score_originalite:        r.score_detail?.originalite,
     score_bonus_comportemental: r.score_detail?.bonus_comportemental,
     flag:                     r.flag,
-    fenetre_age_minutes:      r.fenetre?.age_news_minutes,
-    fenetre_temps_restant_minutes: r.fenetre?.temps_restant_minutes,
-    fenetre_code_couleur:     r.fenetre?.code_couleur,
-    format_suggere:           r.suggestion?.format,
-    raison_format:            r.suggestion?.raison_format,
-    caption:                  r.suggestion?.caption,
-    hashtags:                 r.suggestion?.hashtags,
-    angle:                    r.suggestion?.angle,
-    timing_optimal:           r.suggestion?.timing_optimal,
+    // format_suggere désormais à la racine (r.suggestion = compat ancien schéma)
+    format_suggere:           r.format_suggere || r.suggestion?.format,
     pourquoi_ce_score:        r.pourquoi_ce_score,
     alerte_breaking:          r.alerte_breaking ?? false,
     alerte_message:           r.alerte_message,
@@ -215,7 +228,7 @@ async function saveScores(compteId, resultats) {
 }
 
 // ─── Pipeline complet pour un compte ─────────────────────────────────────────
-async function scoreForCompte(compteId, batchSize = 10, windowHours = 24) {
+async function scoreForCompte(compteId, batchSize = 25, windowHours = 24) {
   _scoringStatus.set(compteId, { running: true, startedAt: Date.now() });
   try {
     return await _scoreForCompteInner(compteId, batchSize, windowHours);
@@ -298,7 +311,7 @@ router.post('/run', async (req, res) => {
 
   try {
     // Fenêtre 48h pour les runs manuels (vs 6h pour l'auto-score du RSS loop)
-    const result = await scoreForCompte(compte_id, 10, 48);
+    const result = await scoreForCompte(compte_id, 25, 48);
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[Agent 2]', err.message);
@@ -325,9 +338,22 @@ router.get('/board', async (req, res) => {
     const { data, error } = await query;
     if (error) throw error;
 
-    // Séparer alertes breaking
-    const breaking = (data || []).filter(n => n.alerte_breaking);
-    const board    = (data || []).filter(n => !n.alerte_breaking);
+    // Séparer alertes breaking.
+    // Le champ `alerte_breaking` du modèle est peu fiable (le modèle de scoring
+    // cheap ne le renseigne quasi jamais). On le classe donc de façon
+    // déterministe : actu forte (score ≥ 8.5) ET fraîche (publiée < 2h).
+    // Le flag explicite du modèle reste honoré s'il existe.
+    const BREAKING_MIN_SCORE = 8.5;
+    const BREAKING_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2h
+    const isBreaking = (n) => {
+      if (n.alerte_breaking) return true;
+      if ((n.score_total ?? 0) < BREAKING_MIN_SCORE) return false;
+      const ts = n.news_raw?.published_at || n.news_raw?.created_at || n.created_at;
+      const t = ts ? new Date(ts).getTime() : NaN;
+      return Number.isFinite(t) && (Date.now() - t) < BREAKING_MAX_AGE_MS;
+    };
+    const breaking = (data || []).filter(isBreaking);
+    const board    = (data || []).filter(n => !isBreaking(n));
 
     res.json({ breaking, board, total: data?.length ?? 0 });
   } catch (err) {
@@ -335,4 +361,4 @@ router.get('/board', async (req, res) => {
   }
 });
 
-module.exports = { router, scoreForCompte };
+module.exports = { router, scoreForCompte, runAgent2 };

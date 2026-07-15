@@ -61,12 +61,15 @@ const WindowBar = ({ url, right }) => (
 );
 
 // Lazy-load : déclenche onVisible ~400px avant l'entrée dans le viewport.
+// Marge horizontale large : dans la transition scroll-horizontal, le panneau
+// démo est translaté hors-champ à droite — on veut quand même précharger ses
+// données avant qu'il ne glisse dans le cadre.
 const useNearViewport = (ref, onVisible) => {
   useEL(() => {
     if (!ref.current) return;
     const obs = new IntersectionObserver((entries) => {
       if (entries.some(e => e.isIntersecting)) { onVisible(); obs.disconnect(); }
-    }, { rootMargin: '400px 0px' });
+    }, { rootMargin: '400px 1600px' });
     obs.observe(ref.current);
     return () => obs.disconnect();
   }, []);
@@ -94,11 +97,47 @@ const LiveBoard = () => {
   const [profiles, setProfiles] = useSL(null); // [{key, name, topic, items}]
   const [tab, setTab] = useSL('ballon_bleu');
   const [lastSync, setLastSync] = useSL(null);
+  const [entering, setEntering] = useSL(false);   // cascade d'entrée des lignes
+  const [discovered, setDiscovered] = useSL(false); // le visiteur a atteint le board
   const [, forceTick] = useSL(0);              // tick 1s → âges & synchro vivent
   const knownIds = useRL(new Set());
   const freshIds = useRL(new Set());
   const started = useRL(false);
   const timersRef = useRL([]);
+
+  // Rejoue la cascade d'entrée (arrivée sur le board, changement d'onglet)
+  const playEnter = useCL(() => {
+    setEntering(true);
+    timersRef.current.push(setTimeout(() => setEntering(false), 2200));
+  }, []);
+
+  // La cascade de découverte ne se joue que lorsque le board est RÉELLEMENT
+  // sous les yeux du visiteur ET que les données sont là. Les données sont
+  // préchargées bien avant l'entrée dans le viewport (useNearViewport) —
+  // sans ce verrou, l'animation se jouerait hors-champ.
+  const revealed = useRL(false);
+  const dataReady = useRL(false);
+  const cascadeDone = useRL(false);
+  const tryCascade = useCL(() => {
+    if (cascadeDone.current || !revealed.current || !dataReady.current) return;
+    cascadeDone.current = true;
+    setLastSync(Date.now()); // "synchronisé à l'instant" au moment de la découverte
+    setDiscovered(true);
+    playEnter();
+  }, [playEnter]);
+
+  useEL(() => {
+    if (!sectionRef.current) return;
+    const obs = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) {
+        revealed.current = true;
+        tryCascade();
+        obs.disconnect();
+      }
+    }, { threshold: 0.25 });
+    obs.observe(sectionRef.current);
+    return () => obs.disconnect();
+  }, []);
 
   const refresh = useCL(async () => {
     try {
@@ -112,9 +151,10 @@ const LiveBoard = () => {
       }
       setProfiles(next);
       setLastSync(Date.now());
+      if (!dataReady.current) { dataReady.current = true; tryCascade(); }
       setTimeout(() => { freshIds.current.clear(); }, 5000);
     } catch (e) { /* réseau : on garde l'état courant */ }
-  }, []);
+  }, [tryCascade]);
 
   const start = useCL(() => {
     if (started.current) return;
@@ -133,7 +173,10 @@ const LiveBoard = () => {
     window.dispatchEvent(new CustomEvent('forje-demo-select', {
       detail: { preset: tab, newsId: item.id, title: item.title },
     }));
-    document.getElementById('demo-generate')?.scrollIntoView({ behavior: 'smooth' });
+    // En mode scroll-horizontal, la démo est à droite du board : on fait glisser
+    // le cadre jusqu'à elle. Sinon (fallback empilé), scroll vertical classique.
+    if (window.__forjeRevealDemo) window.__forjeRevealDemo();
+    else document.getElementById('demo-generate')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const list = profiles || MEDIA_FALLBACK.map(m => ({ key: m.key, name: m.name, topic: '', items: [] }));
@@ -163,7 +206,7 @@ const LiveBoard = () => {
           <div className="fs-tabs">
             {list.map(p => (
               <button key={p.key} className={'fs-tab' + (tab === p.key ? ' active' : '')}
-                      onClick={() => { setTab(p.key); window.__forjeTrack?.('demo_board_tab', { preset: p.key }); }}>
+                      onClick={() => { setTab(p.key); playEnter(); window.__forjeTrack?.('demo_board_tab', { preset: p.key }); }}>
                 {p.name}
               </button>
             ))}
@@ -173,10 +216,10 @@ const LiveBoard = () => {
 
         <div className="lb-cols">
           <span>Score</span><span>Actu</span><span>Source</span>
-          <span className="ta-r">Âge</span><span aria-hidden="true" />
+          <span className="ta-r">Il y a</span><span aria-hidden="true" />
         </div>
 
-        <div className="lb-rows">
+        <div className={'lb-rows' + (entering ? ' enter' : '') + (discovered ? '' : ' pre')}>
           {!profiles && (
             <div className="lb-loading">
               {[0, 1, 2, 3, 4, 5].map(i => <div key={i} className="lb-skeleton" style={{ animationDelay: (i * 0.1) + 's' }} />)}
@@ -185,10 +228,11 @@ const LiveBoard = () => {
           {profiles && active.items.length === 0 && (
             <div className="lb-empty">La veille se réchauffe — reviens dans quelques minutes.</div>
           )}
-          {active.items.map(item => {
+          {active.items.map((item, i) => {
             const hot = item.score >= 80;
             return (
               <div key={item.id}
+                   style={{ '--i': i }}
                    className={'lb-row' + (hot ? ' hot' : '') + (freshIds.current.has(item.id) ? ' fresh' : '')}>
                 <div className="lb-score">
                   <span className="lb-num">{item.score}</span>
@@ -208,7 +252,7 @@ const LiveBoard = () => {
         </div>
 
         <div className="lb-foot">
-          <span>{profiles ? active.items.length + ' actus dans l\'univers de ' + active.name : ' '}</span>
+          <span>{profiles ? 'sources scannées en continu · scoring automatique' : ' '}</span>
           <span className="lb-sync"><span className="lb-sync-dot" /> {syncLabel}</span>
         </div>
       </div>
@@ -435,7 +479,7 @@ const InteractiveDemo = () => {
             </div>
 
             <div className="dm-identity">
-              <MediaAvatar media={media} size={42} className="dm-id-avatar" />
+              <MediaAvatar media={media} size={78} className="dm-id-avatar" />
               <div className="dm-id-main">
                 <div className="dm-id-name">{media.name}</div>
                 {media.handle && <div className="dm-id-handle">{media.handle}</div>}
@@ -556,4 +600,116 @@ const InteractiveDemo = () => {
   );
 };
 
-Object.assign(window, { LiveBoard, InteractiveDemo });
+// ───── 3+4. TRANSITION SCROLL HORIZONTAL (board → démo) ──────────────────
+// Le board occupe le cadre ; en scrollant, la zone se fige (sticky 100vh) et
+// la démo glisse depuis la droite pour prendre sa place — au lieu d'être en
+// dessous. Vanilla (pas de lib d'anim) : un handler de scroll traduit une
+// piste horizontale via translate3d. Fallback : sections empilées si JS off
+// ou prefers-reduced-motion (le CSS par défaut, sans .is-pinned).
+const LiveDemoScroll = () => {
+  const wrapRef = useRL(null);   // réserve la hauteur de scroll
+  const frameRef = useRL(null);  // cadre épinglé (position pilotée en JS)
+  const trackRef = useRL(null);  // piste horizontale (board | démo)
+
+  useEL(() => {
+    const wrap = wrapRef.current;
+    const frame = frameRef.current;
+    const track = trackRef.current;
+    if (!wrap || !frame || !track) return;
+
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return; // fallback empilé
+
+    wrap.classList.add('is-pinned');
+
+    // Pin vertical : position:sticky NATIF (cf. forje-live.css) — géré par le
+    // compositeur, collé au pixel près. Aucun repositionnement JS du cadre :
+    // un pin JS retarde d'une frame sur le scroll composité → tremblements.
+    // Le JS ne pilote que la GLISSE HORIZONTALE de la piste.
+    // ── Mouvement en 3 temps + lissage ──────────────────────────────────
+    // Courbe : on TIENT le board (0→12%), on GLISSE en ease-in-out (12→70%),
+    // puis PALIER stabilisé sur la démo (70→100%) pour qu'elle soit lisible.
+    // La glisse ne suit pas le scroll brut (crans de molette = tremblements) :
+    // le scroll fixe une cible, une boucle rAF interpole vers elle → vitesse
+    // amortie, trajectoire droite, zéro à-coup.
+    const easeInOut = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const slideCurve = (p) => {
+      const a = 0.12, b = 0.70;
+      if (p <= a) return 0;
+      if (p >= b) return 1;
+      return easeInOut((p - a) / (b - a));
+    };
+
+    let lastW = -1, shift = 1;  // shift = largeur d'un panneau (course horizontale)
+    let cur = 0, target = 0;    // translation affichée / cible (px)
+    let rafLoop = 0;
+
+    const tick = () => {
+      rafLoop = 0;
+      const d = target - cur;
+      cur = Math.abs(d) < 0.4 ? target : cur + d * 0.11; // amorti ≈ silky
+      track.style.transform = 'translate3d(' + (-cur).toFixed(2) + 'px,0,0)';
+      wrap.style.setProperty('--ld-p', (shift ? cur / shift : 0).toFixed(4));
+      if (cur !== target) rafLoop = requestAnimationFrame(tick);
+    };
+    const startLoop = () => { if (!rafLoop) rafLoop = requestAnimationFrame(tick); };
+
+    // Au scroll : on ne fait que recalculer la CIBLE horizontale — le pin
+    // vertical est entièrement géré par sticky, on n'y touche pas.
+    const update = () => {
+      const vh = window.innerHeight;
+      const rect = wrap.getBoundingClientRect();
+      const travel = Math.max(1, wrap.offsetHeight - vh); // course pendant le pin
+      const passed = -rect.top;                            // distance scrollée dans le wrap
+      const clamped = passed < 0 ? 0 : passed > travel ? travel : passed;
+
+      const w = wrap.clientWidth; // = largeur .page (le cadre fait 100%)
+      if (w !== lastW) { lastW = w; wrap.style.setProperty('--ld-w', w + 'px'); }
+
+      shift = Math.max(1, track.scrollWidth - w);
+      target = slideCurve(clamped / travel) * shift;
+      startLoop();
+    };
+    const onScroll = update;
+
+    // Amener le cadre jusqu'à la démo (fin de course) — appelé par « Forger ».
+    window.__forjeRevealDemo = () => {
+      const rect = wrap.getBoundingClientRect();
+      const travel = Math.max(1, wrap.offsetHeight - window.innerHeight);
+      window.scrollTo({ top: window.scrollY + rect.top + travel, behavior: 'smooth' });
+    };
+
+    update();
+    // Re-mesures différées : rattrape l'activation tardive du CSS / des polices.
+    const rafId = requestAnimationFrame(update);
+    const t1 = setTimeout(update, 120);
+    const t2 = setTimeout(update, 600);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    window.addEventListener('load', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('load', onScroll);
+      cancelAnimationFrame(rafId);
+      if (rafLoop) cancelAnimationFrame(rafLoop);
+      clearTimeout(t1); clearTimeout(t2);
+      if (window.__forjeRevealDemo) delete window.__forjeRevealDemo;
+    };
+  }, []);
+
+  return (
+    <div className="ld-scroll" ref={wrapRef}>
+      <div className="ld-frame" ref={frameRef}>
+        <div className="ld-rail"><i /></div>
+        <div className="ld-track" ref={trackRef}>
+          <div className="ld-panel" data-screen-label="03 Veille Live"><LiveBoard /></div>
+          <div className="ld-panel" data-screen-label="04 Démo Interactive"><InteractiveDemo /></div>
+        </div>
+        <div className="ld-hint">Continue de scroller <Icon.Arrow /> la démo arrive</div>
+      </div>
+    </div>
+  );
+};
+
+Object.assign(window, { LiveBoard, InteractiveDemo, LiveDemoScroll });

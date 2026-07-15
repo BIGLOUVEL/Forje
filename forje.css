@@ -28,7 +28,9 @@ html, body {
   font-family: 'DM Sans', system-ui, sans-serif;
   font-feature-settings: "ss01","cv11";
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  /* clip (PAS hidden) : hidden ferait de body un scroll container, ce qui
+     casse position:sticky partout dessous (pin board→démo de la landing) */
+  overflow-x: clip;
 }
 body { min-width: 1440px; }
 
