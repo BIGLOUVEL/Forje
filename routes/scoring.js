@@ -238,13 +238,23 @@ async function runAgent2(compte, newsLot) {
     // En mode dégradé, on ne re-sonde OpenRouter que toutes les 10 min
     const canTry = !orIsDown() || (Date.now() - _orBreaker.lastFailAt > OR_RETRY_MS);
     if (canTry) {
-      try {
-        const result = await runOpenRouter(compte, newsLot);
-        orRecordSuccess();
-        return result;
-      } catch (err) {
-        orRecordFailure(err);
-        console.error(`[Agent 2] OpenRouter (${SCORING_MODEL}) KO → fallback Haiku :`, err.message);
+      // 1 retry sur erreur transitoire (429/5xx/réseau) avant le fallback Haiku :
+      // les échecs isolés au milieu de succès coûtent ~10x plus cher en Haiku.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const result = await runOpenRouter(compte, newsLot);
+          orRecordSuccess();
+          return result;
+        } catch (err) {
+          const transient = err.status === 429 || err.status >= 500 || !err.status;
+          if (attempt === 1 && transient && err.status !== 402) {
+            await new Promise(r => setTimeout(r, 1500));
+            continue;
+          }
+          orRecordFailure(err);
+          console.error(`[Agent 2] OpenRouter (${SCORING_MODEL}) KO → fallback Haiku :`, err.message);
+          break;
+        }
       }
     }
   }
