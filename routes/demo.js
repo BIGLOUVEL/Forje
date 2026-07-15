@@ -20,6 +20,7 @@ const fs      = require('fs');
 
 const { supabase }        = require('../lib/supabase');
 const { runActuPipeline } = require('./generate');
+const { resolveFont }     = require('../lib/fontLoader');
 
 const router = express.Router();
 
@@ -292,7 +293,10 @@ router.get('/media', async (_req, res) => {
         avatar: c.logo_badge_url || c.logo_url || null,
         logo: c.logo_badge_url || c.logo_url || null,
         palette: c.brand_colors || [],
-        font: c.font_primary || null,
+        // Police EFFECTIVE (resolveFont : custom > font_id > font_primary) —
+        // c'est celle que le pipeline rend vraiment ; font_primary seul peut
+        // diverger et afficher une police que les posts n'utilisent pas.
+        font: resolveFont(c).fontName || null,
         tone: (c.tone_tags || []).map(t => String(t).toLowerCase()),
         topics: c.topics || [],
         domain: p.topic,
@@ -378,6 +382,16 @@ router.all('/refresh', async (req, res) => {
       const { scoreForCompte } = require('./scoring');
       await refreshDemoVeille(scoreForCompte, profile);
       done.push('board:' + (profile || 'all'));
+    }
+    if (step === 'rss' || step === 'all') {
+      // Watchdog de coûts adossé au cron : sur Vercel (serverless) les
+      // setInterval de server.js ne tournent pas — c'est CE passage toutes
+      // les 10 min qui surveille budgets/jour, solde OpenRouter et fallback
+      // Haiku. Dédup 1 alerte/type/jour dans costWatchdog.
+      const { runCostWatchdog } = require('../lib/costWatchdog');
+      const { getBreakerState } = require('./scoring');
+      runCostWatchdog(getBreakerState).catch(() => {});
+      done.push('watchdog');
     }
     console.log('[Demo/refresh]', done.join(' '), (Date.now() - t0) + 'ms');
     res.json({ ok: true, done, ms: Date.now() - t0 });

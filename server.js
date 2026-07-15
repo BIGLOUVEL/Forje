@@ -83,7 +83,7 @@ app.use('/api/instagram',    require('./routes/instagram'));
 app.use('/api/account',      require('./routes/account'));
 
 const { router: rssRouter,     fetchAllFeeds }                              = require('./routes/rss');
-const { router: scoringRouter, scoreForCompte }                             = require('./routes/scoring');
+const { router: scoringRouter, scoreForCompte, getBreakerState }            = require('./routes/scoring');
 const { router: twitterRouter }  = require('./routes/twitter');
 const { router: learningRouter } = require('./routes/learning');
 
@@ -139,6 +139,13 @@ dailyPurge();
 
 rssLoop();
 setInterval(rssLoop, RSS_INTERVAL_MS);
+
+// ─── Watchdog de coûts API : budgets/jour, solde OpenRouter, fallback Haiku ──
+// Alerte en console + table cost_alerts (visible dans /admin). Seuils via env :
+// BUDGET_ANTHROPIC_JOUR_USD, BUDGET_TOTAL_JOUR_USD, OPENROUTER_SOLDE_MIN_USD.
+const { runCostWatchdog } = require('./lib/costWatchdog');
+setTimeout(() => runCostWatchdog(getBreakerState), 30 * 1000);
+setInterval(() => runCostWatchdog(getBreakerState), 60 * 60 * 1000);
 
 // ─── Board de veille démo (landing) — rescoring + snapshot toutes les 10 min ─
 const DEMO_VEILLE_INTERVAL_MS = 10 * 60 * 1000;

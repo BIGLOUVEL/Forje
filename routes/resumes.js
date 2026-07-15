@@ -1,6 +1,7 @@
 const express    = require('express');
 const Anthropic  = require('@anthropic-ai/sdk');
 const { supabase } = require('../lib/supabase');
+const { track }    = require('../lib/costTracker');
 
 const router = express.Router();
 const haiku  = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -56,6 +57,10 @@ router.post('/generate', async (req, res) => {
         system:     'Tu es un assistant de veille éditoriale. Analyse la news fournie, cherche l\'article original et 2-3 sources complémentaires pour enrichir le contexte. Ton neutre, zéro opinion. Réponds UNIQUEMENT en JSON valide, aucun texte avant ou après.',
         messages,
       });
+
+      track({ feature: 'resume_news', model: 'claude-haiku-4-5-20251001', inputTokens: resp.usage?.input_tokens, outputTokens: resp.usage?.output_tokens, compteId: compte_id });
+      const nbSearches = resp.content.filter(b => b.type === 'tool_use' || b.type === 'server_tool_use').length;
+      for (let s = 0; s < nbSearches; s++) track({ feature: 'resume_news_search', model: 'web_search', compteId: compte_id });
 
       messages.push({ role: 'assistant', content: resp.content });
 

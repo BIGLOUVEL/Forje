@@ -158,7 +158,11 @@ async function runOpenRouter(compte, newsLot) {
       ],
     }),
   });
-  if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    const err = new Error(`OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
+  }
   const data = await res.json();
 
   if (data.choices?.[0]?.finish_reason === 'length') {
@@ -190,13 +194,67 @@ async function runHaiku(compte, newsLot) {
   return parseAgent2Json(text);
 }
 
+// ─── Circuit breaker anti-drain ───────────────────────────────────────────────
+// Si OpenRouter tombe durablement (crédits épuisés → 402, panne...), le fallback
+// Haiku ne doit PAS brûler les crédits Anthropic au rythme de la boucle RSS
+// (~12-15 $/jour constaté le 15/07). En mode dégradé : 1 lot Haiku max par
+// compte et par heure — le board reste alimenté, juste moins frais.
+const OR_BREAKER_THRESHOLD = 3;              // échecs consécutifs avant mode dégradé
+const OR_RETRY_MS          = 10 * 60 * 1000; // re-sonde OpenRouter toutes les 10 min
+const HAIKU_COOLDOWN_MS    = 60 * 60 * 1000; // 1 lot Haiku max / compte / heure en dégradé
+
+const _orBreaker    = { failures: 0, lastFailAt: 0, creditsExhausted: false };
+const _haikuLastRun = new Map(); // compte_id → timestamp du dernier lot Haiku en mode dégradé
+
+function orIsDown() { return _orBreaker.failures >= OR_BREAKER_THRESHOLD; }
+
+function orRecordFailure(err) {
+  _orBreaker.failures += 1;
+  _orBreaker.lastFailAt = Date.now();
+  if (err?.status === 402) _orBreaker.creditsExhausted = true;
+  if (orIsDown()) {
+    const raison = _orBreaker.creditsExhausted
+      ? 'CRÉDITS OPENROUTER ÉPUISÉS — recharger sur openrouter.ai/settings/credits'
+      : `OpenRouter en échec répété (${_orBreaker.failures}x)`;
+    console.error(`[Agent 2] ⛔ MODE DÉGRADÉ : ${raison}. Fallback Haiku bridé à 1 lot/compte/heure.`);
+  }
+}
+
+function orRecordSuccess() {
+  if (orIsDown()) console.log('[Agent 2] ✅ OpenRouter de nouveau opérationnel — mode dégradé levé.');
+  _orBreaker.failures = 0;
+  _orBreaker.creditsExhausted = false;
+}
+
+function getBreakerState() {
+  return { down: orIsDown(), ..._orBreaker };
+}
+
 async function runAgent2(compte, newsLot) {
   if (process.env.OPENROUTER_API_KEY) {
-    try {
-      return await runOpenRouter(compte, newsLot);
-    } catch (err) {
-      console.error(`[Agent 2] OpenRouter (${SCORING_MODEL}) KO → fallback Haiku :`, err.message);
+    // En mode dégradé, on ne re-sonde OpenRouter que toutes les 10 min
+    const canTry = !orIsDown() || (Date.now() - _orBreaker.lastFailAt > OR_RETRY_MS);
+    if (canTry) {
+      try {
+        const result = await runOpenRouter(compte, newsLot);
+        orRecordSuccess();
+        return result;
+      } catch (err) {
+        orRecordFailure(err);
+        console.error(`[Agent 2] OpenRouter (${SCORING_MODEL}) KO → fallback Haiku :`, err.message);
+      }
     }
+  }
+
+  // Fallback Haiku — bridé si OpenRouter est down durablement
+  if (orIsDown()) {
+    const last = _haikuLastRun.get(compte.id) || 0;
+    if (Date.now() - last < HAIKU_COOLDOWN_MS) {
+      const err = new Error('SCORING_THROTTLED — OpenRouter down, fallback Haiku en cooldown (news gardées pour le prochain run)');
+      err.throttled = true;
+      throw err;
+    }
+    _haikuLastRun.set(compte.id, Date.now());
   }
   return runHaiku(compte, newsLot);
 }
@@ -278,8 +336,16 @@ async function _scoreForCompteInner(compteId, batchSize, windowHours) {
   // Traite par lots de batchSize
   let totalScored = 0;
   for (let i = 0; i < pertinentes.length; i += batchSize) {
-    const lot    = pertinentes.slice(i, i + batchSize);
-    const result = await runAgent2(compte, lot);
+    const lot = pertinentes.slice(i, i + batchSize);
+    let result;
+    try {
+      result = await runAgent2(compte, lot);
+    } catch (err) {
+      // Mode dégradé (OpenRouter down + cooldown Haiku) : on s'arrête là sans
+      // marquer les news — elles seront scorées au prochain run autorisé.
+      if (err.throttled) return { scored: totalScored, skipped: unscored.length - totalScored, throttled: true };
+      throw err;
+    }
     const saved  = await saveScores(compteId, result.resultats || []);
     totalScored += saved;
 
@@ -361,4 +427,4 @@ router.get('/board', async (req, res) => {
   }
 });
 
-module.exports = { router, scoreForCompte, runAgent2 };
+module.exports = { router, scoreForCompte, runAgent2, getBreakerState };

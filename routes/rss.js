@@ -364,6 +364,11 @@ router.post('/add-source', async (req, res) => {
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages,
       });
+      const { track } = require('../lib/costTracker');
+      track({ feature: 'add_source', model: 'claude-haiku-4-5-20251001', inputTokens: response.usage?.input_tokens, outputTokens: response.usage?.output_tokens, compteId: compte_id });
+      const nbSearches = response.content.filter(b => b.type === 'tool_use' || b.type === 'server_tool_use').length;
+      for (let s = 0; s < nbSearches; s++) track({ feature: 'add_source_search', model: 'web_search', compteId: compte_id });
+
       messages.push({ role: 'assistant', content: response.content });
 
       if (response.stop_reason === 'end_turn') {

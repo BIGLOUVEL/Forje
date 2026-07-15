@@ -8,6 +8,7 @@ const fs      = require('fs');
 const { URL } = require('url');
 
 const Anthropic = require('@anthropic-ai/sdk');
+const { track } = require('../lib/costTracker');
 
 const router = express.Router();
 const genai  = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
@@ -672,6 +673,7 @@ async function generateCaption(type, content, client) {
     model: 'claude-haiku-4-5-20251001', max_tokens: 600,
     messages: [{ role: 'user', content: prompt }],
   });
+  track({ feature: 'caption_actu', model: 'claude-haiku-4-5-20251001', inputTokens: response.usage?.input_tokens, outputTokens: response.usage?.output_tokens });
   return response.content.find(b => b.type === 'text')?.text?.trim() || '';
 }
 
@@ -1177,6 +1179,9 @@ async function deepDivePlan(topic, client, slideCount) {
     tools:      [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
     messages:   [{ role: 'user', content: buildDeepDivePlanPrompt(topic, client, slideCount) }],
   }), 120000, 'DeepDive plan');
+  track({ feature: 'deepdive_plan', model: 'claude-sonnet-4-6', inputTokens: resp.usage?.input_tokens, outputTokens: resp.usage?.output_tokens });
+  const ddSearches = (resp.content || []).filter(b => b.type === 'server_tool_use').length;
+  for (let s = 0; s < ddSearches; s++) track({ feature: 'deepdive_plan_search', model: 'web_search' });
   // Les blocs de recherche (server_tool_use / web_search_tool_result) précèdent le
   // texte final. On concatène tous les blocs texte puis on extrait le JSON.
   const raw = resp.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -1480,6 +1485,7 @@ router.post('/detect-format', async (req, res) => {
       }],
     });
 
+    track({ feature: 'detect_format', model: 'claude-haiku-4-5-20251001', inputTokens: response.usage?.input_tokens, outputTokens: response.usage?.output_tokens });
     const raw = response.content.find(b => b.type === 'text')?.text || '';
     res.json(parseAIJson(raw));
   } catch (err) {
@@ -1591,6 +1597,7 @@ router.post('/forge-from-article', async (req, res) => {
       max_tokens: 900,
       messages:   [{ role: 'user', content: prompt }],
     }), 30000, 'forge-from-article');
+    track({ feature: 'forge_from_article', model: 'claude-haiku-4-5-20251001', inputTokens: response.usage?.input_tokens, outputTokens: response.usage?.output_tokens });
 
     const raw  = response.content.find(b => b.type === 'text')?.text || '';
     const data = parseAIJson(raw);

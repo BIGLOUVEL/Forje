@@ -59,6 +59,22 @@ const FEATURE_LABELS = {
   learning:           { label: 'Learning (Agent 3)',          color: 'pill-green'  },
   generate:           { label: 'Génération posts',           color: 'pill-yellow' },
   brand:              { label: 'Brand analyse',               color: 'pill-green'  },
+  caption_actu:       { label: 'Caption Actu',                color: 'pill-yellow' },
+  detect_format:      { label: 'Détection format',            color: 'pill-purple' },
+  forge_from_article: { label: 'Forjer (brief article)',      color: 'pill-yellow' },
+  deepdive_plan:      { label: 'Deep Dive plan (Sonnet)',     color: 'pill-red'    },
+  deepdive_plan_search: { label: 'Deep Dive · Web Search',   color: 'pill-red'    },
+  resume_news:        { label: 'Résumé news',                 color: 'pill-green'  },
+  resume_news_search: { label: 'Résumé news · Web Search',   color: 'pill-green'  },
+  add_source:         { label: 'Ajout source RSS',            color: 'pill-purple' },
+  add_source_search:  { label: 'Ajout source · Web Search',  color: 'pill-purple' },
+};
+
+const ALERT_LABELS = {
+  budget_anthropic:   'Budget Anthropic dépassé',
+  budget_total:       'Budget total dépassé',
+  openrouter_balance: 'Solde OpenRouter bas',
+  fallback_scoring:   'Fallback Haiku actif',
 };
 
 const fmt = (n) => n == null ? '—' : `$${Number(n).toFixed(4)}`;
@@ -98,18 +114,111 @@ const Login = ({ onAuth }) => {
 };
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
+// ── Surveillance (watchdog) ────────────────────────────────────────────────────
+const WatchPanel = ({ watch }) => {
+  if (!watch) return null;
+
+  const today = watch.days?.find(d => d.date === new Date().toISOString().slice(0, 10))
+             || { anthropic: 0, openrouter: 0, total: 0 };
+  const b = watch.budgets || {};
+  const orBal = watch.openrouter_balance;
+  const orLow = orBal != null && orBal < (b.openrouter_solde_min ?? 2);
+  const antOver = today.anthropic > (b.anthropic_jour ?? 3);
+  const totOver = today.total > (b.total_jour ?? 6);
+  const recentAlerts = (watch.alerts || []).filter(a =>
+    Date.now() - new Date(a.created_at).getTime() < 7 * 86400000);
+
+  const statCard = (label, value, sub, danger) => (
+    <div className="card" style={{ padding: '18px 20px', borderColor: danger ? 'var(--danger)' : 'var(--border)' }}>
+      <div className="label" style={{ marginBottom: 8 }}>{label}</div>
+      <div className="mono" style={{ fontSize: 24, fontWeight: 700, color: danger ? 'var(--danger)' : 'var(--text)', letterSpacing: '-0.02em' }}>{value}</div>
+      <div style={{ fontSize: 11, color: danger ? 'var(--danger)' : 'var(--text-3)', marginTop: 4 }}>{sub}</div>
+    </div>
+  );
+
+  return (
+    <React.Fragment>
+      {/* Vigies du jour */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
+        {statCard('Solde OpenRouter',
+          orBal == null ? '—' : fmtBig(orBal),
+          orLow ? `⚠ sous le seuil de $${b.openrouter_solde_min} — recharger !` : `seuil d'alerte : $${b.openrouter_solde_min}`,
+          orLow)}
+        {statCard('Anthropic aujourd\'hui',
+          fmtBig(today.anthropic),
+          antOver ? `⚠ budget $${b.anthropic_jour}/j dépassé` : `budget : $${b.anthropic_jour}/j`,
+          antOver)}
+        {statCard('Total aujourd\'hui',
+          fmtBig(today.total),
+          totOver ? `⚠ budget $${b.total_jour}/j dépassé` : `budget : $${b.total_jour}/j`,
+          totOver)}
+        {statCard('Alertes (7 j)',
+          recentAlerts.length,
+          recentAlerts.length ? 'à traiter ci-dessous' : 'aucune — tout va bien',
+          recentAlerts.length > 0)}
+      </div>
+
+      {/* Alertes */}
+      {recentAlerts.length > 0 && (
+        <div className="card" style={{ marginBottom: 24, borderColor: 'var(--danger)' }}>
+          <div className="label" style={{ marginBottom: 14, color: 'var(--danger)' }}>🚨 Alertes récentes</div>
+          {recentAlerts.map(a => (
+            <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '7px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)', flexShrink: 0 }}>{a.created_at.slice(0, 16).replace('T', ' ')}</span>
+              <span className="pill pill-red" style={{ flexShrink: 0 }}>{ALERT_LABELS[a.type] || a.type}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{a.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Split provider 14 jours */}
+      {watch.days?.length > 0 && (
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="label" style={{ marginBottom: 6 }}>Anthropic vs OpenRouter — 14 jours</div>
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 14 }}>
+            <span style={{ color: 'var(--danger)' }}>■</span> Anthropic (crédits Claude) ·{' '}
+            <span style={{ color: 'var(--success)' }}>■</span> OpenRouter (scoring)
+          </div>
+          {watch.days.map(d => {
+            const max = Math.max(...watch.days.map(x => x.total), 0.01);
+            return (
+              <div key={d.date} className="bar-row">
+                <div className="mono" style={{ width: 100, fontSize: 12, color: 'var(--text-3)', flexShrink: 0 }}>{d.date}</div>
+                <div className="bar-track" style={{ display: 'flex' }}>
+                  <div style={{ width: `${(d.anthropic / max) * 100}%`, background: 'var(--danger)', height: '100%' }}/>
+                  <div style={{ width: `${(d.openrouter / max) * 100}%`, background: 'var(--success)', height: '100%' }}/>
+                </div>
+                <div className="mono" style={{ width: 110, textAlign: 'right', fontSize: 11, color: 'var(--text-2)', flexShrink: 0 }}>
+                  <span style={{ color: d.anthropic > 1 ? 'var(--danger)' : 'var(--text-2)' }}>{fmtBig(d.anthropic)}</span>
+                  {' / '}{fmtBig(d.openrouter)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </React.Fragment>
+  );
+};
+
 const Dashboard = ({ adminCode }) => {
   const [period, setPeriod] = useState('30d');
   const [data, setData]     = useState(null);
+  const [watch, setWatch]   = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { load(); }, [period]);
 
   const load = async () => {
     setLoading(true);
-    const res = await fetch(`/api/admin/costs?period=${period}`, { headers: { 'x-admin-code': adminCode } });
-    const d   = await res.json();
+    const [res, resWatch] = await Promise.all([
+      fetch(`/api/admin/costs?period=${period}`, { headers: { 'x-admin-code': adminCode } }),
+      fetch('/api/admin/watch', { headers: { 'x-admin-code': adminCode } }).catch(() => null),
+    ]);
+    const d = await res.json();
     setData(d);
+    if (resWatch && resWatch.ok) setWatch(await resWatch.json());
     setLoading(false);
   };
 
@@ -142,6 +251,9 @@ const Dashboard = ({ adminCode }) => {
           ))}
         </div>
       </div>
+
+      {/* Surveillance (watchdog) */}
+      <WatchPanel watch={watch}/>
 
       {/* Total cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>

@@ -50,4 +50,14 @@ router.get('/costs', requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/watch — surveillance : solde OpenRouter, budgets, alertes, split provider
+router.get('/watch', requireAdmin, async (_req, res) => {
+  try {
+    const { getCostSummary } = require('../lib/costWatchdog');
+    res.json(await getCostSummary());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
