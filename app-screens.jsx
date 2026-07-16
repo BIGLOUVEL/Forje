@@ -4569,7 +4569,7 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   var [profile, setProfile] = useState(null);
   var [toast, setToast] = useState(null);
   var toastRef = useRef(null);
-  var [nameField, setNameField]   = useState('');
+  var [nameField, setNameField]   = useState(fullName);
   var [emailField, setEmailField] = useState(email);
   var [savingName, setSavingName] = useState(false);
   var avatarInputRef = useRef(null);
@@ -4589,7 +4589,8 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   var [deleting, setDeleting] = useState(false);
   var TX_PAGE = 20;
 
-  var displayName = fullName || profile?.name || email.split('@')[0] || 'Utilisateur';
+  // Nom de la PERSONNE (auth user) — jamais celui d'un média (clients.name)
+  var displayName = fullName || email.split('@')[0] || 'Utilisateur';
   var initials = (fullName
     ? fullName.split(' ').map(function(w){ return w[0]; }).join('').slice(0,2)
     : displayName.slice(0,2)).toUpperCase();
@@ -4609,7 +4610,7 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
     var q = sb.from('clients').select('id,name,avatar_url,logo_url,credits,subscription_status,credits_unlimited,credits_reset_at,stripe_customer_id,notif_prefs,instagram_connected,instagram_username,cancel_at,retention_offer_used_at').eq('user_id', user.id);
     if (window.__activeClientId) q = q.eq('id', window.__activeClientId);
     q.order('created_at').limit(1).maybeSingle().then(function(r){
-      if (r.data) { setProfile(r.data); setNameField(r.data.name || ''); setNotif(Object.assign({}, DEFAULT_NOTIF, r.data.notif_prefs || {})); }
+      if (r.data) { setProfile(r.data); setNotif(Object.assign({}, DEFAULT_NOTIF, r.data.notif_prefs || {})); }
     });
   }
   useEffect(function(){ loadProfile(); }, []);
@@ -4638,10 +4639,13 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   var offerAvailable = !profile?.retention_offer_used_at;  // -50% encore jouable ?
 
   async function saveName() {
-    if (!sb || !profile) return;
+    // Nom de l'utilisateur → user_metadata auth (PAS clients.name, qui est le
+    // nom d'un média). onAuthStateChange (USER_UPDATED) rafraîchit la sidebar.
+    if (!sb || !nameField.trim()) return;
     setSavingName(true);
-    await sb.from('clients').update({ name: nameField.trim() }).eq('id', profile.id);
-    setSavingName(false); showToast('Enregistré ✓'); loadProfile();
+    var r = await sb.auth.updateUser({ data: { full_name: nameField.trim() } });
+    setSavingName(false);
+    if (r.error) alert(r.error.message); else showToast('Enregistré ✓');
   }
   async function saveEmail() {
     if (!sb || !emailField.trim() || emailField.trim() === email) return;
@@ -4875,11 +4879,11 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
               </div>
 
               <SettingsSection title="Profil" sub="Ton nom d'affichage et ta photo.">
-                <SettingsRow label="Nom" sub="Affiché dans l'app et sur ton espace."
+                <SettingsRow label="Nom" sub="Ton nom à toi — le nom de ton média se gère dans Identité de marque."
                   right={
                     <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                       <input className="settings-input" value={nameField} onChange={function(e){ setNameField(e.target.value); }} placeholder="Ton nom"/>
-                      <button className="btn btn-primary btn-sm" onClick={saveName} disabled={savingName || !nameField.trim() || nameField.trim() === (profile?.name||'')}>
+                      <button className="btn btn-primary btn-sm" onClick={saveName} disabled={savingName || !nameField.trim() || nameField.trim() === fullName}>
                         {savingName ? '…' : 'Enregistrer'}
                       </button>
                     </div>
