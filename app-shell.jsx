@@ -149,8 +149,8 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
   return (<>
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <img src="assets/forje-logo.png" alt="" className="sidebar-brand-mark" />
-        Forje <span className="brand-suffix">Studio</span>
+        <img src="assets/brand/blaise-mark.svg" alt="" className="sidebar-brand-mark" style={{ borderRadius: 0 }} />
+        blaise <span className="brand-suffix">studio</span>
       </div>
 
       <div className="workspace-switcher">

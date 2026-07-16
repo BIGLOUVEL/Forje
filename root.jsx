@@ -67,6 +67,8 @@ const Root = () => {
     }
     applyCss(view);
     document.body.classList.toggle('app-mode', view === 'app');
+    // Titre d'onglet : marque Blaise dans l'app, titre SEO d'origine sur la landing
+    if (view === 'app') document.title = 'blaise studio';
   }, [authChecked, user, view]);
 
   // Helpers globaux
