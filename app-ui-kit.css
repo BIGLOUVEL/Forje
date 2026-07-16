@@ -217,3 +217,47 @@
 
 /* ─── Chips de veille & petites pilules d'état — coins 6px ──────────────── */
 .veille-nudge-step { border-radius: 8px; }
+
+/* ═══ v3 — sidebar, jauge crédits, typographie (impact visible) ══════════ */
+
+/* ─── Sidebar — recherche en vrai champ, actifs teintés accent ──────────── */
+.sidebar-search {
+  background: var(--app-surface);
+  border-color: var(--app-line-2);
+  border-radius: 8px;
+  box-shadow: var(--ui-shadow-xs);
+}
+.sidebar-item { border-radius: 8px; }
+.sidebar-item.active {
+  background: rgba(79, 91, 213, 0.09);
+  color: var(--app-accent);
+}
+.sidebar-item.active::before { display: none; }
+.sidebar-item.active .count.badge {
+  background: rgba(79, 91, 213, 0.14);
+  color: var(--app-accent);
+}
+.sidebar-account-item { border-radius: 8px; }
+.sidebar-account-item.active { background: rgba(79, 91, 213, 0.09); }
+
+/* ─── Jauge crédits — lisible et sobre : numéral DM Sans, barre indigo unie.
+   Les états bas/critique (ambre/rouge) gardent leur propre couleur — signal
+   lié aux données, il reste. ───────────────────────────────────────────── */
+.sidebar-usage-value {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sidebar-usage-fill { background: var(--app-accent); }
+.sidebar-usage-fill::before,
+.sidebar-usage-fill::after { display: none; }
+
+/* ─── Paramètres — fin du serif décoratif, DM Sans partout ──────────────── */
+.set-bill-name, .set-credits-big, .set-credits-pct {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+/* ─── Hiérarchie de page plus franche ───────────────────────────────────── */
+.page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; }
