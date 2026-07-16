@@ -1,4 +1,4 @@
-/* global React, ReactDOM, Icon, Streaks, Hero, SocialProof, DemoCarousel, HowItWorks, Features, Pricing, Closing, Foot, TweaksPanel */
+/* global React, ReactDOM, Icon, Streaks, Hero, DemoCarousel, HowItWorks, Features, Pricing, Closing, Foot, TweaksPanel */
 const { useState: useState_, useEffect: useEffect_ } = React;
 
 const App = () => {
@@ -80,7 +80,6 @@ const App = () => {
         </nav>
 
         <div data-screen-label="01 Hero"><Hero /></div>
-        <div data-screen-label="02 Social Proof"><SocialProof /></div>
         <LiveDemoScroll />
         <div data-screen-label="05 How It Works"><HowItWorks /></div>
         <div data-screen-label="06 Formats"><Formats /></div>

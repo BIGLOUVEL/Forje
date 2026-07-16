@@ -12,8 +12,8 @@
   --ui-shadow-sm: 0 1px 2px rgba(17, 24, 50, 0.05), 0 2px 8px -2px rgba(17, 24, 50, 0.07);
   --ui-shadow-md: 0 2px 4px rgba(17, 24, 50, 0.05), 0 8px 24px -8px rgba(17, 24, 50, 0.12);
   /* Ring de focus unique pour toute l'app */
-  --ui-ring: rgba(79, 91, 213, 0.22);
-  --ui-ring-border: rgba(79, 91, 213, 0.55);
+  --ui-ring: rgba(194, 65, 12, 0.22);
+  --ui-ring-border: rgba(194, 65, 12, 0.55);
   /* Radius discipliné */
   --radius-sm: 6px;
   --radius: 10px;
@@ -38,25 +38,28 @@
 .btn-primary::before,
 .btn-accent::before { display: none; }
 
+/* Primaire = encre charbon (Linear/Vercel) : intemporel, jamais "IA".
+   L'accent cuivre reste pour les états actifs, liens et signaux. */
 .btn-primary {
-  background: var(--app-accent);
-  border-color: #3D48B8;
+  background: linear-gradient(180deg, #34322C 0%, #24221D 55%, #1B1A15 100%);
+  border-color: #12110D;
+  color: #FAFAF8;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 1px 2px rgba(17, 24, 50, 0.10),
-    0 2px 6px -1px rgba(79, 91, 213, 0.35);
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 1px 2px rgba(20, 18, 12, 0.18),
+    0 3px 10px -2px rgba(24, 22, 16, 0.35);
 }
 .btn-primary:hover {
   transform: none;
-  background: #4752C6;
+  background: linear-gradient(180deg, #3C3A33 0%, #2B2923 55%, #211F1A 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 1px 2px rgba(17, 24, 50, 0.10),
-    0 2px 8px -1px rgba(79, 91, 213, 0.40);
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 1px 2px rgba(20, 18, 12, 0.18),
+    0 4px 14px -2px rgba(24, 22, 16, 0.42);
 }
 .btn-primary:active {
-  background: #414BB8;
-  box-shadow: inset 0 1px 2px rgba(10, 14, 60, 0.22);
+  background: #201E19;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 .btn-ghost {
@@ -73,13 +76,13 @@
 }
 
 .btn-accent {
-  background: rgba(79, 91, 213, 0.08);
+  background: rgba(194, 65, 12, 0.08);
   border-color: transparent;
   box-shadow: none;
 }
 .btn-accent:hover {
   transform: none;
-  background: rgba(79, 91, 213, 0.13);
+  background: rgba(194, 65, 12, 0.13);
   border-color: transparent;
   box-shadow: none;
 }
@@ -142,7 +145,7 @@
 .tag-success { background: rgba(31, 157, 106, 0.10); color: #177A52; }
 .tag-warn    { background: rgba(212, 148, 42, 0.12); color: #A26F1B; }
 .tag-danger  { background: rgba(209, 69, 69, 0.10);  color: #B23A3A; }
-.tag-accent  { background: rgba(14, 165, 198, 0.10); color: #0B7E97; }
+.tag-accent  { background: rgba(100, 116, 139, 0.10); color: #4B5A6E; }
 
 .brand-chip { border-radius: 8px; }
 
@@ -209,7 +212,7 @@
 /* ─── Settings nav — état actif teinté doux, sans barre gradient ────────── */
 .settings-nav-item { border-radius: 8px; }
 .settings-nav-item.active {
-  background: rgba(79, 91, 213, 0.08);
+  background: rgba(194, 65, 12, 0.08);
   color: var(--app-accent);
   box-shadow: none;
 }
@@ -229,16 +232,16 @@
 }
 .sidebar-item { border-radius: 8px; }
 .sidebar-item.active {
-  background: rgba(79, 91, 213, 0.09);
+  background: rgba(194, 65, 12, 0.09);
   color: var(--app-accent);
 }
 .sidebar-item.active::before { display: none; }
 .sidebar-item.active .count.badge {
-  background: rgba(79, 91, 213, 0.14);
+  background: rgba(194, 65, 12, 0.14);
   color: var(--app-accent);
 }
 .sidebar-account-item { border-radius: 8px; }
-.sidebar-account-item.active { background: rgba(79, 91, 213, 0.09); }
+.sidebar-account-item.active { background: rgba(194, 65, 12, 0.09); }
 
 /* Jauge crédits : composant segmenté défini dans app.css (.sidebar-usage-cells)
    — plus d'override nécessaire ici. */
@@ -257,25 +260,3 @@
 
 /* ─── Panneau détail (Forger ce post) figé : il ne suit plus le scroll ──── */
 .recap-panel { position: static; }
-
-/* ─── Bouton primaire — plus de matière : le flat pur jurait à côté des
-   cards. Dégradé vertical subtil + highlight interne, toujours rect 10px. ── */
-.btn-primary {
-  background: linear-gradient(180deg, #5A66E4 0%, var(--app-accent) 55%, #4550C8 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 1px 2px rgba(17, 24, 50, 0.12),
-    0 3px 10px -2px rgba(79, 91, 213, 0.45);
-}
-.btn-primary:hover {
-  background: linear-gradient(180deg, #616DEA 0%, #5560DC 55%, #4A55CE 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.24),
-    0 1px 2px rgba(17, 24, 50, 0.12),
-    0 4px 14px -2px rgba(79, 91, 213, 0.52);
-}
-
-/* ─── Globe « veille mondiale » — désormais en fond de Sources & veille ─── */
-.sources-page { position: relative; }
-.sources-page > *:not(.brand-globe-veil) { position: relative; z-index: 1; }
-.sources-page .brand-globe-canvas { top: -320px; right: -170px; opacity: 0; }

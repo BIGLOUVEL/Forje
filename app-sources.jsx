@@ -152,7 +152,7 @@ const FieldRow = ({ field, value, onChange }) => (
           outline:'none', width:'100%', boxSizing:'border-box',
           transition:'border-color .15s, box-shadow .15s',
         }}
-        onFocus={e => { e.target.style.borderColor='var(--app-accent)'; e.target.style.boxShadow='0 0 0 3px rgba(79,91,213,.08)'; }}
+        onFocus={e => { e.target.style.borderColor='var(--app-accent)'; e.target.style.boxShadow='0 0 0 3px rgba(194, 65, 12,.08)'; }}
         onBlur={e  => { e.target.style.borderColor='var(--app-line)';   e.target.style.boxShadow='none'; }}
       />
     )}
@@ -211,7 +211,7 @@ const SetupInput = ({ onAnalyze, error }) => {
                   outline:'none', width:'100%', boxSizing:'border-box',
                   transition:'border-color .15s, box-shadow .15s',
                 }}
-                onFocus={e => { e.target.style.borderColor='var(--app-accent)'; e.target.style.boxShadow='0 0 0 3px rgba(79,91,213,.08)'; }}
+                onFocus={e => { e.target.style.borderColor='var(--app-accent)'; e.target.style.boxShadow='0 0 0 3px rgba(194, 65, 12,.08)'; }}
                 onBlur={e  => { e.target.style.borderColor='var(--app-line)';   e.target.style.boxShadow='none'; }}
               />
               {(localErr || error) && (
@@ -460,7 +460,7 @@ const SetupValidation = ({ profil: init, onSave, authUser }) => {
       <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
         {/* Compte */}
         <div className="card card-pad" style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 20px' }}>
-          <div style={{ width:32, height:32, borderRadius:8, background:'rgba(79,91,213,.1)', display:'grid', placeItems:'center', flexShrink:0 }}>
+          <div style={{ width:32, height:32, borderRadius:8, background:'rgba(194, 65, 12,.1)', display:'grid', placeItems:'center', flexShrink:0 }}>
             <AppIcon name="globe" size={14} style={{ color:'var(--app-accent)' }}/>
           </div>
           <div>
@@ -540,7 +540,7 @@ const SetupValidation = ({ profil: init, onSave, authUser }) => {
                     </div>
                     <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginTop:6 }}>
                       {src.type && (
-                        <span style={{ fontSize:10, fontWeight:600, letterSpacing:'0.05em', textTransform:'uppercase', padding:'2px 7px', borderRadius:5, background:'rgba(79,91,213,.08)', color:'var(--app-accent)' }}>
+                        <span style={{ fontSize:10, fontWeight:600, letterSpacing:'0.05em', textTransform:'uppercase', padding:'2px 7px', borderRadius:5, background:'rgba(194, 65, 12,.08)', color:'var(--app-accent)' }}>
                           {src.type.replace('_', ' ')}
                         </span>
                       )}
@@ -632,13 +632,13 @@ const BarreTendances = ({ tendances, onTrendClick }) => {
             onClick={() => onTrendClick?.(t)}
             style={{
               all:'unset', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6,
-              background: t.pertinent ? 'rgba(79,91,213,.07)' : 'var(--app-surface-2)',
-              border: `1px solid ${t.pertinent ? 'rgba(79,91,213,.3)' : 'var(--app-line)'}`,
+              background: t.pertinent ? 'rgba(194, 65, 12,.07)' : 'var(--app-surface-2)',
+              border: `1px solid ${t.pertinent ? 'rgba(194, 65, 12,.3)' : 'var(--app-line)'}`,
               borderRadius:20, padding:'4px 12px', whiteSpace:'nowrap', flexShrink:0,
               transition:'border-color .15s, background .15s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor='var(--app-accent)'; e.currentTarget.style.background='rgba(79,91,213,.12)'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = t.pertinent ? 'rgba(79,91,213,.3)' : 'var(--app-line)'; e.currentTarget.style.background = t.pertinent ? 'rgba(79,91,213,.07)' : 'var(--app-surface-2)'; }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='var(--app-accent)'; e.currentTarget.style.background='rgba(194, 65, 12,.12)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = t.pertinent ? 'rgba(194, 65, 12,.3)' : 'var(--app-line)'; e.currentTarget.style.background = t.pertinent ? 'rgba(194, 65, 12,.07)' : 'var(--app-surface-2)'; }}
           >
             {t.pertinent && <span style={{ fontSize:9, color:'var(--app-accent)' }}>◆</span>}
             <span style={{ fontSize:12, fontWeight: t.pertinent ? 700 : 600, color: t.pertinent ? 'var(--app-accent)' : 'var(--app-fg-2)' }}>{t.name}</span>
@@ -1023,12 +1023,12 @@ const UrgentCard = ({ item, active, onClick, onDismiss, onGenerate }) => {
       onClick={onClick}
       style={{
         position:'relative', cursor:'pointer',
-        background: active ? 'rgba(79,91,213,.07)' : 'var(--app-surface-2)',
-        border: `1px solid ${active ? 'rgba(79,91,213,.3)' : 'var(--app-line)'}`,
+        background: active ? 'rgba(194, 65, 12,.07)' : 'var(--app-surface-2)',
+        border: `1px solid ${active ? 'rgba(194, 65, 12,.3)' : 'var(--app-line)'}`,
         borderRadius:'var(--radius)', padding:'14px 16px',
         transition:'border-color .15s, background .15s',
       }}
-      onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor='rgba(79,91,213,.2)'; e.currentTarget.style.background='rgba(79,91,213,.03)'; } }}
+      onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor='rgba(194, 65, 12,.2)'; e.currentTarget.style.background='rgba(194, 65, 12,.03)'; } }}
       onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor='var(--app-line)'; e.currentTarget.style.background='var(--app-surface-2)'; } }}
     >
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:7, gap:8 }}>
@@ -1045,8 +1045,8 @@ const UrgentCard = ({ item, active, onClick, onDismiss, onGenerate }) => {
           <span style={{
             fontSize:10, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase',
             padding:'2px 8px', borderRadius:20,
-            background:'rgba(79,91,213,.08)', color:'var(--app-accent)',
-            border:'1px solid rgba(79,91,213,.15)',
+            background:'rgba(194, 65, 12,.08)', color:'var(--app-accent)',
+            border:'1px solid rgba(194, 65, 12,.15)',
           }}>{item.format}</span>
         )}
         <ForgeButton
@@ -1057,7 +1057,7 @@ const UrgentCard = ({ item, active, onClick, onDismiss, onGenerate }) => {
             fontSize:12, fontWeight:700, color:'var(--app-accent)',
             display:'flex', alignItems:'center', gap:4,
             padding:'5px 12px', borderRadius:6,
-            background:'rgba(79,91,213,.08)', border:'1px solid rgba(79,91,213,.2)',
+            background:'rgba(194, 65, 12,.08)', border:'1px solid rgba(194, 65, 12,.2)',
             transition:'all .12s',
           }}
           triggerContent={<>Forger →</>}
@@ -1443,8 +1443,6 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   return (
     <div className="sources-page">
-      {/* Fond « veille mondiale » — globe discret derrière le board */}
-      {window.BrandGlobeBg && <window.BrandGlobeBg/>}
 
       {/* ── Pipeline status bar ── */}
       <StatusBar refreshedAt={refreshedAt} scoring={scoring} total={boardData.total}/>
@@ -1638,7 +1636,7 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
                 <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
                   {sourcesRss.map((f, i) => (
                     <div key={i} className="card" style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px' }}>
-                      <div style={{ width:26, height:26, borderRadius:6, background:'rgba(79,91,213,.08)', display:'grid', placeItems:'center', flexShrink:0 }}><AppIcon name="globe" size={12} style={{ color:'var(--app-accent)' }}/></div>
+                      <div style={{ width:26, height:26, borderRadius:6, background:'rgba(194, 65, 12,.08)', display:'grid', placeItems:'center', flexShrink:0 }}><AppIcon name="globe" size={12} style={{ color:'var(--app-accent)' }}/></div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:12, fontWeight:600, color:'var(--app-fg-2)' }}>{f.source}</div>
                         <div style={{ fontSize:10, color:'var(--app-fg-4)', fontFamily:'JetBrains Mono, monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.url}</div>

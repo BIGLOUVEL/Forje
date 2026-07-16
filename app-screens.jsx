@@ -667,12 +667,10 @@ const GenerateHub = ({ onPick }) => {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div className="aiprompt-glow"/>
-
         {/* Drag overlay */}
         {dragging && (
           <div className="aiprompt-drop-overlay">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
             Dépose ici
@@ -710,61 +708,56 @@ const GenerateHub = ({ onPick }) => {
           </div>
         )}
 
-        <textarea
-          ref={taRef}
-          className="aiprompt-ta"
-          value={text}
-          onChange={function(e) {
-            var v = e.target.value;
-            setText(v); setErr('');
-            if (!detecting) triggerSilentDetect(v.trim());
-          }}
-          onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleDetect(); }}
-          onPaste={handlePaste}
-          placeholder={placeholder}
-          rows={1}
-          autoFocus
-        />
+        <div className="aiprompt-row">
+          <button
+            className="aiprompt-clip"
+            onClick={function() { fileInputRef.current && fileInputRef.current.click(); }}
+            title="Joindre image ou fichier">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            multiple
+            style={{ display:'none' }}
+            onChange={function(e) { if (e.target.files) processFiles(e.target.files); e.target.value = ''; }}
+          />
 
-        <div className="aiprompt-bar">
-          {/* Left: clip button + hint */}
-          <div className="aiprompt-left">
-            <button
-              className="aiprompt-clip"
-              onClick={function() { fileInputRef.current && fileInputRef.current.click(); }}
-              title="Joindre image ou fichier">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-              </svg>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,application/pdf"
-              multiple
-              style={{ display:'none' }}
-              onChange={function(e) { if (e.target.files) processFiles(e.target.files); e.target.value = ''; }}
-            />
-            <div className="aiprompt-hint">
-              {err
-                ? <span className="aiprompt-hint--err">{err}</span>
-                : text.length > 0 && text.length < 10
-                  ? <span className="aiprompt-hint--warn">Continue un peu…</span>
-                  : fmtBadgeLabel && !detecting
-                    ? <span className="aiprompt-hint--fmt">
-                        <span className="aiprompt-fmt-dot"/>
-                        <b>{fmtBadgeLabel}</b>
-                        <span className="aiprompt-fmt-rest">détecté · ⌘↵ pour générer</span>
-                      </span>
-                    : <span className="aiprompt-hint--idle">
-                        {detecting ? 'Analyse en cours…' : attachments.length > 0 ? 'Image jointe · ⌘↵ pour envoyer' : '⌘↵ pour envoyer · glisse une image'}
-                      </span>}
-            </div>
-          </div>
+          <textarea
+            ref={taRef}
+            className="aiprompt-ta"
+            value={text}
+            onChange={function(e) {
+              var v = e.target.value;
+              setText(v); setErr('');
+              if (!detecting) triggerSilentDetect(v.trim());
+            }}
+            onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleDetect(); }}
+            onPaste={handlePaste}
+            placeholder={placeholder}
+            rows={1}
+            autoFocus
+          />
 
-          {/* Right: count + send */}
           <div className="aiprompt-right">
-            {text.length > 0 && (
+            {(err || (text.length > 0 && text.length < 10) || (fmtBadgeLabel && !detecting) || detecting) && (
+              <div className="aiprompt-hint">
+                {err
+                  ? <span className="aiprompt-hint--err">{err}</span>
+                  : text.length > 0 && text.length < 10
+                    ? <span className="aiprompt-hint--warn">Continue un peu…</span>
+                    : detecting
+                      ? <span className="aiprompt-hint--idle">Analyse…</span>
+                      : <span className="aiprompt-hint--fmt">
+                          <span className="aiprompt-fmt-dot"/>
+                          <b>{fmtBadgeLabel}</b>
+                        </span>}
+              </div>
+            )}
+            {text.length > 400 && (
               <span className={`aiprompt-count${text.length > 500 ? ' aiprompt-count--over' : ''}`}>{text.length}</span>
             )}
             <button
@@ -774,7 +767,7 @@ const GenerateHub = ({ onPick }) => {
               title="Générer (⌘↵)">
               {detecting
                 ? <span className="gen-bounce-loader--sm"/>
-                : <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                : <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                     <path d="M8 13L8 3M8 3L3.5 7.5M8 3L12.5 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>}
             </button>
@@ -2618,8 +2611,8 @@ const BrandPostPreview = function(props) {
   // Halo de mise en évidence quand la tuile correspondante est survolée
   var hl = function(zone) {
     return props.highlight === zone
-      ? { outline:'2px solid rgba(79,91,213,.95)', outlineOffset:3, borderRadius:5,
-          boxShadow:'0 0 18px rgba(79,91,213,.55)' }
+      ? { outline:'2px solid rgba(194, 65, 12,.95)', outlineOffset:3, borderRadius:5,
+          boxShadow:'0 0 18px rgba(194, 65, 12,.55)' }
       : {};
   };
 
@@ -4458,7 +4451,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
         <div style={{ position:'sticky', top:80, display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
           <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2, color:'var(--app-fg-4)', alignSelf:'flex-start' }}>Apercu live</div>
           <div style={{ borderRadius:14, transition:'box-shadow .2s',
-            boxShadow: highlightZone === 'style' ? '0 0 0 2px rgba(79,91,213,.9), 0 0 26px rgba(79,91,213,.45)' : 'none' }}>
+            boxShadow: highlightZone === 'style' ? '0 0 0 2px rgba(194, 65, 12,.9), 0 0 26px rgba(194, 65, 12,.45)' : 'none' }}>
             <BrandPostPreview name={name} primaryColor={primaryColor} accentColor={accentColor} fontPrimary={fontPrimary} fontSecondary={fontBody} mood={mood}
               logoBadgeUrl={logoBadgeUrl} logoNuUrl={logoNuUrl} logoStyle={logoStyle}
               graphicStyle={graphicStyle} badgeVisible={badgeVisible} barVisible={barVisible} highlight={highlightZone}/>

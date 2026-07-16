@@ -21,10 +21,10 @@
   --app-fg-4:     rgba(15, 21, 40, 0.38);
 
   /* Accent — Forje indigo, kept calm */
-  --app-accent:   #4F5BD5;
-  --app-accent-2: #7A5BF0;
-  --app-accent-3: #0EA5C6;
-  --chromatic: linear-gradient(95deg, #E8AE3D 0%, #E76FA5 22%, #9A6BE8 42%, #4F5BD5 62%, #0EA5C6 82%, #37BFDD 100%);
+  --app-accent:   #C2410C;
+  --app-accent-2: #E05D25;
+  --app-accent-3: #64748B;
+  --chromatic: linear-gradient(95deg, #E8AE3D 0%, #E05D25 55%, #C2410C 100%);
 
   /* Semantic */
   --app-success: #1F9D6A;
@@ -63,7 +63,7 @@ button { font-family: inherit; }
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(79,91,213,0.05), transparent 65%),
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(194, 65, 12,0.05), transparent 65%),
     radial-gradient(ellipse 700px 500px at 95% 110%, rgba(14,165,198,0.04), transparent 65%);
 }
 
@@ -129,7 +129,7 @@ button { font-family: inherit; }
 .workspace-avatar {
   width: 28px; height: 28px;
   border-radius: 7px;
-  background: linear-gradient(135deg, #E76FA5, #4F5BD5 60%, #0EA5C6);
+  background: linear-gradient(135deg, #E76FA5, #C2410C 60%, #0EA5C6);
   display: grid; place-items: center;
   font-weight: 700;
   font-size: 13px;
@@ -309,20 +309,31 @@ button { font-family: inherit; }
   padding: 12px 4px 4px;
   border-top: 1px solid var(--app-line);
 }
-/* ─── Credits fuel gauge ───────────────────────────────────────────────────
-   Jauge de "carburant créatif" : le remplissage = crédits RESTANTS (il se vide
-   à l'usage). Dégradé chromatique + halo + tête lumineuse + shimmer lent.
-   États : sain → chromatique · bas (≤15%) → ambre · critique (≤7%) → rouge pulsé. */
+/* ─── Compteur de crédits — jauge segmentée ────────────────────────────────
+   12 cellules ("lingots") qui se vident à l'usage. Matière réelle : surface
+   + hairline + ombre 2 couches, cellules moulées dans une piste creusée.
+   Aucun effet décoratif (pas de glow/shimmer) — le seul mouvement est le
+   remplissage des cellules, lié à la donnée.
+   États : sain → indigo · bas (≤15%) → ambre · critique (≤7%) → rouge pulsé. */
 .sidebar-usage {
-  --sc-accent: #4F5BD5;
+  --sc-accent: var(--app-accent, #C2410C);
   position: relative;
   padding: 11px 12px 10px;
   border-radius: var(--radius-lg);
-  background:
-    radial-gradient(120% 140% at 0% 0%, rgba(79,91,213,0.06), transparent 55%),
-    var(--app-surface);
+  background: var(--app-surface);
   border: 1px solid var(--app-line-2);
-  box-shadow: 0 1px 2px rgba(15,21,40,0.03), inset 0 1px 0 rgba(255,255,255,0.6);
+  box-shadow:
+    0 1px 2px rgba(15,21,40,0.04),
+    0 4px 12px -6px rgba(15,21,40,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.6);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.sidebar-usage:hover {
+  border-color: color-mix(in srgb, var(--sc-accent) 28%, var(--app-line-2));
+  box-shadow:
+    0 1px 2px rgba(15,21,40,0.05),
+    0 6px 16px -6px rgba(15,21,40,0.09),
+    inset 0 1px 0 rgba(255,255,255,0.6);
 }
 .sidebar-usage-header {
   display: flex;
@@ -337,7 +348,7 @@ button { font-family: inherit; }
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
-/* Le "count" devient un chip discret indiquant le plan/état */
+/* Chip plan : hairline, pas de fond plein */
 .sidebar-usage-count {
   font-size: 9.5px;
   font-weight: 700;
@@ -346,9 +357,10 @@ button { font-family: inherit; }
   color: var(--sc-accent);
   padding: 2px 7px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--sc-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sc-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--sc-accent) 6%, transparent);
 }
-/* Lecture chiffrée : gros numéral Fraunces + total discret */
+/* Lecture chiffrée : numéral DM Sans tabulaire + total discret */
 .sidebar-usage-readout {
   display: flex;
   align-items: baseline;
@@ -357,10 +369,10 @@ button { font-family: inherit; }
   font-variant-numeric: tabular-nums;
 }
 .sidebar-usage-value {
-  font-family: 'Fraunces', Georgia, serif;
-  font-size: 27px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 24px;
   line-height: 1;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--app-fg);
   transition: color .3s ease;
@@ -376,102 +388,58 @@ button { font-family: inherit; }
   color: var(--app-fg-4);
   align-self: center;
 }
-/* La piste + les crans */
-.sidebar-usage-bar {
+/* Piste : rangée de cellules creusées dans la surface */
+.sidebar-usage-cells {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+}
+.suc-cell {
   position: relative;
-  height: 9px;
+  flex: 1;
+  border-radius: 2.5px;
   background: var(--app-surface-3);
-  border-radius: 999px;
-  overflow: hidden;
-  box-shadow: inset 0 1px 2px rgba(15,21,40,0.10);
-}
-/* Crans de jauge : fines encoches régulières par-dessus la piste */
-.sidebar-usage-bar::after {
-  content: '';
-  position: absolute; inset: 0;
-  border-radius: inherit;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0, transparent calc(12.5% - 1px),
-    rgba(15,21,40,0.10) calc(12.5% - 1px), rgba(15,21,40,0.10) 12.5%
-  );
-  pointer-events: none;
-}
-.sidebar-usage-fill {
-  position: relative;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--chromatic);
-  background-size: 220px 100%;
   box-shadow:
-    0 0 10px rgba(79,91,213,0.45),
-    0 0 3px rgba(14,165,198,0.5);
-  transition: width .6s cubic-bezier(.22,.61,.36,1), box-shadow .3s ease;
+    inset 0 1px 1.5px rgba(15,21,40,0.12),
+    inset 0 -0.5px 0 rgba(255,255,255,0.55);
   overflow: hidden;
 }
-/* Shimmer lent qui balaie le remplissage */
-.sidebar-usage-fill::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 20%,
-    rgba(255,255,255,0.55) 48%,
-    rgba(255,255,255,0) 72%
-  );
-  transform: translateX(-120%);
-  animation: sc-shimmer 3.2s ease-in-out infinite;
-}
-/* Tête lumineuse au bout de la jauge (niveau courant) */
-.sidebar-usage-fill::after {
-  content: '';
+/* Le lingot : plein mat, lumière en haut, assise en bas — pas de glow */
+.suc-cell-fill {
   position: absolute;
-  top: 50%; right: 1px;
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  transform: translateY(-50%);
-  background: #fff;
-  box-shadow: 0 0 6px 1px rgba(255,255,255,0.9);
-}
-@keyframes sc-shimmer {
-  0%   { transform: translateX(-120%); }
-  55%  { transform: translateX(320%); }
-  100% { transform: translateX(320%); }
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--sc-accent) 82%, #fff) 0%,
+    var(--sc-accent) 55%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    inset 0 -1px 1px rgba(15,21,40,0.22);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform .45s cubic-bezier(.22,.61,.36,1);
+  will-change: transform;
 }
 /* État BAS (≤15%) : ambre */
-.sidebar-usage--low .sidebar-usage-fill {
-  background: linear-gradient(95deg, #F0A93D, #E4791F);
-  box-shadow: 0 0 10px rgba(228,121,31,0.5);
-}
 .sidebar-usage--low { --sc-accent: #C77A17; }
 .sidebar-usage--low .sidebar-usage-value { color: #B8690F; }
-/* État CRITIQUE (≤7%) : rouge, pulse doux sur la carte */
-.sidebar-usage--crit .sidebar-usage-fill {
-  background: linear-gradient(95deg, #E85D5D, #D14545);
-  box-shadow: 0 0 12px rgba(209,69,69,0.6);
-}
+/* État CRITIQUE (≤7%) : rouge, pulse doux sur la carte (signal lié aux données) */
 .sidebar-usage--crit { --sc-accent: #D14545; animation: sc-pulse 2s ease-in-out infinite; }
 .sidebar-usage--crit .sidebar-usage-value { color: #C13030; }
 @keyframes sc-pulse {
-  0%, 100% { box-shadow: 0 1px 2px rgba(15,21,40,0.03), inset 0 1px 0 rgba(255,255,255,0.6), 0 0 0 0 rgba(209,69,69,0); }
-  50%      { box-shadow: 0 1px 2px rgba(15,21,40,0.03), inset 0 1px 0 rgba(255,255,255,0.6), 0 0 0 3px rgba(209,69,69,0.10); }
+  0%, 100% { box-shadow: 0 1px 2px rgba(15,21,40,0.04), 0 4px 12px -6px rgba(15,21,40,0.06), inset 0 1px 0 rgba(255,255,255,0.6), 0 0 0 0 rgba(209,69,69,0); }
+  50%      { box-shadow: 0 1px 2px rgba(15,21,40,0.04), 0 4px 12px -6px rgba(15,21,40,0.06), inset 0 1px 0 rgba(255,255,255,0.6), 0 0 0 3px rgba(209,69,69,0.10); }
 }
-/* État ILLIMITÉ (comp spécial) : barre pleine + accent or premium, ∞ en Fraunces */
-.sidebar-usage--unlim {
-  --sc-accent: #B4892E;
-  background:
-    radial-gradient(120% 140% at 0% 0%, rgba(201,169,110,0.12), transparent 55%),
-    var(--app-surface);
-  border-color: color-mix(in srgb, #C9A96E 40%, var(--app-line-2));
+/* État ILLIMITÉ : lingots or, ∞ en Fraunces (seule exception serif assumée) */
+.sidebar-usage--unlim { --sc-accent: #B4892E; }
+.sidebar-usage--unlim .suc-cell-fill {
+  background: linear-gradient(180deg, #D4B571 0%, #B4892E 60%);
 }
-.sidebar-usage--unlim .sidebar-usage-fill { box-shadow: 0 0 12px rgba(201,169,110,0.55), 0 0 4px rgba(79,91,213,0.5); }
 .sidebar-usage-inf {
+  font-family: 'Fraunces', Georgia, serif;
   font-size: 34px;
   line-height: .72;
-  background: var(--chromatic);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #B4892E;
 }
 .sidebar-usage-cta {
   display: flex;
@@ -488,8 +456,8 @@ button { font-family: inherit; }
 .sidebar-usage-cta .sc-arrow { transition: transform .2s ease; }
 .sidebar-usage-cta:hover .sc-arrow { transform: translateX(2px); }
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-usage-fill::before,
   .sidebar-usage--crit { animation: none; }
+  .suc-cell-fill { transition: none; }
 }
 
 .sidebar-user {
@@ -509,7 +477,7 @@ button { font-family: inherit; }
 .sidebar-user-avatar {
   width: 26px; height: 26px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0EA5C6, #4F5BD5);
+  background: linear-gradient(135deg, #0EA5C6, #C2410C);
   display: grid; place-items: center;
   font-weight: 600;
   font-size: 11.5px;
@@ -658,18 +626,18 @@ button { font-family: inherit; }
 .btn:disabled::before { display: none; }
 .btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--app-surface), 0 0 0 4px rgba(79,91,213,0.55);
+  box-shadow: 0 0 0 2px var(--app-surface), 0 0 0 4px rgba(194, 65, 12,0.55);
 }
 
 .btn-primary {
-  background: linear-gradient(180deg, #5B67E0 0%, var(--app-accent) 55%, #4650C4 100%);
+  background: linear-gradient(180deg, #D65818 0%, var(--app-accent) 55%, #A63A0B 100%);
   color: #FFFFFF;
   border-color: rgba(38, 46, 130, 0.55);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.28),
     inset 0 -1px 0 rgba(10,14,60,0.25),
     0 1px 2px rgba(17,24,50,0.18),
-    0 6px 16px -6px rgba(79,91,213,0.55);
+    0 6px 16px -6px rgba(194, 65, 12,0.55);
 }
 .btn-primary::before {
   content: '';
@@ -685,7 +653,7 @@ button { font-family: inherit; }
     inset 0 1px 0 rgba(255,255,255,0.30),
     inset 0 -1px 0 rgba(10,14,60,0.25),
     0 2px 4px rgba(17,24,50,0.16),
-    0 10px 24px -8px rgba(79,91,213,0.65);
+    0 10px 24px -8px rgba(194, 65, 12,0.65);
 }
 .btn-primary:active { box-shadow: inset 0 1px 3px rgba(10,14,60,0.35); }
 
@@ -699,16 +667,16 @@ button { font-family: inherit; }
 .btn-ghost:hover {
   background: var(--app-surface);
   color: var(--app-fg);
-  border-color: rgba(79,91,213,0.45);
+  border-color: rgba(194, 65, 12,0.45);
   box-shadow: 0 2px 8px -2px rgba(17,24,50,0.14);
   transform: translateY(-1px);
 }
 .btn-ghost:active { box-shadow: inset 0 1px 2px rgba(17,24,50,0.08); }
 
 .btn-accent {
-  background: rgba(79,91,213,0.09);
+  background: rgba(194, 65, 12,0.09);
   color: var(--app-accent);
-  border-color: rgba(79,91,213,0.28);
+  border-color: rgba(194, 65, 12,0.28);
   box-shadow: 0 1px 2px rgba(17,24,50,0.05);
 }
 .btn-accent::before {
@@ -721,10 +689,10 @@ button { font-family: inherit; }
 .btn-accent > * { position: relative; z-index: 1; }
 .btn-accent:hover::before { transform: translateX(100%); }
 .btn-accent:hover {
-  background: rgba(79,91,213,0.14);
-  border-color: rgba(79,91,213,0.45);
+  background: rgba(194, 65, 12,0.14);
+  border-color: rgba(194, 65, 12,0.45);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px -2px rgba(79,91,213,0.30);
+  box-shadow: 0 2px 8px -2px rgba(194, 65, 12,0.30);
 }
 
 /* Danger quiet — remplace les outlines rouges bricolés en inline */
@@ -917,7 +885,7 @@ button { font-family: inherit; }
 }
 .gen-bounce-loader::before {
   content: ''; width: 48px; height: 5px;
-  background: rgba(79,91,213,.25);
+  background: rgba(194, 65, 12,.25);
   position: absolute; top: 60px; left: 0;
   border-radius: 50%;
   animation: gbl-shadow .5s linear infinite;
@@ -973,13 +941,13 @@ button { font-family: inherit; }
   to   { opacity:1; transform: translateY(0) scale(1); }
 }
 .gen-toast--ready {
-  border-color: rgba(79,91,213,.4);
+  border-color: rgba(194, 65, 12,.4);
   animation: toastSlide .35s cubic-bezier(.34,1.56,.64,1), toastReadyGlow 1.4s ease-out .25s;
 }
 @keyframes toastReadyGlow {
-  0%   { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 0 rgba(79,91,213,.55); }
-  60%  { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 10px rgba(79,91,213,.06); }
-  100% { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 0 rgba(79,91,213,0); }
+  0%   { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 0 rgba(194, 65, 12,.55); }
+  60%  { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 10px rgba(194, 65, 12,.06); }
+  100% { box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 0 0 0 rgba(194, 65, 12,0); }
 }
 .gen-toast-icon { flex-shrink: 0; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--app-surface-2); }
 .gen-toast-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1024,7 +992,7 @@ button { font-family: inherit; }
   width: 56px; height: 56px; border-radius: 50%;
   display: grid; place-items: center; margin-bottom: 10px;
   background: linear-gradient(135deg, var(--app-accent), #7B87F0);
-  box-shadow: 0 6px 20px rgba(79,91,213,.38);
+  box-shadow: 0 6px 20px rgba(194, 65, 12,.38);
   animation: cheerBadge .5s cubic-bezier(.34,1.56,.64,1) .12s backwards;
 }
 @keyframes cheerBadge { from { transform: scale(0); } to { transform: scale(1); } }

@@ -1,22 +1,6 @@
 /* global React, Icon */
 const { useState: useS, useEffect: useE, useRef: useR } = React;
 
-// ───── 2. Bandeau preuve ────────────────────────────────────────────────
-// Marques typographiques originales — comptes types, pas de logos réels.
-const SocialProof = () => (
-  <section className="proof">
-    <div className="label">Conçu pour les médias qui publient vite et bien</div>
-    <div className="proof-logos">
-      <div className="mark"><span className="dot-sm" /> BALLON BLEU</div>
-      <div className="mark"><span className="sq" /> FRAME</div>
-      <div className="mark" style={{ fontStyle: 'italic' }}>pulseactu</div>
-      <div className="mark" style={{ letterSpacing: '-0.05em' }}>LA/RELÈVE</div>
-      <div className="mark" style={{ fontWeight: 900 }}>NOVA.</div>
-      <div className="mark"><span className="ring" /> KIOSQ</div>
-    </div>
-  </section>
-);
-
 // ───── 5. Comment ça marche ─────────────────────────────────────────────
 const HOW_STEPS = [
   {
@@ -305,4 +289,4 @@ const Foot = () => (
   </footer>
 );
 
-Object.assign(window, { SocialProof, HowItWorks, Formats, Pricing, Faq, Closing, Foot });
+Object.assign(window, { HowItWorks, Formats, Pricing, Faq, Closing, Foot });

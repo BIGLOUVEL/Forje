@@ -154,7 +154,7 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
       </div>
 
       <div className="workspace-switcher">
-        <div className="workspace-avatar">{initials}</div>
+        <div className="workspace-avatar" style={profile?.avatar_url ? {backgroundImage:'url('+profile.avatar_url+')', backgroundSize:'cover', backgroundPosition:'center', color:'transparent'} : null}>{profile?.avatar_url ? '' : initials}</div>
         <div className="workspace-meta">
           <div className="workspace-name">{displayName}</div>
         </div>
@@ -242,47 +242,54 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
       </div>
 
       <div className="sidebar-footer">
-        {unlimited ? (
-          <div className="sidebar-usage sidebar-usage--unlim" onClick={goCredits} style={{cursor:'pointer'}} title="Voir mes crédits">
-            <div className="sidebar-usage-header">
-              <span className="sidebar-usage-label">Crédits</span>
-              <span className="sidebar-usage-count">Illimité</span>
+        {(() => {
+          // Jauge segmentée : 12 cellules ("lingots") qui se vident à l'usage.
+          // Chaque cellule ≈ 1/12 du quota ; la dernière entamée se remplit
+          // partiellement (scaleX). Aucun effet décoratif — le seul mouvement
+          // est le remplissage, lié à la donnée.
+          const CELLS = 12;
+          const ratio = unlimited ? 1 : Math.max(0, Math.min(1, creditsMax > 0 ? credits / creditsMax : 0));
+          const cells = Array.from({ length: CELLS }, (_, i) => {
+            const cellFill = Math.max(0, Math.min(1, ratio * CELLS - i));
+            return (
+              <span key={i} className="suc-cell">
+                <span className="suc-cell-fill"
+                  style={{ transform: 'scaleX(' + cellFill + ')', transitionDelay: (i * 26) + 'ms' }}/>
+              </span>
+            );
+          });
+          const stateClass = unlimited ? ' sidebar-usage--unlim'
+            : creditsPct <= 7 ? ' sidebar-usage--crit'
+            : creditsPct <= 15 ? ' sidebar-usage--low' : '';
+          return (
+            <div className={'sidebar-usage' + stateClass} onClick={goCredits} style={{cursor:'pointer'}} title="Voir mes crédits">
+              <div className="sidebar-usage-header">
+                <span className="sidebar-usage-label">Crédits</span>
+                <span className="sidebar-usage-count">{unlimited ? 'Illimité' : planLabel}</span>
+              </div>
+              <div className="sidebar-usage-readout">
+                {unlimited ? (<>
+                  <span className="sidebar-usage-value sidebar-usage-inf">∞</span>
+                  <span className="sidebar-usage-unit">accès spécial</span>
+                </>) : (<>
+                  <span className="sidebar-usage-value">{credits}</span>
+                  <span className="sidebar-usage-max">/ {creditsMax}</span>
+                  <span className="sidebar-usage-unit">restants</span>
+                </>)}
+              </div>
+              <div className="sidebar-usage-cells" role="progressbar"
+                aria-valuenow={unlimited ? undefined : credits} aria-valuemin={0} aria-valuemax={unlimited ? undefined : creditsMax}
+                aria-valuetext={unlimited ? 'Crédits illimités' : undefined}
+                aria-label="Crédits de création restants">
+                {cells}
+              </div>
+              <span className="sidebar-usage-cta">
+                {unlimited ? 'Génère sans compter' : creditsPct <= 15 ? 'Recharger mes crédits' : 'Augmenter la cadence'}
+                <span className="sc-arrow">→</span>
+              </span>
             </div>
-            <div className="sidebar-usage-readout">
-              <span className="sidebar-usage-value sidebar-usage-inf">∞</span>
-              <span className="sidebar-usage-unit">accès spécial</span>
-            </div>
-            <div className="sidebar-usage-bar" role="progressbar" aria-valuetext="Crédits illimités" aria-label="Crédits illimités">
-              <div className="sidebar-usage-fill" style={{width: '100%'}}/>
-            </div>
-            <span className="sidebar-usage-cta">
-              Génère sans compter
-              <span className="sc-arrow">→</span>
-            </span>
-          </div>
-        ) : (
-        <div className={'sidebar-usage' + (creditsPct <= 7 ? ' sidebar-usage--crit' : creditsPct <= 15 ? ' sidebar-usage--low' : '')}
-          onClick={goCredits} style={{cursor:'pointer'}} title="Voir mes crédits">
-          <div className="sidebar-usage-header">
-            <span className="sidebar-usage-label">Crédits</span>
-            <span className="sidebar-usage-count">{planLabel}</span>
-          </div>
-          <div className="sidebar-usage-readout">
-            <span className="sidebar-usage-value">{credits}</span>
-            <span className="sidebar-usage-max">/ {creditsMax}</span>
-            <span className="sidebar-usage-unit">restants</span>
-          </div>
-          <div className="sidebar-usage-bar" role="progressbar"
-            aria-valuenow={credits} aria-valuemin={0} aria-valuemax={creditsMax}
-            aria-label="Crédits de création restants">
-            <div className="sidebar-usage-fill" style={{width: Math.max(creditsPct, credits > 0 ? 4 : 0) + '%'}}/>
-          </div>
-          <span className="sidebar-usage-cta">
-            {creditsPct <= 15 ? 'Recharger mes crédits' : 'Augmenter la cadence'}
-            <span className="sc-arrow">→</span>
-          </span>
-        </div>
-        )}
+          );
+        })()}
 
         <div className="sidebar-user" ref={menuRef}>
           {userMenuOpen && (
