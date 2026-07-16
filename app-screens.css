@@ -2903,3 +2903,32 @@
   background-size: 20px 20px;
   background-position: 0 0, 10px 10px;
 }
+
+/* ─── BRAND — fond globe « veille mondiale » (cobe) ─────────────────────
+   Globe clair teinté indigo, à moitié hors-cadre en haut à droite, derrière
+   le header et le bento. Les markers pulsent à la couleur primaire du client.
+   Discret : masqué en fondu radial, aucun pointer-event, coupé sur mobile. */
+.brand-page { position: relative; }
+.brand-page > .page-header,
+.brand-page > .brand-cols { position: relative; z-index: 1; }
+
+.brand-globe-veil {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.brand-globe-canvas {
+  position: absolute; top: -310px; right: -250px;
+  width: 680px; height: 680px;
+  opacity: 0;
+  transition: opacity 1.4s ease 0.15s;
+  -webkit-mask-image: radial-gradient(circle at 40% 60%,
+      rgba(0,0,0,.9) 0%, rgba(0,0,0,.6) 44%, transparent 72%);
+          mask-image: radial-gradient(circle at 40% 60%,
+      rgba(0,0,0,.9) 0%, rgba(0,0,0,.6) 44%, transparent 72%);
+}
+
+@media (max-width: 980px) {
+  .brand-globe-veil { display: none; }
+}

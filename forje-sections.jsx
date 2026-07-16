@@ -22,7 +22,6 @@ const HOW_STEPS = [
   {
     num: '1',
     label: 'FORGE',
-    icon: 'Hammer',
     title: 'Ton identité, encodée une fois',
     text: 'Logo, couleurs, police, mood — Forje apprend ta charte exacte à l\'onboarding. Cinq minutes, une seule fois.',
     art: 'identity',
@@ -30,7 +29,6 @@ const HOW_STEPS = [
   {
     num: '2',
     label: 'VEILLE',
-    icon: 'Eye',
     title: 'L\'IA surveille tes sujets',
     text: 'Chaque actu de ton univers est scorée de 0 à 100. Au-dessus de 80, tu reçois une alerte : c\'est chaud, c\'est pour toi.',
     art: 'board',
@@ -38,7 +36,6 @@ const HOW_STEPS = [
   {
     num: '3',
     label: 'GÉNÈRE',
-    icon: 'Spark',
     title: 'Un clic. Un post dans ta charte.',
     text: 'Actu, citation ou carousel — le post sort dans ton identité exacte. Tu valides, tu ajustes, tu publies.',
     art: 'compose',
@@ -112,21 +109,14 @@ const HowItWorks = () => (
     <h2>Forge une fois. <span className="accent">Poste pour toujours.</span></h2>
 
     <div className="how-grid">
-      {HOW_STEPS.map((s) => {
-        const StepIcon = Icon[s.icon] || Icon.Spark;
-        return (
-          <div key={s.num} className="how-card">
-            <div className="how-top">
-              <div className="how-num">{s.num}</div>
-              <div className="how-ico"><StepIcon /></div>
-            </div>
-            <div className="how-label">{s.label}</div>
-            <h3>{s.title}</h3>
-            <p>{s.text}</p>
-            <StepShot kind={s.art} />
-          </div>
-        );
-      })}
+      {HOW_STEPS.map((s) => (
+        <div key={s.num} className="how-card">
+          <div className="how-label"><span className="how-idx">0{s.num}</span>{s.label}</div>
+          <h3>{s.title}</h3>
+          <p>{s.text}</p>
+          <StepShot kind={s.art} />
+        </div>
+      ))}
     </div>
   </section>
 );

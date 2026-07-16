@@ -3266,6 +3266,79 @@ const PackAnimatedCard = function(props) {
   );
 };
 
+// ─── Fond « veille mondiale » — globe cobe discret derrière l'identité ───
+// Capitales médias surveillées ; les markers prennent la couleur primaire du client.
+const BRAND_GLOBE_MARKERS = [
+  [48.86, 2.35],    // Paris
+  [51.51, -0.13],   // Londres
+  [40.71, -74.01],  // New York
+  [37.77, -122.42], // San Francisco
+  [35.68, 139.69],  // Tokyo
+  [-23.55, -46.63], // São Paulo
+  [30.04, 31.24],   // Le Caire
+  [-33.87, 151.21], // Sydney
+];
+
+const _hexToVec = function(hex) {
+  var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return [0.31, 0.36, 0.84]; // indigo accent par défaut
+  var n = parseInt(m[1], 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+};
+
+const BrandGlobeBg = function({ accent }) {
+  var canvasRef = React.useRef(null);
+  var colorRef  = React.useRef(_hexToVec(accent));
+  colorRef.current = _hexToVec(accent);
+
+  React.useEffect(function() {
+    var canvas = canvasRef.current;
+    if (!canvas) return;
+    var globe = null, cancelled = false;
+    var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var phi = 5.4; // Europe/Afrique face caméra au premier rendu
+
+    function init() {
+      if (cancelled || globe || !window.__createGlobe || !canvas.offsetWidth) return;
+      var dpr  = Math.min(window.devicePixelRatio || 1, 2);
+      var size = canvas.offsetWidth * dpr;
+      globe = window.__createGlobe(canvas, {
+        devicePixelRatio: dpr,
+        width: size, height: size,
+        phi: phi, theta: 0.26,
+        dark: 0, diffuse: 1.2,
+        mapSamples: 16000, mapBrightness: 6.5,
+        baseColor: [0.52, 0.56, 0.88],   // continents indigo — dans la DA
+        markerColor: colorRef.current,
+        glowColor: [1, 1, 1],            // halo blanc, fond off-white : fondu naturel
+        opacity: 0.85,
+        markers: BRAND_GLOBE_MARKERS.map(function(loc) { return { location: loc, size: 0.05 }; }),
+        onRender: function(state) {
+          if (!reduced) phi += 0.0009;   // rotation lente, liée aux données — pas un effet gadget
+          state.phi = phi;
+          state.markerColor = colorRef.current;
+        },
+      });
+      canvas.style.opacity = '1';
+    }
+
+    if (window.__createGlobe) init();
+    else window.addEventListener('cobe-ready', init, { once: true });
+
+    return function() {
+      cancelled = true;
+      window.removeEventListener('cobe-ready', init);
+      if (globe) globe.destroy();
+    };
+  }, []);
+
+  return (
+    <div className="brand-globe-veil" aria-hidden="true">
+      <canvas ref={canvasRef} className="brand-globe-canvas" width="1" height="1"/>
+    </div>
+  );
+};
+
 const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   var [name,            setName]            = useState('');
   var [logoBadgeUrl,    setLogoBadgeUrl]    = useState('');   // logo avec son vrai fond
@@ -3844,7 +3917,8 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   );
 
   return (
-    <div className="page-body" style={{ paddingBottom:60 }}>
+    <div className="page-body brand-page" style={{ paddingBottom:60 }}>
+      <BrandGlobeBg accent={primaryColor}/>
       {showVeilleNudge && (
         <div className="veille-nudge-overlay">
           <div className="veille-nudge-modal">
@@ -3913,7 +3987,7 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
       </div>
 
       {/* ── Outer: bento grid + live preview ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) 240px', gap:24, alignItems:'start' }}>
+      <div className="brand-cols" style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) 240px', gap:24, alignItems:'start' }}>
 
         {/* ── BENTO GRID ── */}
         <div className="brand-bento">

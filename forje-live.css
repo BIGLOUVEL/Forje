@@ -617,20 +617,32 @@
 }
 @keyframes pipeSpin { to { transform: rotate(360deg); } }
 
-/* Résultat : matérialisation bas → haut (comme l'app) */
-.dm-result { display: flex; flex-direction: column; align-items: center; text-align: center; }
+/* Résultat : matérialisation bas → haut (comme l'app).
+   L'image CÈDE en hauteur (max-height via la colonne flex) pour que meta +
+   punchline + CTA restent TOUJOURS visibles dans la fenêtre — sans ça, en
+   mode épinglé (508px fixes) le texte débordait sous le cadre, coupé. */
+.dm-result {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  height: 100%; min-height: 0;
+}
 .dm-post-wrap {
-  width: 62%;
-  border-radius: 12px; overflow: hidden;
-  box-shadow: 0 36px 80px rgba(0, 0, 4, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.07);
-  animation: postMaterialize 1s cubic-bezier(.2, .85, .25, 1) both;
+  flex: 1 1 auto; min-height: 0;
+  width: 100%;
+  display: flex; align-items: center; justify-content: center;
 }
 @keyframes postMaterialize {
   0%   { opacity: 0; transform: translateY(36px) scale(0.97); clip-path: inset(100% 0 0 0); }
   55%  { clip-path: inset(0 0 0 0); }
   100% { opacity: 1; transform: none; clip-path: inset(0 0 0 0); }
 }
-.dm-post { display: block; width: 100%; height: auto; }
+.dm-post {
+  display: block;
+  width: auto; height: auto;
+  max-width: 62%; max-height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 36px 80px rgba(0, 0, 4, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.07);
+  animation: postMaterialize 1s cubic-bezier(.2, .85, .25, 1) both;
+}
 .dm-result-meta {
   margin-top: 12px;
   font-family: 'JetBrains Mono', monospace;
@@ -731,7 +743,12 @@
 .ld-scroll.is-pinned .dm-generate-btn { margin-top: 12px; padding-top: 12px; padding-bottom: 12px; }
 .ld-scroll.is-pinned .dm-note { margin-top: 8px; }
 .ld-scroll.is-pinned .dm-placeholder-frame { width: 40%; }
-.ld-scroll.is-pinned .dm-post-wrap { width: 44%; }
+.ld-scroll.is-pinned .dm-post { max-width: 44%; }
+/* Textes du résultat resserrés : chaque pixel rendu au texte est un pixel
+   de plus pour l'image dans les 508px de la fenêtre épinglée */
+.ld-scroll.is-pinned .dm-result-meta { margin-top: 8px; }
+.ld-scroll.is-pinned .dm-punchline { margin: 10px 0 10px; font-size: 14px; }
+.ld-scroll.is-pinned .dm-remaining { margin-top: 8px; }
 
 /* Rail de progression (haut du cadre) */
 .ld-scroll.is-pinned .ld-rail {
@@ -775,23 +792,24 @@
   overflow: hidden;
   display: flex; flex-direction: column;
 }
-.how-top { display: flex; align-items: flex-start; justify-content: space-between; }
-.how-num {
-  font-size: 84px; font-weight: 800; line-height: 0.9; letter-spacing: -0.05em;
-  color: rgba(160, 195, 255, 0.35);
-}
-.how-ico {
-  width: 48px; height: 48px; border-radius: 13px;
-  display: grid; place-items: center;
-  color: #c6d8ff;
-  background: rgba(15, 30, 90, 0.5);
-  border: 1px solid var(--border);
-}
+/* Index de step : chip mono discret, dans le même langage que le reste du
+   produit (dm-step-num, lb-num…) — un ghost-numeral géant + icône dans un
+   carré arrondi lisait comme un diagramme de process générique, déconnecté
+   du reste de la DA. */
 .how-label {
-  margin-top: 18px;
+  display: flex; align-items: center; gap: 10px;
   font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; color: var(--muted);
 }
-.how-card h3 { font-size: 23px; font-weight: 600; letter-spacing: -0.02em; margin: 10px 0 8px; }
+.how-idx {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 500; letter-spacing: 0;
+  color: rgba(190, 215, 255, 0.85);
+  background: rgba(30, 60, 140, 0.35);
+  border: 1px solid var(--border);
+}
+.how-card h3 { font-size: 23px; font-weight: 600; letter-spacing: -0.02em; margin: 14px 0 8px; }
 .how-card p { color: var(--fg-dim); font-size: 14.5px; line-height: 1.6; margin: 0 0 22px; }
 
 /* Screens réels de l'app (avec fallback art CSS si absents) */
@@ -862,16 +880,24 @@
 .hc-check { font-size: 12.5px; font-weight: 600; color: #B8FFD9; }
 
 /* ───── 6. Formats ──────────────────────────────────────────────────────── */
-.formats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 56px; }
+/* Grille resserrée (1040px au lieu des 1296px pleine largeur) : le visuel
+   4:5 (format Instagram réel, portrait) rend chaque carte nettement plus
+   haute que les cartes 16:10 de "Comment ça marche" juste au-dessus — à
+   pleine largeur ça gonflait la section d'un coup en descendant. Cadrer
+   la grille plus étroit ramène les cartes à une hauteur comparable. */
+.formats-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+  margin-top: 56px;
+}
 .format-card {
   border-radius: 18px;
   background: var(--card);
   border: 1px solid var(--border);
-  padding: 22px;
+  padding: 20px;
   overflow: hidden;
 }
 .format-visual {
-  border-radius: 13px; overflow: hidden;
+  border-radius: 12px; overflow: hidden;
   border: 1px solid var(--border);
   background: rgba(5, 13, 46, 0.5);
   aspect-ratio: 4 / 5;
@@ -880,16 +906,16 @@
 .format-visual video, .format-visual img {
   width: 100%; height: 100%; object-fit: cover; display: block;
 }
-.format-head { display: flex; align-items: baseline; gap: 10px; margin: 18px 0 8px; }
-.format-head h3 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+.format-head { display: flex; align-items: baseline; gap: 10px; margin: 17px 0 7px; }
+.format-head h3 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 .format-cost {
   margin-left: auto;
-  font-size: 12px; font-weight: 600; color: var(--muted);
+  font-size: 11.5px; font-weight: 600; color: var(--muted);
   padding: 4px 10px; border-radius: 999px;
   background: rgba(110, 155, 255, 0.1);
   border: 1px solid var(--border);
 }
-.format-card p { color: var(--fg-dim); font-size: 14px; line-height: 1.55; margin: 0; }
+.format-card p { color: var(--fg-dim); font-size: 13.5px; line-height: 1.5; margin: 0; }
 
 /* ───── 7. Pricing solo ─────────────────────────────────────────────────── */
 /* Version compacte : la carte doit se lire d'un coup d'œil, pas dominer
@@ -953,7 +979,9 @@
 .faq-chev { font-size: 18px; width: 20px; }
 .faq-a p { padding: 0 18px 16px; font-size: 13.5px; line-height: 1.6; }
 
-.closing { padding: 116px 72px 96px; }
+/* padding-top réduit : la FAQ juste au-dessus a déjà 96px de padding-bottom
+   (.section) — sans ce correctif les deux se cumulaient à 212px de vide. */
+.closing { padding: 48px 72px 96px; }
 .closing h2 { font-size: 64px; }
 
 /* ═════ Nav au scroll — voile pleine largeur, plus de plaque ═════════════
@@ -966,12 +994,16 @@
   width: max(100vw, 1440px); transform: translateX(-50%);
   z-index: -1; pointer-events: none;
   background: linear-gradient(180deg, rgba(4, 10, 32, 0.78) 0%, rgba(4, 10, 32, 0.45) 62%, transparent 100%);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  backdrop-filter: blur(14px) saturate(1.3);
   opacity: 0; transition: opacity .35s ease;
 }
 body.scrolled .nav { background: none; }
-body.scrolled .nav::after { opacity: 1; }
+/* backdrop-filter seulement quand le voile est visible : même à opacity 0,
+   un backdrop-filter déclaré coûte un blur du fond à chaque frame */
+body.scrolled .nav::after {
+  opacity: 1;
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+}
 /* Le hairline suit la même largeur que le voile */
 .nav::before {
   left: 50%; right: auto; transform: translateX(-50%);
