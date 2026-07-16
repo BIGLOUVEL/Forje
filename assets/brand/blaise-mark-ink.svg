@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 300" role="img" aria-label="Blaise">
+  <!-- Variante encre — pour contextes monochromes ; fill surchargeable via currentColor -->
+  <path fill="#1B1A15" d="
+    M 130 22
+    C 175.6 22 212.5 58.9 212.5 104.5
+    C 212.5 149 189 194 150 230
+    C 128 250 103 265.5 76.5 275.5
+    C 69.5 278 64.5 270 69.5 264.5
+    C 90.5 241 106.5 217 115.5 188
+    C 118.5 178 120 168.5 120.5 159.5
+    C 81 154 47.5 132 47.5 104.5
+    C 47.5 58.9 84.4 22 130 22
+    Z"/>
+</svg>

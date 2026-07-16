@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<title>blaise vector preview</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..900&display=swap" rel="stylesheet"/>
+<style>
+  body { margin:0; background:#FAFAF8; font-family:'DM Sans',sans-serif; display:flex; flex-wrap:wrap; gap:40px; padding:40px; align-items:flex-start; }
+  .cell { text-align:center; }
+  .lbl { font-size:11px; color:#999; margin-top:8px; letter-spacing:.08em; text-transform:uppercase; }
+  .lockup { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .lockup .word { font-weight:700; font-size:64px; letter-spacing:-0.02em; color:#1B1A15; line-height:1; }
+  .dark { background:#1B1A15; border-radius:48px; width:220px; height:220px; display:grid; place-items:center; }
+  .sizes { display:flex; align-items:flex-end; gap:18px; }
+</style>
+</head>
+<body>
+  <div class="cell">
+    <img src="blaise-mark.svg" width="300"/>
+    <div class="lbl">Mark 300px</div>
+  </div>
+  <div class="cell">
+    <div class="lockup">
+      <img src="blaise-mark.svg" width="150"/>
+      <div class="word">blaise</div>
+    </div>
+    <div class="lbl">Lockup vertical</div>
+  </div>
+  <div class="cell">
+    <div class="dark"><img src="blaise-mark.svg" width="130"/></div>
+    <div class="lbl">Sur charbon</div>
+  </div>
+  <div class="cell">
+    <div class="sizes">
+      <img src="blaise-mark.svg" width="64"/>
+      <img src="blaise-mark.svg" width="32"/>
+      <img src="blaise-mark.svg" width="16"/>
+    </div>
+    <div class="lbl">64 / 32 / 16 px</div>
+  </div>
+  <div class="cell">
+    <img src="blaise-appicon.svg" width="180"/>
+    <div class="lbl">App icon vectorielle</div>
+  </div>
+  <div class="cell">
+    <img src="blaise-lockup.svg" width="380"/>
+    <div class="lbl">Lockup horizontal SVG</div>
+  </div>
+  <div class="cell">
+    <img src="blaise-mark-ink.svg" width="120"/>
+    <div class="lbl">Encre mono</div>
+  </div>
+</body>
+</html>
