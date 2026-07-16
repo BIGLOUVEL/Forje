@@ -240,17 +240,8 @@
 .sidebar-account-item { border-radius: 8px; }
 .sidebar-account-item.active { background: rgba(79, 91, 213, 0.09); }
 
-/* ─── Jauge crédits — lisible et sobre : numéral DM Sans, barre indigo unie.
-   Les états bas/critique (ambre/rouge) gardent leur propre couleur — signal
-   lié aux données, il reste. ───────────────────────────────────────────── */
-.sidebar-usage-value {
-  font-family: 'DM Sans', system-ui, sans-serif;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-.sidebar-usage-fill { background: var(--app-accent); }
-.sidebar-usage-fill::before,
-.sidebar-usage-fill::after { display: none; }
+/* Jauge crédits : composant segmenté défini dans app.css (.sidebar-usage-cells)
+   — plus d'override nécessaire ici. */
 
 /* ─── Paramètres — fin du serif décoratif, DM Sans partout ──────────────── */
 .set-bill-name, .set-credits-big, .set-credits-pct {
@@ -261,3 +252,30 @@
 
 /* ─── Hiérarchie de page plus franche ───────────────────────────────────── */
 .page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; }
+
+/* ═══ v4 — retours utilisateur ═══════════════════════════════════════════ */
+
+/* ─── Panneau détail (Forger ce post) figé : il ne suit plus le scroll ──── */
+.recap-panel { position: static; }
+
+/* ─── Bouton primaire — plus de matière : le flat pur jurait à côté des
+   cards. Dégradé vertical subtil + highlight interne, toujours rect 10px. ── */
+.btn-primary {
+  background: linear-gradient(180deg, #5A66E4 0%, var(--app-accent) 55%, #4550C8 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(17, 24, 50, 0.12),
+    0 3px 10px -2px rgba(79, 91, 213, 0.45);
+}
+.btn-primary:hover {
+  background: linear-gradient(180deg, #616DEA 0%, #5560DC 55%, #4A55CE 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 1px 2px rgba(17, 24, 50, 0.12),
+    0 4px 14px -2px rgba(79, 91, 213, 0.52);
+}
+
+/* ─── Globe « veille mondiale » — désormais en fond de Sources & veille ─── */
+.sources-page { position: relative; }
+.sources-page > *:not(.brand-globe-veil) { position: relative; z-index: 1; }
+.sources-page .brand-globe-canvas { top: -320px; right: -170px; opacity: 0; }

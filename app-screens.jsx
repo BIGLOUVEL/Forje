@@ -3918,7 +3918,6 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
 
   return (
     <div className="page-body brand-page" style={{ paddingBottom:60 }}>
-      <BrandGlobeBg accent={primaryColor}/>
       {showVeilleNudge && (
         <div className="veille-nudge-overlay">
           <div className="veille-nudge-modal">
@@ -4538,11 +4537,14 @@ const SettingsRow = function({ label, sub, right, danger }) {
   );
 };
 
+// Personnages façon "Le Forgeron" (mascotte Forje) — panel façon Netflix,
+// pensé pour que chacun puisse se reconnaître dans au moins un avatar.
 const PRESET_AVATARS = [
-  { id:'moon',   src:'assets/avatars/moon.png',   label:'Lune' },
-  { id:'comet',  src:'assets/avatars/comet.png',  label:'Comète' },
-  { id:'planet', src:'assets/avatars/planet.png', label:'Planète' },
-  { id:'spark',  src:'assets/avatars/spark.png',  label:'Étincelle' },
+  { id:'forgeron',   src:'assets/avatars/forgeron.webp',   label:'Le Forgeron' },
+  { id:'forgeronne', src:'assets/avatars/forgeronne.webp', label:'La Forgeronne' },
+  { id:'artisane',   src:'assets/avatars/artisane.webp',   label:'L\'Artisane' },
+  { id:'maitre',     src:'assets/avatars/maitre.webp',     label:'Le Maître' },
+  { id:'apprentie',  src:'assets/avatars/apprentie.webp',  label:'L\'Apprentie' },
 ];
 
 const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
@@ -5180,4 +5182,4 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   );
 };
 
-Object.assign(window, { GenerateScreen, QueueScreen, BrandScreen, SettingsScreen });
+Object.assign(window, { GenerateScreen, QueueScreen, BrandScreen, SettingsScreen, BrandGlobeBg });

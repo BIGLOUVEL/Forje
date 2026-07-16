@@ -1443,6 +1443,8 @@ const VeilleBoard = ({ compteId, freshSetup = false, onReset }) => {
 
   return (
     <div className="sources-page">
+      {/* Fond « veille mondiale » — globe discret derrière le board */}
+      {window.BrandGlobeBg && <window.BrandGlobeBg/>}
 
       {/* ── Pipeline status bar ── */}
       <StatusBar refreshedAt={refreshedAt} scoring={scoring} total={boardData.total}/>
