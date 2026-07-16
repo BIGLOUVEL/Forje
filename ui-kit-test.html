@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<title>ui kit harness</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="app.css"/>
+<link rel="stylesheet" href="app-dashboard.css"/>
+<link rel="stylesheet" href="app-screens.css"/>
+<link rel="stylesheet" href="app-sources.css"/>
+<script>
+if (!/kit=0/.test(location.search)) {
+  document.write('<link rel="stylesheet" href="app-ui-kit.css"/>');
+}
+</script>
+<style>.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0; }</style>
+</head>
+<body>
+<div class="page-body">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Harnais UI — primitives</h1>
+      <p class="page-subtitle">Boutons, cards, tags, inputs, breaking bar.</p>
+    </div>
+    <div class="page-header-actions">
+      <button class="btn btn-ghost">Annuler</button>
+      <button class="btn btn-primary">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <button class="btn btn-primary">Forger ce post</button>
+    <button class="btn btn-ghost">Secondaire</button>
+    <button class="btn btn-accent">Accent doux</button>
+    <button class="btn btn-danger">Supprimer</button>
+    <button class="btn btn-primary btn-sm">Petit</button>
+    <button class="btn btn-primary" disabled>Désactivé</button>
+  </div>
+
+  <div class="row">
+    <span class="tag">Neutre</span>
+    <span class="tag tag-success tag-dot">+15,1%</span>
+    <span class="tag tag-warn tag-dot">Attention</span>
+    <span class="tag tag-danger tag-dot">-2%</span>
+    <span class="tag tag-accent tag-dot">82% pertinent</span>
+    <span class="brand-chip">Direct</span>
+    <span class="brand-chip">Percutant</span>
+  </div>
+
+  <div class="breaking-bar" style="padding:14px 18px; margin:14px 0;">
+    <div class="breaking-main" style="display:flex; gap:14px; align-items:center;">
+      <span class="breaking-badge" style="display:inline-flex;">● BREAKING</span>
+      <div class="breaking-content">
+        <div class="breaking-title">Angleterre–Argentine : à quelle heure voir la demi-finale ?</div>
+        <div class="breaking-meta">Le Parisien · il y a 4 min</div>
+      </div>
+      <button class="btn btn-primary">⚡ Générer maintenant</button>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:14px 0;">
+    <div class="bento-tile">
+      <div class="bento-tile-lbl">Identité du média</div>
+      <div style="margin-bottom:10px;">
+        <input class="brand-input" placeholder="Nom public" style="width:100%;"/>
+      </div>
+      <textarea class="brand-textarea" placeholder="Description du média" style="width:100%;"></textarea>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">France–Espagne : les clés d'un naufrage</div>
+          <div class="card-subtitle">Le Figaro · il y a 2h13 · score 8.5</div>
+        </div>
+        <span class="tag tag-success">8.5/10</span>
+      </div>
+      <div class="card-pad">
+        DÉCRYPTAGE — Dépassés, les Bleus n'ont pas existé lors de la demi-finale contre la Roja.
+        <div class="row" style="margin-bottom:0;">
+          <button class="btn btn-primary btn-sm">⚡ Forger ce post</button>
+          <button class="btn btn-ghost btn-sm">Source originale</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
