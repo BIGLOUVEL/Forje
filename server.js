@@ -46,7 +46,15 @@ app.use('/fonts/dm-serif-display', express.static(path.join(NM, '@fontsource/dm-
 app.use('/vendor/jszip', express.static(path.join(NM, 'jszip/dist')));
 
 // SaaS principal (fichiers statiques à la racine)
-app.use(express.static(ROOT));
+// HTML/JSX toujours revalidés : sans Cache-Control, les navigateurs (surtout en
+// accès réseau, hors localhost) gardent l'ancien index.html en cache heuristique
+// et ne voient jamais les nouveaux <link>/<script> — les assets versionnés (?v=)
+// restent cachés normalement.
+app.use(express.static(ROOT, {
+  setHeaders(res, filePath) {
+    if (/\.(html|jsx)$/i.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 // ─── Health check (debug) ─────────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {
