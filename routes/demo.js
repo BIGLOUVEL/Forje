@@ -19,7 +19,7 @@ const path    = require('path');
 const fs      = require('fs');
 
 const { supabase }        = require('../lib/supabase');
-const { runActuPipeline } = require('./generate');
+const { runActuPipeline, runDeepDivePipeline } = require('./generate');
 const { resolveFont }     = require('../lib/fontLoader');
 
 const router = express.Router();
@@ -235,11 +235,12 @@ router.post('/generate', async (req, res) => {
       const newsText = news
         ? news.titre + (news.description ? ' — ' + news.description : '')
         : promptText;
-      // Même workflow que l'app : imageMode 'ai' (visuel GPT guidé par les
-      // photos Serper, fallback photo si échec) + watermark démo (garde-fou 3).
+      // Mode 'classic' : vraie photo de presse (Serper) + compo charte — ~5s au
+      // lieu de 30-60s de génération GPT Image, et quasi gratuit. C'est aussi
+      // l'usage réel d'un média d'actu. Watermark démo (garde-fou 3).
       payload = await runActuPipeline(client, {
         newsText: newsText.slice(0, 600),
-        imageMode: 'ai',
+        imageMode: 'classic',
         watermark: WATERMARK_TEXT,
       });
     } catch (pipeErr) {
@@ -351,6 +352,93 @@ router.get('/examples', (_req, res) => {
   res.json({ examples });
 });
 
+// ─── Deep dive quotidien pré-forgé ────────────────────────────────────────────
+// La vitrine deep dive de la landing n'est PAS générée en live (60-120s +
+// ~15-30ct le carousel) : un carousel par profil démo, re-forgé une fois par
+// jour sur la meilleure actu du board, servi instantanément.
+const _ddRunning = new Set(); // anti-concurrence (cron toutes les 10 min + local)
+
+function isToday(iso) {
+  return iso && String(iso).slice(0, 10) === new Date().toISOString().slice(0, 10);
+}
+
+// Génère le deep dive du jour pour UN profil s'il est périmé. Retourne :
+// 'fresh' (déjà à jour) | 'done' (généré) | 'skipped' (pas de news / en cours)
+async function ensureDemoDeepDive(profileKey) {
+  const p = DEMO_PROFILES[profileKey];
+  if (!p || _ddRunning.has(profileKey)) return 'skipped';
+
+  const { data: existing } = await supabase
+    .from('demo_deepdive').select('created_at').eq('profile_key', profileKey).maybeSingle();
+  if (existing && isToday(existing.created_at)) return 'fresh';
+
+  const { data: topNews } = await supabase
+    .from('demo_veille')
+    .select('titre, description')
+    .eq('profile_key', profileKey)
+    .order('score', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!topNews) return 'skipped';
+
+  const client = await loadDemoClient(profileKey);
+  if (!client) return 'skipped';
+
+  _ddRunning.add(profileKey);
+  try {
+    const topic = (topNews.titre + (topNews.description ? ' — ' + topNews.description : '')).slice(0, 400);
+    // imageMode 'photo' → variante light : photos Serper uniquement, pas de
+    // GPT Image. ~15ct/carousel (plan Sonnet + web search), 1x/jour/profil.
+    const payload = await runDeepDivePipeline(client, { topic, imageMode: 'photo', slideCount: 7 });
+    delete payload.caption; // inutile sur la landing
+    await supabase.from('demo_deepdive').upsert({
+      profile_key: profileKey,
+      topic:       topNews.titre,
+      payload,
+      created_at:  new Date().toISOString(),
+    });
+    console.log(`[Demo/deepdive] ${profileKey} re-forgé : "${topNews.titre.slice(0, 60)}"`);
+    return 'done';
+  } finally {
+    _ddRunning.delete(profileKey);
+  }
+}
+
+// ─── GET /api/demo/deepdive ───────────────────────────────────────────────────
+// Payload lourd (~1-2 Mo de fonds base64) → cache mémoire 10 min, et la landing
+// ne le charge qu'à l'approche de la section (IntersectionObserver).
+let _ddCache = { at: 0, payload: null };
+router.get('/deepdive', async (_req, res) => {
+  try {
+    if (_ddCache.payload && Date.now() - _ddCache.at < 10 * 60 * 1000) {
+      return res.json(_ddCache.payload);
+    }
+    const { data, error } = await supabase
+      .from('demo_deepdive')
+      .select('profile_key, topic, payload, created_at')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    if (!data?.length) return res.status(404).json({ error: 'pas encore forgé' });
+
+    const carousels = {};
+    for (const row of data) {
+      const client = await loadDemoClient(row.profile_key);
+      carousels[row.profile_key] = {
+        name:      client?.name || row.profile_key,
+        topic:     row.topic,
+        forged_at: row.created_at,
+        ...row.payload,
+      };
+    }
+    const payload = { carousels };
+    _ddCache = { at: Date.now(), payload };
+    res.json(payload);
+  } catch (e) {
+    console.error('[Demo/deepdive]', e.message);
+    res.status(500).json({ error: 'indisponible' });
+  }
+});
+
 // ─── POST/GET /api/demo/refresh — cron externe ────────────────────────────────
 // Sur Vercel (serverless), les setInterval de server.js ne tournent jamais :
 // cette route fait le même travail, appelée toutes les 10 min par le workflow
@@ -402,6 +490,16 @@ router.all('/refresh', async (req, res) => {
       const { scoreForCompte } = require('./scoring');
       await refreshDemoVeille(scoreForCompte, profile);
       done.push('board:' + (profile || 'all'));
+    }
+    if (step === 'deepdive' || step === 'all') {
+      // UN profil périmé par passage — la génération (~40-60s) doit tenir dans
+      // la durée max d'une fonction Vercel ; si elle est coupée, le passage
+      // suivant (10 min plus tard) retente. Une fois frais, no-op jusqu'à demain.
+      for (const key of Object.keys(DEMO_PROFILES)) {
+        const r = await ensureDemoDeepDive(key);
+        done.push('deepdive:' + key + ':' + r);
+        if (r === 'done') break;
+      }
     }
     if (step === 'rss' || step === 'veille' || step === 'all') {
       // Watchdog de coûts adossé au cron : sur Vercel (serverless) les
@@ -489,4 +587,4 @@ async function refreshDemoVeille(scoreForCompte, onlyKey = null) {
   }
 }
 
-module.exports = { router, refreshDemoVeille };
+module.exports = { router, refreshDemoVeille, ensureDemoDeepDive };

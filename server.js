@@ -86,6 +86,7 @@ app.use('/api/generate',     require('./routes/generate'));
 app.use('/api/brand',        require('./routes/brand'));
 app.use('/api/interactions', require('./routes/interactions'));
 app.use('/api/agent',        require('./routes/agent'));
+app.use('/api/blaise',       require('./routes/blaise'));
 app.use('/api/billing',      billingRouter);
 app.use('/api/instagram',    require('./routes/instagram'));
 app.use('/api/account',      require('./routes/account'));
@@ -166,6 +167,16 @@ if (!process.env.VERCEL) {
   const DEMO_VEILLE_INTERVAL_MS = 10 * 60 * 1000;
   setTimeout(() => refreshDemoVeille(scoreForCompte), 20 * 1000); // premier passage juste après le boot
   setInterval(() => refreshDemoVeille(scoreForCompte), DEMO_VEILLE_INTERVAL_MS);
+
+  // Deep dive démo du jour (vitrine landing) — no-op si déjà frais
+  const runDemoDeepDives = async () => {
+    const { ensureDemoDeepDive } = require('./routes/demo');
+    for (const key of ['ballon_bleu', 'frame']) {
+      await ensureDemoDeepDive(key).catch(e => console.error('[Demo/deepdive]', key, e.message));
+    }
+  };
+  setTimeout(runDemoDeepDives, 60 * 1000);
+  setInterval(runDemoDeepDives, 60 * 60 * 1000);
 }
 
 // ─── Admin (caché, pas indexé dans le SPA) ───────────────────────────────────

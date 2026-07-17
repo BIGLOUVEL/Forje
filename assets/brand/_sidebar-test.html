@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<title>blaise — sidebar avant/après</title>
+<link rel="icon" type="image/svg+xml" href="blaise-appicon.svg"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..900&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/app.css?v=13"/>
+<link rel="stylesheet" href="/app-ui-kit.css?v=5"/>
+<style>
+  body { display:flex; gap:60px; padding:40px; background:#EDEDE9; }
+  .demo { width:248px; }
+  .demo .lbl { font-size:11px; color:#888; letter-spacing:.08em; text-transform:uppercase; text-align:center; margin-bottom:10px; }
+  .demo .sidebar { position:static; height:auto; border:1px solid var(--app-line-2); border-radius:12px; padding-bottom:16px; }
+</style>
+</head>
+<body>
+  <div class="demo">
+    <div class="lbl">Avant — Forje</div>
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="/assets/forje-logo.png" alt="" class="sidebar-brand-mark"/>
+        Forje <span class="brand-suffix">Studio</span>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Studio</div>
+        <div class="sidebar-item">✳ <span>Générer</span></div>
+        <div class="sidebar-item active"><span>Sources &amp; veille</span><span class="count badge">3</span></div>
+        <div class="sidebar-item">☼ <span>Paramètres</span></div>
+      </div>
+    </aside>
+  </div>
+  <div class="demo">
+    <div class="lbl">Après — Blaise</div>
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="/assets/brand/blaise-mark.svg" alt="" class="sidebar-brand-mark" style="border-radius:0"/>
+        blaise <span class="brand-suffix">studio</span>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Studio</div>
+        <div class="sidebar-item">✳ <span>Générer</span></div>
+        <div class="sidebar-item active"><span>Sources &amp; veille</span><span class="count badge">3</span></div>
+        <div class="sidebar-item">☼ <span>Paramètres</span></div>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

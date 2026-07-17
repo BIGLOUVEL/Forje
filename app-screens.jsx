@@ -708,24 +708,7 @@ const GenerateHub = ({ onPick }) => {
           </div>
         )}
 
-        <div className="aiprompt-row">
-          <button
-            className="aiprompt-clip"
-            onClick={function() { fileInputRef.current && fileInputRef.current.click(); }}
-            title="Joindre image ou fichier">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-            </svg>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,application/pdf"
-            multiple
-            style={{ display:'none' }}
-            onChange={function(e) { if (e.target.files) processFiles(e.target.files); e.target.value = ''; }}
-          />
-
+        <div className="aiprompt-ta-zone">
           <textarea
             ref={taRef}
             className="aiprompt-ta"
@@ -741,8 +724,26 @@ const GenerateHub = ({ onPick }) => {
             rows={1}
             autoFocus
           />
+        </div>
 
-          <div className="aiprompt-right">
+        <div className="aiprompt-bar">
+          <div className="aiprompt-left">
+            <button
+              className="aiprompt-clip"
+              onClick={function() { fileInputRef.current && fileInputRef.current.click(); }}
+              title="Joindre image ou fichier">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              style={{ display:'none' }}
+              onChange={function(e) { if (e.target.files) processFiles(e.target.files); e.target.value = ''; }}
+            />
             {(err || (text.length > 0 && text.length < 10) || (fmtBadgeLabel && !detecting) || detecting) && (
               <div className="aiprompt-hint">
                 {err
@@ -757,6 +758,9 @@ const GenerateHub = ({ onPick }) => {
                         </span>}
               </div>
             )}
+          </div>
+
+          <div className="aiprompt-right">
             {text.length > 400 && (
               <span className={`aiprompt-count${text.length > 500 ? ' aiprompt-count--over' : ''}`}>{text.length}</span>
             )}
@@ -2223,6 +2227,37 @@ const QueueCalendar = () => {
   const WEEK = getWeekDays(weekOffset);
   const todayNum = new Date().getDate();
   const todayOffset = 0;
+
+  // Posts réellement planifiés (generated_posts.scheduled_at — via Blaise
+  // "Planifie-le" / mode semaine, tool schedule_post) sur la semaine affichée.
+  const [events, setEvents] = useState(CAL_EVENTS);
+  useEffect(() => {
+    const sb = window.__supabase;
+    const clientId = window.__activeClientId;
+    if (!sb || !clientId) return;
+    const start = new Date(WEEK[0].date); start.setHours(0, 0, 0, 0);
+    const end = new Date(WEEK[6].date); end.setHours(23, 59, 59, 999);
+    sb.from('generated_posts')
+      .select('id, title, preset_id, scheduled_at')
+      .eq('client_id', clientId)
+      .gte('scheduled_at', start.toISOString())
+      .lte('scheduled_at', end.toISOString())
+      .then(({ data }) => {
+        const TYPE = { actu: 'news', citation: 'quote', deepdive: 'pedago' };
+        setEvents((data || []).map(p => {
+          const d = new Date(p.scheduled_at);
+          return {
+            day: (d.getDay() + 6) % 7,
+            hour: Math.min(20, Math.max(6, d.getHours())),
+            dur: 1,
+            type: TYPE[p.preset_id] || 'news',
+            status: 'ready',
+            title: p.title || p.preset_id,
+          };
+        }));
+      });
+  }, [weekOffset]);
+
   return (
   <div className="card cal-card">
     <div className="cal-head">
@@ -2255,7 +2290,7 @@ const QueueCalendar = () => {
               <span className={`cal-day-num ${isToday ? 'today' : ''}`}>{d.num}</span>
             </div>
             {[6,8,10,12,14,16,18,20].map(h => <div key={h} className="cal-slot"/>)}
-            {CAL_EVENTS.filter(e => e.day === di).map((e, i) => {
+            {events.filter(e => e.day === di).map((e, i) => {
               const top = ((e.hour - 6) / 2) * 64 + 40;
               return (
                 <div key={i} className={`cal-event cal-event--${e.type} ${e.status==='draft'?'draft':''}`}
@@ -3332,6 +3367,82 @@ const BrandGlobeBg = function({ accent }) {
   );
 };
 
+// ─── Règles éditoriales — mémoire apprise par Blaise, gérable ici ────────────
+// Liste + toggle actif + suppression + ajout manuel. Les règles actives sont
+// injectées dans le system prompt de Blaise ET les pipelines de génération.
+const EditorialRulesTile = ({ clientId }) => {
+  const [rules, setRules] = useState([]);
+  const [draft, setDraft] = useState('');
+
+  const load = () => {
+    const sb = window.__supabase;
+    if (!sb || !clientId) return;
+    sb.from('client_editorial_rules').select('id, rule, source, active')
+      .eq('client_id', clientId).order('created_at')
+      .then(({ data }) => setRules(data || []));
+  };
+  useEffect(load, [clientId]);
+
+  const toggle = (r) => {
+    const sb = window.__supabase;
+    setRules(prev => prev.map(x => x.id === r.id ? { ...x, active: !r.active } : x));
+    sb.from('client_editorial_rules').update({ active: !r.active }).eq('id', r.id).then(() => {});
+  };
+  const remove = (r) => {
+    const sb = window.__supabase;
+    setRules(prev => prev.filter(x => x.id !== r.id));
+    sb.from('client_editorial_rules').delete().eq('id', r.id).then(() => {});
+  };
+  const add = () => {
+    const rule = draft.trim();
+    if (!rule) return;
+    setDraft('');
+    const sb = window.__supabase;
+    sb.from('client_editorial_rules').insert({ client_id: clientId, rule, source: 'manual' })
+      .select('id, rule, source, active').single()
+      .then(({ data }) => { if (data) setRules(prev => prev.concat([data])); });
+  };
+
+  return (
+    <div className="bento-tile">
+      <div className="bento-tile-lbl" style={{ justifyContent:'space-between' }}>
+        <span style={{ display:'flex', alignItems:'center', gap:6 }}><AppIcon name="pin" size={11}/>Règles éditoriales</span>
+        <span style={{ fontSize:11, color: rules.some(r => r.active) ? 'var(--app-accent)' : 'var(--app-fg-4)', fontWeight:500 }}>
+          {rules.filter(r => r.active).length} active{rules.filter(r => r.active).length > 1 ? 's' : ''}
+        </span>
+      </div>
+      <div className="bento-role">Tes préférences durables, apprises par Blaise — appliquées à tout ce qui est généré.</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+        {rules.map(r => (
+          <div key={r.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px', background:'var(--app-surface-2)', border:'1px solid var(--app-line)', borderRadius:9, opacity: r.active ? 1 : .5 }}>
+            <button className={'brand-switch' + (r.active ? ' is-on' : '')} style={{ transform:'scale(.8)', flexShrink:0 }}
+              onClick={() => toggle(r)} aria-label="Activer la règle"/>
+            <span style={{ fontSize:12.5, flex:1, lineHeight:1.4 }}>{r.rule}</span>
+            <button onClick={() => remove(r)} title="Supprimer"
+              style={{ border:'none', background:'none', color:'var(--app-fg-4)', cursor:'pointer', padding:2, flexShrink:0 }}>
+              <AppIcon name="trash" size={12}/>
+            </button>
+          </div>
+        ))}
+        {!rules.length && (
+          <div style={{ fontSize:11.5, color:'var(--app-fg-4)', fontStyle:'italic', padding:'4px 0' }}>
+            Aucune règle pour l'instant. Dis à Blaise "jamais de points d'exclamation dans mes titres" et il la retiendra ici.
+          </div>
+        )}
+        <div style={{ display:'flex', gap:6, marginTop:2 }}>
+          <input value={draft} onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') add(); }}
+            placeholder="Ajouter une règle…"
+            style={{ flex:1, border:'1px solid var(--app-line)', borderRadius:9, padding:'7px 10px', fontSize:12.5, background:'var(--app-surface)', color:'var(--app-fg)', fontFamily:'inherit', outline:'none' }}/>
+          <button className="btn btn-ghost btn-sm" onClick={add} disabled={!draft.trim()}>
+            <AppIcon name="plus" size={12}/>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
   var [name,            setName]            = useState('');
   var [logoBadgeUrl,    setLogoBadgeUrl]    = useState('');   // logo avec son vrai fond
@@ -3954,6 +4065,12 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
             </span>
           </div>
           {clientId && (
+            <Btn variant="ghost" icon="quote"
+              onClick={() => window.__openBlaise?.('J\'aimerais retravailler mon identité — ')}>
+              Demander à Blaise
+            </Btn>
+          )}
+          {clientId && (
             <Btn
               variant={confirmingDelete ? 'danger' : 'ghost'}
               disabled={deleting}
@@ -4313,6 +4430,9 @@ const BrandScreen = ({ clientId, onSaved, onDeleted }) => {
             <BrandTagInput tags={topics} setTags={setTopics} placeholder="Football, PSG, Transferts..." max={10}/>
           </div>
 
+          {/* TILE 4e — Règles éditoriales (mémoire apprise par Blaise) */}
+          <EditorialRulesTile clientId={clientId}/>
+
           {/* TILE 5 — Typographie : Packs (rapide) OU Personnalisé (titre+corps, import) */}
           <div className="bento-tile bento-tile--full"
             onMouseEnter={function(){ setHighlightZone('typo'); }} onMouseLeave={function(){ setHighlightZone(null); }}>
@@ -4546,7 +4666,7 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
   var email = user?.email || '';
   var fullName = user?.user_metadata?.full_name || '';
 
-  var DEFAULT_NOTIF = { hot_news_email:true, hot_news_push:true, low_credits_email:true, weekly_recap_email:true, product_news_email:false };
+  var DEFAULT_NOTIF = { hot_news_email:true, hot_news_push:true, low_credits_email:true, weekly_recap_email:true, product_news_email:false, daily_brief_enabled:true, daily_brief_hour:8 };
   var TABS = [
     { id:'account',       icon:'target',  label:'Compte'         },
     { id:'billing',       icon:'bolt',    label:'Abonnement'     },
@@ -4674,6 +4794,12 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
 
   async function toggleNotif(key) {
     var next = Object.assign({}, notif, { [key]: !notif[key] });
+    setNotif(next);
+    if (sb && profile) await sb.from('clients').update({ notif_prefs: next }).eq('id', profile.id);
+    showToast('Enregistré ✓');
+  }
+
+  async function saveNotif(next) {
     setNotif(next);
     if (sb && profile) await sb.from('clients').update({ notif_prefs: next }).eq('id', profile.id);
     showToast('Enregistré ✓');
@@ -5098,6 +5224,22 @@ const SettingsScreen = function({ prefs = {}, onPrefsChange }) {
                 />
                 <SettingsRow label="⚠️ Crédits faibles (< 50)" sub="Quand ton solde passe sous 50 crédits."
                   right={<label className="set-notif-col"><span>Email</span><SettingsToggle checked={!!notif.low_credits_email} onChange={function(){ toggleNotif('low_credits_email'); }}/></label>}
+                />
+                <SettingsRow label="📋 Brief du jour de Blaise" sub="Chaque matin, 3 idées de posts tirées de ta veille — directement dans la conversation."
+                  right={
+                    <div className="set-notif-cols">
+                      {notif.daily_brief_enabled !== false && (
+                        <label className="set-notif-col"><span>Heure</span>
+                          <select value={Number.isFinite(+notif.daily_brief_hour) ? +notif.daily_brief_hour : 8}
+                            onChange={function(e){ saveNotif(Object.assign({}, notif, { daily_brief_hour: +e.target.value })); }}
+                            style={{ border:'1px solid var(--app-line)', borderRadius:8, padding:'4px 8px', fontSize:12.5, background:'var(--app-surface)', color:'var(--app-fg)', fontFamily:'inherit' }}>
+                            {[6,7,8,9,10,11,12].map(function(h){ return <option key={h} value={h}>{h}h00</option>; })}
+                          </select>
+                        </label>
+                      )}
+                      <label className="set-notif-col"><span>Activé</span><SettingsToggle checked={notif.daily_brief_enabled !== false} onChange={function(){ toggleNotif('daily_brief_enabled'); }}/></label>
+                    </div>
+                  }
                 />
               </SettingsSection>
 

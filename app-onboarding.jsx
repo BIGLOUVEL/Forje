@@ -1029,7 +1029,9 @@ const OnboardingShell = ({ onComplete, initialStep, initialProfileType, existing
           {step === 1 && <StepWelcome onNext={() => goTo(2)}/>}
           {step === 2 && <StepQualify onNext={handleQualify}/>}
           {step === 3 && profileType === 'A' && <StepIdentityA onNext={handleIdentityDone}/>}
-          {step === 3 && profileType === 'B' && <StepIdentityB onNext={handleIdentityDone} onBack={() => goTo(2)} existingClientId={clientId}/>}
+          {/* Profil B : Blaise EST l'onboarding — conversation plein écran qui
+              remplace l'ancien flow 5 questions + brand gen (StepIdentityB). */}
+          {step === 3 && profileType === 'B' && <BlaiseOnboarding onNext={handleIdentityDone} existingClientId={clientId}/>}
           {step === 4 && <StepWow clientId={clientId} onComplete={onComplete}/>}
         </div>
       </div>

@@ -305,6 +305,7 @@ const App = () => {
     queue:     ['Studio', 'File de validation'],
     calendar:  ['Studio', 'Calendrier'],
     published: ['Studio', 'Publiés'],
+    blaise:    ['Atelier', 'Blaise'],
     brand:     ['Atelier', 'Identité de marque'],
     sources:   ['Atelier', 'Sources & veille'],
     settings:  ['Atelier', 'Paramètres'],
@@ -362,11 +363,18 @@ const App = () => {
           {screen === 'queue' && <QueueScreen defaultView={tweaks.defaultQueueView}/>}
           {screen === 'calendar' && <QueueScreen defaultView="calendar"/>}
           {screen === 'published' && <QueueScreen defaultView="grid"/>}
+          {screen === 'blaise' && <BlaiseScreen clientId={activeClientId} onNav={(k) => { setScreen(k); setPreset(null); }}/>}
           {screen === 'brand' && <BrandScreen clientId={activeClientId} onSaved={handleClientSaved} onDeleted={handleClientDeleted}/>}
           {screen === 'sources' && <SourcesScreen authUser={window.__currentUser}/>}
           {screen === 'settings' && <SettingsScreen prefs={prefs} onPrefsChange={handlePrefsChange}/>}
         </main>
       </div>
+
+      {/* Blaise flottant — même conversation que l'onglet, accessible partout */}
+      <BlaiseFloating
+        clientId={activeClientId}
+        hidden={screen === 'blaise'}
+        onNav={(k) => { setScreen(k); setPreset(null); }}/>
 
       {celebrate && (
         <CheckoutCelebration

@@ -1,0 +1,27 @@
+# Brief du jour Blaise — cron horaire.
+# L'endpoint /api/blaise/daily-brief filtre lui-même par client : chaque client
+# reçoit son brief à l'heure choisie (notif_prefs.daily_brief_hour, défaut 8h
+# Paris) et une seule fois par jour. On appelle donc toutes les heures sur la
+# plage utile (5h-16h UTC couvre 6h-18h Paris été comme hiver).
+# Secret requis : DEMO_REFRESH_SECRET (le même que demo-refresh).
+name: blaise-daily-brief
+
+on:
+  schedule:
+    - cron: '0 5-16 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: blaise-daily-brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Générer les briefs du jour (clients à l'heure courante)
+        run: |
+          curl -sS -m 240 -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEMO_REFRESH_SECRET }}" \
+            "https://www.forje.studio/api/blaise/daily-brief"

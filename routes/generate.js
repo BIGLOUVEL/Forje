@@ -14,7 +14,9 @@ const router = express.Router();
 const genai  = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 // Alias auto-mis-à-jour par Google — évite les 404 quand un modèle daté est retiré
 // (gemini-2.5-pro a été retiré de l'inférence en juillet 2026)
-const GEMINI_MODEL = 'gemini-pro-latest';
+// Flash-Lite : le seul usage de gemini() est le brief actu (petit JSON de
+// 5 champs) — mesuré à 1,7s contre 14,5s en pro-latest, qualité équivalente.
+const GEMINI_MODEL = 'gemini-flash-lite-latest';
 let openaiClient;
 try { openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); } catch (_) {}
 const haiku = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -159,10 +161,15 @@ function removeConnectedBackground(data, W, H, mode) {
 async function getClientBrand(userId, clientId) {
   if (!userId) return null;
   let q = supabase.from('clients').select(
-    'id,name,logo_url,logo_badge_url,logo_nu_url,logo_style,brand_colors,font_primary,font_body,font_id,font_set,font_custom_url,font_is_custom,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url,style_ref_urls'
+    'id,name,logo_url,logo_badge_url,logo_nu_url,logo_style,brand_colors,font_primary,font_body,font_id,font_set,font_custom_url,font_is_custom,mood,graphic_style,tone_tags,topics,preferred_format,style_ref_url,style_ref_urls,strategy'
   ).eq('user_id', userId);
   if (clientId) q = q.eq('id', clientId);
   const { data } = await q.order('created_at').limit(1).maybeSingle();
+  if (data) {
+    // Mémoire éditoriale : injectée dans tous les prompts via buildBrandContext,
+    // buildDeepDivePlanPrompt et generateCaption.
+    data.editorial_rules = await require('../lib/editorialRules').fetchEditorialRules(data.id);
+  }
   return data || null;
 }
 
@@ -197,7 +204,8 @@ function buildBrandContext(client) {
   if (client.font_body)     parts.push('Police de texte : ' + client.font_body);
   if (client.tone_tags?.length)  parts.push('Ton editorial : ' + client.tone_tags.join(', '));
   if (client.topics?.length)     parts.push('Sujets couverts : ' + client.topics.join(', '));
-  return parts.length ? '\n\nCONTEXTE DU MEDIA :\n' + parts.join('\n') : '';
+  const rules = require('../lib/editorialRules').editorialRulesLine(client);
+  return (parts.length ? '\n\nCONTEXTE DU MEDIA :\n' + parts.join('\n') : '') + rules;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -647,6 +655,7 @@ async function generateCaption(type, content, client) {
   const media  = client?.name || '';
   const tone   = client?.tone_tags?.length ? 'Ton éditorial : ' + client.tone_tags.join(', ') + '\n' : '';
   const topics = client?.topics?.length    ? 'Sujets couverts : ' + client.topics.join(', ')  + '\n' : '';
+  const rules  = require('../lib/editorialRules').editorialRulesLine(client);
 
   const subjectMap = {
     actu:     `Actualité : "${content.newsText}"\nTitre visuel : ${content.title} — ${content.subtitle}`,
@@ -656,7 +665,7 @@ async function generateCaption(type, content, client) {
 
   const prompt =
     `Tu rédiges la description Instagram${media ? ' pour ' + media : ''}.\n` +
-    tone + topics + '\n' +
+    tone + topics + (rules ? rules + '\n' : '') + '\n' +
     subjectMap[type] + '\n\n' +
     `Structure OBLIGATOIRE :\n` +
     `1. HOOK — première ligne : 6-10 mots, tension immédiate, pas de ponctuation classique, doit arrêter le scroll\n` +
@@ -734,7 +743,14 @@ async function runActuPipeline(client, {
     const isGooglePhoto = imageMode !== 'ai';
     const images = await serperImages(search_query, { hq: true }); // toujours HQ — qualité + filtres anti-watermark
     const urls   = images.map(img => img.imageUrl).filter(Boolean).slice(0, isGooglePhoto ? 8 : 3);
-    const results = await Promise.all(urls.map(u => downloadBuffer(u).catch(() => null)));
+    // Deadline dure 5s par photo : Promise.all attend la PLUS LENTE, et une
+    // seule image lourde sur un CDN lent tenait tout le pipeline (28s mesurés —
+    // le timeout de downloadBuffer est un timeout d'inactivité, un flux lent
+    // mais continu ne le déclenche jamais). 7/8 photos arrivent en <3,5s.
+    const results = await Promise.all(urls.map(u => Promise.race([
+      downloadBuffer(u),
+      new Promise(resolve => setTimeout(() => resolve(null), 5000)),
+    ]).catch(() => null)));
     const sane = results
       .filter(b => b && b.length > 5000 && isImageBuffer(b))
       .sort((a, b) => isGooglePhoto ? b.length - a.length : 0);
@@ -924,26 +940,15 @@ router.post('/actu', async (req, res) => {
   }
 });
 
-// ─── POST /api/generate/citation ─────────────────────────────────────────────
-router.post('/citation', async (req, res) => {
-  if (!sharp) return res.status(500).json({ error: 'Sharp non installe' });
-
-  // photoUrl / photoData : optionnels — le CM peut fournir sa propre photo au lieu de Serper
-  const { quoteText, authorName, authorTitle, userId, clientId, photoUrl, photoData } = req.body;
-  if (!quoteText || !authorName) return res.status(400).json({ error: 'quoteText et authorName requis' });
+// ─── Pipeline Citation réutilisable ──────────────────────────────────────────
+// Utilisé par POST /api/generate/citation (avec crédits) ET par le tool
+// generate_post de Blaise. Retourne le payload complet { bgImage, quoteText, … }.
+async function runCitationPipeline(client, { quoteText, authorName, authorTitle, photoUrl, photoData } = {}) {
+  if (!sharp) throw new Error('Sharp non installe');
+  if (!quoteText || !authorName) throw new Error('quoteText et authorName requis');
 
   // Garde-fou : au-delà d'~6 lignes le post devient illisible (le form limite déjà à 200)
   const quote = String(quoteText).trim().slice(0, 220);
-
-  try {
-    // clientId respecté → charte + police du client ACTIF (et non du premier client trouvé)
-    const client     = await getClientBrand(userId, clientId);
-
-    // Crédits : débit atomique AVANT Serper + Sharp
-    var creditClientId = client?.id || clientId || null;
-    var charge = await chargeCredits(creditClientId, 'citation', 'standard');
-    if (!charge.ok) return insufficientCredits(res, charge.cost);
-    var creditCtx = { clientId: creditClientId, postType: 'citation', cost: charge.cost, charged: charge.charged };
 
     // Police effective (bibliothèque ou custom) — le TEXTE est rendu côté client sur Canvas :
     // Sharp/librsvg ignore les @font-face base64 (rendu serif systématique quelle que soit la
@@ -1030,7 +1035,7 @@ router.post('/citation', async (req, res) => {
       .toBuffer();
 
     const caption = await captionPromise;
-    res.json({
+    return {
       bgImage:     'data:image/jpeg;base64,' + bg.toString('base64'),
       quoteText:   quote,
       authorName,
@@ -1047,13 +1052,38 @@ router.post('/citation', async (req, res) => {
       },
       caption,
       photoUsed, // permet au CM de valider / changer la photo
+    };
+}
+
+// ─── POST /api/generate/citation — wrapper fin (auth marque + crédits) ───────
+router.post('/citation', async (req, res) => {
+  if (!sharp) return res.status(500).json({ error: 'Sharp non installe' });
+
+  // photoUrl / photoData : optionnels — le CM peut fournir sa propre photo au lieu de Serper
+  const { quoteText, authorName, authorTitle, userId, clientId, photoUrl, photoData } = req.body;
+  if (!quoteText || !authorName) return res.status(400).json({ error: 'quoteText et authorName requis' });
+
+  let creditCtx = null;
+  try {
+    // clientId respecté → charte + police du client ACTIF (et non du premier client trouvé)
+    const client = await getClientBrand(userId, clientId);
+
+    // Crédits : débit atomique AVANT Serper + Sharp
+    const creditClientId = client?.id || clientId || null;
+    const charge = await chargeCredits(creditClientId, 'citation', 'standard');
+    if (!charge.ok) return insufficientCredits(res, charge.cost);
+    creditCtx = { clientId: creditClientId, postType: 'citation', cost: charge.cost, charged: charge.charged };
+
+    const payload = await runCitationPipeline(client, { quoteText, authorName, authorTitle, photoUrl, photoData });
+    res.json({
+      ...payload,
       creditsLeft: charge.charged ? charge.balance : undefined,
     });
     creditCtx = null; // post livré → pas de remboursement
 
   } catch (err) {
     console.error('[Generate/Citation]', err.message);
-    await refundCredits(typeof creditCtx !== 'undefined' ? creditCtx : null);
+    await refundCredits(creditCtx); creditCtx = null;
     res.status(500).json({ error: err.message, refunded: true });
   }
 });
@@ -1099,7 +1129,14 @@ IDENTITÉ DU MÉDIA :
 - Nom : ${name}
 - Ton : ${tone}
 - Mood : ${mood}
-- Sujets habituels : ${topics}
+- Sujets habituels : ${topics}${require('../lib/editorialRules').editorialRulesLine(client)}${client?.strategy ? `
+
+STRATÉGIE ÉDITORIALE (validée avec le client — cadre tes angles dessus) :
+- Cible : ${client.strategy.target_audience || '—'}
+- Piliers de contenu : ${(client.strategy.content_pillars || []).join(' · ') || '—'}${client.strategy.positioning ? `
+- Positionnement : ${client.strategy.positioning}` : ''}
+Rattache l'angle du carousel au pilier le plus pertinent et calibre le niveau
+de vulgarisation sur la cible.` : ''}
 
 NOTE — BRIEF STRUCTURÉ : si le SUJET ci-dessus contient déjà des lignes
 "Angle :", "Hook suggéré :", "Faits clés :", "À creuser :", "Ton :" (brief issu
@@ -1283,32 +1320,20 @@ async function ddBaseFromPhoto(photoBuffer, brand) {
   return sharp(brandGradientBuffer(DD_W, DD_H, brand.primary, brand.accent)).png().toBuffer();
 }
 
-// ─── POST /api/generate/deepdive ─────────────────────────────────────────────
-router.post('/deepdive', async (req, res) => {
-  let creditCtx = null;
-  const hardDeadline = setTimeout(() => {
-    if (!res.headersSent) res.status(504).json({ error: 'Génération trop longue — réessaie' });
-    refundCredits(creditCtx); creditCtx = null;
-  }, 175000);
+// ─── Pipeline Deep Dive réutilisable ─────────────────────────────────────────
+// Utilisé par POST /api/generate/deepdive (avec crédits) ET par le deep dive
+// quotidien pré-forgé de la démo landing (routes/demo.js, sans crédits).
+// Retourne le payload complet { slides, total, caption, hashtags, font, brand }.
+async function runDeepDivePipeline(client, { topic, imageMode = 'hybrid', slideCount = 8 } = {}) {
+  if (!sharp) throw new Error('Sharp non installé');
+  if (!topic) throw new Error('topic manquant');
 
-  if (!sharp) { clearTimeout(hardDeadline); return res.status(500).json({ error: 'Sharp non installé' }); }
+  const variant      = deepDiveVariant(imageMode);
+  const clampedCount = Math.min(10, Math.max(7, Number(slideCount) || 8));
 
-  const { topic, userId, clientId, imageMode = 'hybrid', slideCount = 8 } = req.body;
-  if (!topic) { clearTimeout(hardDeadline); return res.status(400).json({ error: 'topic manquant' }); }
-
-  try {
-    const client   = await getClientBrand(userId, clientId);
-    const variant  = deepDiveVariant(imageMode); // 'premium' si genai/hybrid, sinon 'light'
-    const creditClientId = client?.id || clientId || null;
-    const charge   = await chargeCredits(creditClientId, 'deep_dive', variant);
-    if (!charge.ok) { clearTimeout(hardDeadline); return insufficientCredits(res, charge.cost); }
-    creditCtx = { clientId: creditClientId, postType: 'deep_dive', cost: charge.cost, charged: charge.charged };
-
-    const clampedCount = Math.min(10, Math.max(7, Number(slideCount) || 8));
-
-    // 1+2. Claude : recherche web + plan narratif
-    const plan   = await deepDivePlan(topic, client, clampedCount);
-    const slides = plan.slides.slice(0, 10);
+  // 1+2. Claude : recherche web + plan narratif
+  const plan   = await deepDivePlan(topic, client, clampedCount);
+  const slides = plan.slides.slice(0, 10);
 
     // Marque + police effective (la police part au client pour le rendu Canvas)
     const clientFont = resolveFont(client);
@@ -1372,28 +1397,56 @@ router.post('/deepdive', async (req, res) => {
       });
     }
 
-    const caption = plan.caption
-      || await generateCaption('deepdive', { topic, hookTitle: slides[0].title, hookBody: slides[0].body }, client).catch(() => '');
+  const caption = plan.caption
+    || await generateCaption('deepdive', { topic, hookTitle: slides[0].title, hookBody: slides[0].body }, client).catch(() => '');
+
+  return {
+    slides:   outSlides,
+    total:    outSlides.length,
+    caption,
+    hashtags: plan.hashtags || [],
+    topic,
+    variant,
+    // Police effective + couleurs → le Canvas client peint le texte avec la VRAIE police
+    font: {
+      name:          clientFont.fontName,
+      url:           clientFont.urlPath,
+      weight:        clientFont.weight,
+      style:         clientFont.style,
+      transform:     clientFont.transform,
+      letterSpacing: clientFont.letterSpacing,
+    },
+    // logo inclus → le Canvas client peut redessiner le logo sur un fond importé manuellement
+    brand: { ...brand, logo: pickLogoUrl(client) },
+  };
+}
+
+// ─── POST /api/generate/deepdive ─────────────────────────────────────────────
+router.post('/deepdive', async (req, res) => {
+  let creditCtx = null;
+  const hardDeadline = setTimeout(() => {
+    if (!res.headersSent) res.status(504).json({ error: 'Génération trop longue — réessaie' });
+    refundCredits(creditCtx); creditCtx = null;
+  }, 175000);
+
+  if (!sharp) { clearTimeout(hardDeadline); return res.status(500).json({ error: 'Sharp non installé' }); }
+
+  const { topic, userId, clientId, imageMode = 'hybrid', slideCount = 8 } = req.body;
+  if (!topic) { clearTimeout(hardDeadline); return res.status(400).json({ error: 'topic manquant' }); }
+
+  try {
+    const client   = await getClientBrand(userId, clientId);
+    const variant  = deepDiveVariant(imageMode); // 'premium' si genai/hybrid, sinon 'light'
+    const creditClientId = client?.id || clientId || null;
+    const charge   = await chargeCredits(creditClientId, 'deep_dive', variant);
+    if (!charge.ok) { clearTimeout(hardDeadline); return insufficientCredits(res, charge.cost); }
+    creditCtx = { clientId: creditClientId, postType: 'deep_dive', cost: charge.cost, charged: charge.charged };
+
+    const payload = await runDeepDivePipeline(client, { topic, imageMode, slideCount });
 
     clearTimeout(hardDeadline);
     res.json({
-      slides:   outSlides,
-      total:    outSlides.length,
-      caption,
-      hashtags: plan.hashtags || [],
-      topic,
-      variant,
-      // Police effective + couleurs → le Canvas client peint le texte avec la VRAIE police
-      font: {
-        name:          clientFont.fontName,
-        url:           clientFont.urlPath,
-        weight:        clientFont.weight,
-        style:         clientFont.style,
-        transform:     clientFont.transform,
-        letterSpacing: clientFont.letterSpacing,
-      },
-      // logo inclus → le Canvas client peut redessiner le logo sur un fond importé manuellement
-      brand: { ...brand, logo: pickLogoUrl(client) },
+      ...payload,
       creditsLeft: charge.charged ? charge.balance : undefined,
     });
     creditCtx = null; // carousel livré → pas de remboursement
@@ -2237,3 +2290,11 @@ router.get('/brand-identity/logo-export', async (req, res) => {
 module.exports = router;
 // Pipeline réutilisé par la démo publique de la landing (routes/demo.js)
 module.exports.runActuPipeline = runActuPipeline;
+module.exports.runCitationPipeline = runCitationPipeline;
+module.exports.runDeepDivePipeline = runDeepDivePipeline;
+module.exports.assembleDeepDiveBrief = assembleDeepDiveBrief;
+module.exports.getClientBrand = getClientBrand;
+// Helpers réutilisés par Blaise (lib/blaise/tools.js)
+module.exports.applyLogoVariants = applyLogoVariants;
+module.exports.serperImages = serperImages;
+module.exports.downloadBuffer = downloadBuffer;

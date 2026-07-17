@@ -32,6 +32,7 @@
 <link id="css-a4" rel="stylesheet" href="app-sources.css?v=10" media="none"/>
 <link id="css-a5" rel="stylesheet" href="app-onboarding.css?v=8" media="none"/>
 <link id="css-a6" rel="stylesheet" href="app-ui-kit.css?v=5" media="none"/>
+<link id="css-a7" rel="stylesheet" href="app-blaise.css?v=3" media="none"/>
 
 <style>
   body { margin:0; background:#000004; }
@@ -50,7 +51,7 @@
     try {
       var raw = localStorage.getItem('sb-tmsbtjczvjdwzfkoprwq-auth-token');
       if (raw && JSON.parse(raw).access_token) {
-        ['css-a1','css-a2','css-a3','css-a4','css-a5','css-a6'].forEach(function(id) {
+        ['css-a1','css-a2','css-a3','css-a4','css-a5','css-a6','css-a7'].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) el.media = '';
         });
@@ -119,6 +120,7 @@
     'app-shell.jsx',
     'app-dashboard.jsx',
     'app-screens.jsx',
+    'app-blaise.jsx',
     'app-sources.jsx',
     'app-onboarding.jsx',
     'app-main.jsx',
@@ -126,7 +128,7 @@
     'root.jsx',
   ];
 
-  const V = '?v=53';
+  const V = '?v=54';
 
   // Cache du JSX compilé : Babel (~2 Mo de JS) n'est chargé et exécuté que si
   // un fichier manque au cache — les visites suivantes démarrent instantanément.

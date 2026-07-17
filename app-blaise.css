@@ -1,0 +1,626 @@
+/* ═══ BLAISE — directeur artistique IA ═══════════════════════════════════════
+   UI sobre et classique : pas de bulles colorées, pas de gradients, DM Sans,
+   boutons ghost, cards système discrètes. Tokens de app.css (--app-*). */
+
+/* ─── Écran dédié ─────────────────────────────────────────────────────────── */
+.blaise-screen {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-h));
+  overflow: hidden;
+}
+
+/* ─── Fil ─────────────────────────────────────────────────────────────────── */
+.blaise-thread {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.blaise-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 4px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.blaise-empty {
+  margin: auto;
+  text-align: center;
+  max-width: 420px;
+  padding: 40px 0;
+}
+.blaise-empty-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--app-fg);
+  margin-bottom: 8px;
+}
+.blaise-empty-sub {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--app-fg-3);
+}
+
+/* Messages — Blaise : label + texte simple aligné gauche */
+.blaise-msg { display: flex; flex-direction: column; gap: 8px; }
+.blaise-msg--blaise { align-items: flex-start; max-width: 92%; }
+.blaise-msg-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--app-fg-4);
+}
+.blaise-msg--blaise .blaise-msg-text {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--app-fg);
+  white-space: pre-wrap;
+}
+.blaise-msg--error .blaise-msg-text { color: var(--app-danger, #B4231F); }
+
+/* Messages — user : fond gris très léger, aligné droite */
+.blaise-msg--user { align-items: flex-end; align-self: flex-end; max-width: 82%; }
+.blaise-msg--user .blaise-msg-text {
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-line);
+  border-radius: var(--radius);
+  padding: 9px 13px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--app-fg);
+  white-space: pre-wrap;
+}
+.blaise-attachment {
+  max-width: 180px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--app-line);
+}
+
+/* Images générées : larges dans le fil + 3 boutons ghost dessous */
+.blaise-image-block { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.blaise-image {
+  width: 100%;
+  max-width: 520px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--app-line);
+  display: block;
+}
+.blaise-image-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.blaise-cost {
+  font-size: 10.5px;
+  color: var(--app-fg-4);
+  margin-left: 2px;
+}
+
+/* Références Serper : grille compacte */
+.blaise-refs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: 100%;
+  max-width: 520px;
+}
+.blaise-ref-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--app-line);
+}
+
+/* Card système discrète (changement appliqué) */
+.blaise-system-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--app-line-2);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--app-fg-2);
+  background: var(--app-surface);
+}
+.blaise-system-card svg { color: var(--app-success, #2E7D4F); flex-shrink: 0; }
+.blaise-system-link {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 4px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--app-accent);
+  cursor: pointer;
+}
+.blaise-system-link:hover { text-decoration: underline; }
+
+/* Chips cliquables — réponses à options (onboarding surtout) */
+.blaise-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.blaise-chip {
+  border: 1px solid var(--app-line-2);
+  border-radius: 999px;
+  background: var(--app-surface);
+  padding: 7px 14px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13.5px;
+  color: var(--app-fg);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 21, 40, .05);
+  transition: border-color .15s ease, background .15s ease;
+}
+.blaise-chip:hover { border-color: var(--app-fg-4); background: var(--app-surface-2, var(--app-surface)); }
+
+/* Post généré par Blaise : vignette COMPACTE (l'aperçu ne noie jamais la
+   conversation) + card système. Clic → MediaLightbox plein écran. */
+.blaise-post-block { width: 100%; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.blaise-post-rendering {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--app-fg-3);
+}
+.blaise-post-thumb {
+  max-width: 300px;
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--app-line);
+  cursor: pointer;
+  transition: transform .15s ease;
+}
+.blaise-post-thumb:hover { transform: scale(1.015); }
+.blaise-post-slides {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  max-width: 520px;
+  padding-bottom: 4px;
+}
+.blaise-post-mini {
+  width: 120px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--app-line);
+  cursor: pointer;
+  transition: transform .15s ease;
+}
+.blaise-post-mini:hover { transform: scale(1.03); }
+.blaise-post-count { font-size: 11.5px; color: var(--app-fg-4); }
+
+/* ─── Lightbox plein écran (fil, drawer, onboarding) ─────────────────────── */
+.blaise-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, .88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.blaise-lightbox-img {
+  max-width: 88vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .6);
+}
+.blaise-lightbox-close {
+  position: absolute;
+  top: 18px; right: 22px;
+  border: none;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.blaise-lightbox-close:hover { background: rgba(255, 255, 255, .2); }
+.blaise-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+.blaise-lightbox-nav:hover { background: rgba(255, 255, 255, .22); }
+.blaise-lightbox-nav--prev { left: 26px; }
+.blaise-lightbox-nav--next { right: 26px; }
+.blaise-lightbox-bar {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(20, 20, 26, .92);
+  border: 1px solid rgba(255, 255, 255, .12);
+}
+.blaise-lightbox-bar .btn { color: #EEF2F8; border-color: rgba(255, 255, 255, .18); }
+.blaise-lightbox-bar .btn:hover { background: rgba(255, 255, 255, .08); }
+.blaise-lightbox-counter { font-size: 12.5px; color: rgba(255, 255, 255, .65); padding: 0 6px; }
+
+/* Vignette planche logo : un poil plus large (déclinaisons) + clic zoom */
+.blaise-thumb { max-width: 340px; cursor: pointer; transition: transform .15s ease; }
+.blaise-thumb:hover { transform: scale(1.015); }
+
+/* Brief du jour : séparateur daté + badges non-lu */
+.blaise-brief-sep {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--app-fg-4);
+}
+.blaise-brief-sep::before,
+.blaise-brief-sep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--app-line);
+}
+.blaise-unread-dot,
+.sidebar-blaise-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--app-accent, #C2410C);
+  flex-shrink: 0;
+}
+.blaise-unread-dot {
+  position: absolute;
+  top: 9px; right: 9px;
+  box-shadow: 0 0 0 2px var(--app-surface, #fff);
+}
+.sidebar-blaise-dot { margin-left: auto; }
+
+/* Typing : trois points sobres */
+.blaise-typing { display: flex; gap: 4px; padding: 4px 0; }
+.blaise-typing span {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--app-fg-4);
+  animation: blaise-dot 1.2s infinite ease-in-out;
+}
+.blaise-typing span:nth-child(2) { animation-delay: .15s; }
+.blaise-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes blaise-dot {
+  0%, 60%, 100% { opacity: .35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
+}
+.blaise-typing-row { display: flex; align-items: center; gap: 10px; }
+.blaise-typing-label { font-size: 13px; color: var(--app-fg-3); }
+
+/* ─── Composer ────────────────────────────────────────────────────────────── */
+.blaise-composer {
+  padding: 12px 0 18px;
+  border-top: 1px solid var(--app-line);
+  background: transparent;
+  position: relative;
+}
+
+/* Menu des commandes slash — palette flottante au-dessus de l'input */
+.blaise-slash-menu {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 0;
+  right: 0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-line-2);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 32px rgba(15, 21, 40, .14);
+  padding: 5px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+.blaise-slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border: none;
+  background: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.blaise-slash-item.is-active { background: var(--app-surface-2, rgba(15, 21, 40, .05)); }
+.blaise-slash-cmd { font-size: 13px; font-weight: 600; color: var(--app-fg); white-space: nowrap; }
+.blaise-slash-hint { font-size: 12px; color: var(--app-fg-4); }
+.blaise-ob .blaise-slash-menu { background: #0A1440; border-color: rgba(238, 244, 255, .18); }
+.blaise-ob .blaise-slash-item.is-active { background: rgba(238, 244, 255, .08); }
+.blaise-ob .blaise-slash-cmd { color: var(--ob-fg, #EEF4FF); }
+.blaise-ob .blaise-slash-hint { color: rgba(238, 244, 255, .45); }
+.blaise-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-line-2);
+  border-radius: var(--radius-lg);
+  padding: 8px 10px;
+  box-shadow: 0 1px 2px rgba(15, 21, 40, .04);
+  transition: border-color .15s ease;
+}
+.blaise-composer-row:focus-within { border-color: var(--app-fg-4); }
+.blaise-composer-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  resize: none;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--app-fg);
+  padding: 4px 0;
+  max-height: 160px;
+  transition: height .12s ease;
+}
+.blaise-composer-input::placeholder { color: var(--app-fg-4); }
+.blaise-composer-attach,
+.blaise-composer-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease, opacity .12s ease;
+}
+.blaise-composer-attach {
+  background: none;
+  color: var(--app-fg-3);
+}
+.blaise-composer-attach:hover { background: var(--app-surface-2); color: var(--app-fg); }
+.blaise-composer-send {
+  background: var(--app-fg);
+  color: var(--app-bg);
+}
+.blaise-composer-send:disabled { opacity: .3; cursor: default; }
+.blaise-composer-attachment {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+.blaise-composer-attachment img {
+  height: 56px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--app-line-2);
+  display: block;
+}
+.blaise-attachment-remove {
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--app-line-2);
+  background: var(--app-surface);
+  color: var(--app-fg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* ─── Bouton flottant + drawer ────────────────────────────────────────────── */
+.blaise-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+  width: 46px; height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--app-line-2);
+  background: var(--app-fg);
+  color: var(--app-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(15, 21, 40, .18), 0 8px 24px rgba(15, 21, 40, .12);
+  transition: transform .15s ease;
+}
+.blaise-fab:hover { transform: translateY(-1px); }
+
+.blaise-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(15, 21, 40, .16);
+}
+.blaise-drawer {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  z-index: 71;
+  width: 420px;
+  max-width: 94vw;
+  background: var(--app-bg);
+  border-left: 1px solid var(--app-line-2);
+  box-shadow: -12px 0 40px rgba(15, 21, 40, .14);
+  display: flex;
+  flex-direction: column;
+  animation: blaise-drawer-in .18s ease;
+}
+@keyframes blaise-drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.blaise-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--app-line);
+}
+.blaise-drawer-title { font-size: 14px; font-weight: 600; color: var(--app-fg); }
+.blaise-drawer-sub { font-size: 12px; color: var(--app-fg-4); flex: 1; }
+.blaise-drawer-expand,
+.blaise-drawer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  border: none;
+  background: none;
+  color: var(--app-fg-3);
+  cursor: pointer;
+}
+.blaise-drawer-expand:hover,
+.blaise-drawer-close:hover { background: var(--app-surface-2); color: var(--app-fg); }
+.blaise-drawer .blaise-thread { padding: 0 16px; max-width: none; }
+.blaise-drawer .blaise-messages { padding-top: 16px; }
+.blaise-drawer .blaise-refs { grid-template-columns: repeat(3, 1fr); }
+
+/* ─── Stepper onboarding — 4 étapes nommées, persistant en haut ───────────── */
+.blaise-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 0 4px;
+}
+.blaise-stepper-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--app-fg-4);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.blaise-stepper-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  flex-shrink: 0;
+}
+.blaise-stepper-step.is-current { color: var(--app-fg); font-weight: 600; }
+.blaise-stepper-step.is-current .blaise-stepper-dot { border-color: var(--app-accent); background: var(--app-accent); }
+.blaise-stepper-step.is-done { color: var(--app-fg-2); }
+.blaise-stepper-step.is-done .blaise-stepper-dot { border-color: var(--app-accent); color: var(--app-accent); }
+.blaise-stepper-line {
+  width: 34px;
+  height: 1.5px;
+  background: var(--app-line-2);
+  flex-shrink: 0;
+}
+.blaise-stepper-line.is-done { background: var(--app-accent); }
+
+/* ─── Onboarding (DA sombre cosmic #050D2E — tokens --ob-*) ───────────────── */
+.blaise-ob {
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+  max-height: 780px;
+}
+.blaise-ob-head { text-align: center; margin-bottom: 18px; }
+.blaise-ob-title {
+  font-size: 26px;
+  font-weight: 650;
+  color: var(--ob-fg, #EEF4FF);
+  margin: 6px 0 0;
+}
+.blaise-ob-thread {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ob-card, rgba(10, 25, 80, .5));
+  border: 1px solid var(--ob-border, rgba(120, 150, 255, .18));
+  border-radius: 16px;
+  overflow: hidden;
+}
+.blaise-ob-thread .blaise-thread { padding: 0 18px; max-width: none; }
+.blaise-ob .blaise-msg--blaise .blaise-msg-text { color: var(--ob-fg, #EEF4FF); }
+.blaise-ob .blaise-msg-label { color: var(--ob-muted, rgba(238, 244, 255, .45)); }
+.blaise-ob .blaise-msg--user .blaise-msg-text {
+  background: rgba(238, 244, 255, .08);
+  border-color: rgba(238, 244, 255, .14);
+  color: var(--ob-fg, #EEF4FF);
+}
+.blaise-ob .blaise-empty-title { color: var(--ob-fg, #EEF4FF); }
+.blaise-ob .blaise-empty-sub { color: var(--ob-fg-dim, rgba(238, 244, 255, .6)); }
+.blaise-ob .blaise-composer { border-top-color: rgba(238, 244, 255, .1); }
+.blaise-ob .blaise-composer-row {
+  background: rgba(5, 13, 46, .6);
+  border-color: rgba(238, 244, 255, .16);
+  box-shadow: none;
+}
+.blaise-ob .blaise-composer-input { color: var(--ob-fg, #EEF4FF); }
+.blaise-ob .blaise-composer-input::placeholder { color: rgba(238, 244, 255, .35); }
+.blaise-ob .blaise-composer-attach { color: rgba(238, 244, 255, .5); }
+.blaise-ob .blaise-composer-attach:hover { background: rgba(238, 244, 255, .08); color: var(--ob-fg, #EEF4FF); }
+.blaise-ob .blaise-composer-send { background: var(--ob-btn-bg, #F5F7FF); color: var(--ob-btn-fg, #07122F); }
+.blaise-ob .blaise-image { border-color: rgba(238, 244, 255, .16); }
+.blaise-ob .blaise-image-actions .btn {
+  border-color: rgba(238, 244, 255, .2);
+  color: var(--ob-fg, #EEF4FF);
+  background: transparent;
+}
+.blaise-ob .blaise-image-actions .btn:hover { background: rgba(238, 244, 255, .08); }
+.blaise-ob .blaise-cost { color: rgba(238, 244, 255, .4); }
+.blaise-ob .blaise-stepper-step { color: rgba(238, 244, 255, .38); }
+.blaise-ob .blaise-stepper-step.is-current { color: var(--ob-fg, #EEF4FF); }
+.blaise-ob .blaise-stepper-step.is-done { color: rgba(238, 244, 255, .72); }
+.blaise-ob .blaise-stepper-line { background: rgba(238, 244, 255, .16); }
+.blaise-ob .blaise-stepper-line.is-done { background: var(--app-accent, #C2410C); }
+.blaise-ob .blaise-chip {
+  background: rgba(238, 244, 255, .06);
+  border-color: rgba(238, 244, 255, .2);
+  color: var(--ob-fg, #EEF4FF);
+}
+.blaise-ob .blaise-chip:hover { background: rgba(238, 244, 255, .12); }
+.blaise-ob .blaise-system-card {
+  background: rgba(238, 244, 255, .05);
+  border-color: rgba(238, 244, 255, .16);
+  color: var(--ob-fg, #EEF4FF);
+}
+.blaise-ob .blaise-typing span { background: rgba(238, 244, 255, .5); }
+.blaise-ob-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 13.5px;
+  color: var(--ob-fg, #EEF4FF);
+}
+.blaise-ob-done svg { color: #6EE7A0; }
+
+/* Responsive */
+@media (max-width: 720px) {
+  .blaise-drawer { width: 100vw; }
+  .blaise-thread { padding: 0 14px; }
+  .blaise-refs { grid-template-columns: repeat(2, 1fr); }
+}

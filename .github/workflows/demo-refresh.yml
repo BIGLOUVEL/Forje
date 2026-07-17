@@ -41,3 +41,13 @@ jobs:
           curl -sSf -m 90 -X POST \
             -H "Authorization: Bearer ${{ secrets.DEMO_REFRESH_SECRET }}" \
             "https://www.forje.studio/api/demo/refresh?step=board&profile=frame"
+
+      # Deep dive quotidien pré-forgé (vitrine landing) : no-op si déjà frais,
+      # sinon génère UN carousel (~40-60s). Non bloquant : coupé par la limite
+      # Vercel → retenté au passage suivant.
+      - name: Deep dive du jour
+        run: |
+          curl -sS -m 120 -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEMO_REFRESH_SECRET }}" \
+            "https://www.forje.studio/api/demo/refresh?step=deepdive" \
+            || echo "::warning::deep dive du jour en échec (retenté dans 10 min)"

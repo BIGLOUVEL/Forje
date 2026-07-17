@@ -4,7 +4,7 @@
     {
       "src": "server.js",
       "use": "@vercel/node",
-      "config": { "maxLambdaSize": "50mb", "maxDuration": 60 }
+      "config": { "maxLambdaSize": "50mb", "maxDuration": 300 }
     },
     { "src": "*.html",        "use": "@vercel/static" },
     { "src": "*.{jsx,css}",   "use": "@vercel/static" },

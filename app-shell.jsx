@@ -48,6 +48,7 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
     logout:   <><path d="M6 3H3.5C3.2 3 3 3.2 3 3.5v9c0 .3.2.5.5.5H6M10 5l3 3-3 3M13 8H6"/></>,
     refresh:  <><path d="M13 4.5A6 6 0 108 14M13 2v3h-3"/></>,
     x:        <><path d="M4 4l8 8M12 4l-8 8"/></>,
+    download: <><path d="M8 2.5v8M4.5 7l3.5 3.5L11.5 7M3 13.5h10"/></>,
   };
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none"
@@ -61,6 +62,7 @@ const AppIcon = ({ name, size = 16, className = '' }) => {
 const CMD_ITEMS = [
   { label: 'Générer un post',       icon: 'sparkle',  nav: 'generate' },
   { label: 'Calendrier',            icon: 'calendar', nav: 'calendar'  },
+  { label: 'Parler à Blaise',       icon: 'quote',    nav: 'blaise'    },
   { label: 'Sources & veille',      icon: 'news',     nav: 'sources'   },
   { label: 'Identité de marque',    icon: 'palette',  nav: 'brand'     },
   { label: 'Paramètres',            icon: 'settings', nav: 'settings'  },
@@ -105,6 +107,14 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const menuRef = useRef(null);
+
+  // Brief du jour non lu — signal émis par app-blaise.jsx (event blaise-unread)
+  const [blaiseUnread, setBlaiseUnread] = useState(!!window.__blaiseUnread);
+  useEffect(() => {
+    const fn = (e) => setBlaiseUnread(!!e.detail);
+    window.addEventListener('blaise-unread', fn);
+    return () => window.removeEventListener('blaise-unread', fn);
+  }, []);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -184,6 +194,14 @@ const Sidebar = ({ current, onNav, counts = {}, profile = null, authUser = null,
 
       <div className="sidebar-section">
         <div className="sidebar-section-label">Atelier</div>
+
+        {/* Blaise — le directeur artistique IA (point braise = brief non lu) */}
+        <div className={`sidebar-item ${current === 'blaise' ? 'active' : ''}`}
+             onClick={() => onNav('blaise')}>
+          <AppIcon name="quote" className="icon"/>
+          <span>Blaise</span>
+          {blaiseUnread && <span className="sidebar-blaise-dot" title="Brief du jour"/>}
+        </div>
 
         {/* Identité de marque */}
         <div className={`sidebar-item ${current === 'brand' ? 'active' : ''}`}

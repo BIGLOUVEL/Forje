@@ -68,7 +68,14 @@ Topics qui génèrent le plus d'engagement : ${arr(compte.topics_engageants_conc
 
 ━━ CONCURRENTS (pour évaluer l'originalité) ━━
 ${arr(compte.concurrents)}
-
+${compte._strategy ? `
+━━ STRATÉGIE ÉDITORIALE (validée avec Blaise — pondère le scoring) ━━
+Cible : ${val(compte._strategy.target_audience)}
+Piliers de contenu : ${arr(compte._strategy.content_pillars)}
+Positionnement : ${val(compte._strategy.positioning)}
+Une news qui alimente directement un pilier gagne en pertinence niche ;
+une news hors piliers ET hors sous-niches actives perd des points.
+` : ''}
 ━━ SCORING (0 à 10) ━━
 1. Pertinence niche (0-3 pts) : 3=sous-niches actives, 2=adjacent, 1=généraliste, 0=hors niche
 2. Timing (0-2 pts) : 2=breaking<30min, 1.5=trending<3h, 1=chaud du jour, 0=evergreen
@@ -313,6 +320,15 @@ async function _scoreForCompteInner(compteId, batchSize, windowHours) {
   const { data: compte, error: e1 } = await supabase
     .from('comptes').select('*').eq('id', compteId).single();
   if (e1) throw e1;
+
+  // Stratégie réseaux validée avec Blaise (clients.strategy, même user) —
+  // injectée dans le prompt de scoring pour pondérer par piliers.
+  if (compte.user_id) {
+    const { data: strat } = await supabase.from('clients')
+      .select('strategy').eq('user_id', compte.user_id)
+      .not('strategy', 'is', null).limit(1).maybeSingle();
+    compte._strategy = strat?.strategy || null;
+  }
 
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
   const { data: scored, error: e2 } = await supabase
