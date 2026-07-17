@@ -1,6 +1,22 @@
 /* global React */
 var { useState } = React;
 
+// Traduction des erreurs Supabase → messages FR directs, tutoiement.
+var translateAuthError = function(msg, mode) {
+  var m = (msg || '').toLowerCase();
+  if (m.indexOf('invalid login credentials') !== -1)
+    return 'Email ou mot de passe incorrect. Réessaie ou réinitialise-le.';
+  if (m.indexOf('email not confirmed') !== -1)
+    return 'Ton studio n\'est pas encore activé. Vérifie ta boîte mail.';
+  if (m.indexOf('password should be at least') !== -1)
+    return 'Ton mot de passe doit faire au moins 6 caractères.';
+  if (m.indexOf('unable to validate email') !== -1 || m.indexOf('invalid email') !== -1)
+    return 'Cette adresse email n\'est pas valide.';
+  if (m.indexOf('rate limit') !== -1 || m.indexOf('too many') !== -1)
+    return 'Trop de tentatives. Patiente une minute avant de réessayer.';
+  return msg;
+};
+
 const AuthScreen = ({ onAuth }) => {
   var [mode, setMode]         = useState('login');
   var [email, setEmail]       = useState('');
@@ -10,6 +26,8 @@ const AuthScreen = ({ onAuth }) => {
   var [success, setSuccess]   = useState(null);
   var [showPw, setShowPw]     = useState(false);
   var [resetSent, setResetSent] = useState(false);
+
+  var isLogin = mode === 'login';
 
   var switchMode = function(m) { setMode(m); setError(null); setSuccess(null); setResetSent(false); };
 
@@ -21,7 +39,7 @@ const AuthScreen = ({ onAuth }) => {
       redirectTo: window.location.origin + '/?reset=1',
     });
     setLoading(false);
-    if (result.error) { setError(result.error.message); }
+    if (result.error) { setError(translateAuthError(result.error.message, mode)); }
     else { setResetSent(true); }
   };
 
@@ -30,122 +48,132 @@ const AuthScreen = ({ onAuth }) => {
     setLoading(true); setError(null); setSuccess(null);
 
     var sb = window.__supabase;
-    var result = mode === 'login'
+    var result = isLogin
       ? await sb.auth.signInWithPassword({ email, password })
       : await sb.auth.signUp({ email, password });
     var data = result.data; var err = result.error;
 
     if (err) {
-      setError(err.message);
+      setError(translateAuthError(err.message, mode));
     } else if (mode === 'signup' && !data.session) {
       // Supabase renvoie identities:[] quand l'email est déjà enregistré
       if (data.user && data.user.identities && data.user.identities.length === 0) {
         setError('__EXISTING_ACCOUNT__');
       } else {
-        setSuccess('Vérifie ta boîte mail pour confirmer ton compte.');
+        setSuccess('Vérifie ta boîte mail pour activer ton studio.');
       }
     } else if (data.user) {
-      onAuth(data.user);
+      onAuth(data.user); // → l'app route vers l'onboarding Blaise si non complété
     }
     setLoading(false);
   };
 
   return (
-    <>
-      <div className="auth-page-bg" />
-      <div className="auth-stars" />
-      <div className="auth-stars-2" />
-      <div className="auth-stars-sparkle" />
-      <div className="auth-streak auth-streak-1" />
-      <div className="auth-streak auth-streak-2" />
-
+    <div className="auth-root">
       <div className="auth-page">
         <nav className="auth-nav">
           <button className="auth-brand" onClick={function() { window.__goToLanding?.(); }}>
-            <img src="assets/forje-logo.png" alt="" className="auth-brand-img" />
-            <span className="auth-brand-wordmark">Forje</span>
+            <img src="assets/brand/blaise-mark.svg" alt="" className="auth-brand-img" />
+            <span className="auth-brand-wordmark">blaise</span>
             <span className="auth-brand-suffix">studio</span>
           </button>
           <div className="auth-nav-right">
-            {mode === 'login'
-              ? <>Pas encore de compte ?{' '}<button onClick={function(){ switchMode('signup'); }}>Créer un compte</button></>
+            {isLogin
+              ? <>Pas encore de compte ?{' '}<button onClick={function(){ switchMode('signup'); }}>Créer mon studio</button></>
               : <>Déjà un compte ?{' '}<button onClick={function(){ switchMode('login'); }}>Se connecter</button></>}
           </div>
         </nav>
 
         <main className="auth-main">
-          <div className="login-shell">
+          <div className="auth-shell">
 
+            {/* ─── Colonne gauche — pitch ─── */}
             <section className="auth-left">
               <span className="auth-eyebrow">
                 <span className="auth-eyebrow-dot" />
-                <span>Forge ta marque. Poste pour toujours.</span>
+                <span>Ton studio Instagram, forgé par l'IA</span>
               </span>
 
-              <h1 className="auth-left-title">
-                {mode === 'login'
-                  ? <><br style={{display:'none'}}/>Bon retour<br/><span className="accent">dans la forge.</span></>
+              <h1 className="auth-title">
+                {isLogin
+                  ? <>Bon retour<br/><span className="accent">dans la forge.</span></>
                   : <>Crée ton<br/><span className="accent">studio.</span></>}
               </h1>
 
-              <p className="auth-left-sub">
-                {mode === 'login'
-                  ? 'Reprenez là où votre marque s\'est arrêtée. Vos sources, votre voix, votre calendrier — tout vous attend.'
-                  : 'Décrivez votre marque une fois. Forje apprend votre voix et publie à votre place, chaque jour.'}
+              <p className="auth-sub">
+                {isLogin
+                  ? <>Ta veille a tourné pendant ton absence.<br/>Tes actus chaudes t'attendent — et Blaise aussi.</>
+                  : <>Blaise forge ton identité. La veille surveille ton actu.<br/>Le studio génère posts et stories dans ta charte exacte.</>}
               </p>
 
-              <div className="auth-quote-card">
-                <span className="auth-quote-mark">"</span>
-                <p className="auth-quote-text">
-                  Forje a transformé notre veille en posts qui sonnent comme nous.
-                  Chaque jour. Sans y penser.
-                </p>
-                <div className="auth-quote-attr">
-                  <div className="auth-quote-avatar"><span>LM</span></div>
-                  <div className="auth-quote-who">
-                    <span className="n">Léa Marchetti</span>
-                    <span className="r">Head of Brand · Studio Lumen</span>
+              {isLogin ? (
+                /* ─── Card "Pendant ton absence" ─── */
+                <div className="auth-proof auth-proof--absence">
+                  <div className="auth-proof-label">Pendant ton absence</div>
+                  <ul className="auth-absence-list">
+                    <li><span className="dot" />La veille surveille tes sujets</li>
+                    <li><span className="dot" />Les actus sont scorées en temps réel</li>
+                    <li><span className="dot" />Blaise prépare ton brief du matin</li>
+                  </ul>
+                </div>
+              ) : (
+                /* ─── Mini-conversation Blaise (style du vrai chat) ─── */
+                <div className="auth-proof auth-proof--chat">
+                  <div className="auth-chat-msg auth-chat-msg--blaise">
+                    <span className="auth-chat-label">Blaise</span>
+                    <p className="auth-chat-text">3 actus chaudes ce matin. La 1<sup>re</sup> est faite pour toi : <strong>score 94</strong>.</p>
+                  </div>
+                  <div className="auth-chat-msg auth-chat-msg--user">
+                    <span className="auth-chat-bubble">Génère-la</span>
+                  </div>
+                  <div className="auth-chat-msg auth-chat-msg--blaise">
+                    <span className="auth-chat-label">Blaise</span>
+                    <p className="auth-chat-text">Ça part. → <span className="auth-chat-meta">Actu · 2 crédits</span></p>
+                  </div>
+                  <div className="auth-chat-system">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3.5 3.5L13 5"/></svg>
+                    Post généré en 87 secondes
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className="auth-stats">
                 <div className="auth-stat">
-                  <span className="n"><span className="accent">2 400+</span></span>
-                  <span className="l">Marques forgées</span>
+                  <span className="n">90<span className="u"> sec</span></span>
+                  <span className="l">Du breaking au post</span>
                 </div>
                 <div className="auth-stat">
-                  <span className="n">98<span style={{fontSize:'18px',opacity:.7}}>%</span></span>
-                  <span className="l">Voix conservée</span>
+                  <span className="n">4<span className="u"> formats</span></span>
+                  <span className="l">Actu · Citation · Deep Dive · Stories</span>
                 </div>
                 <div className="auth-stat">
-                  <span className="n">6×</span>
-                  <span className="l">Plus rapide</span>
+                  <span className="n">700</span>
+                  <span className="l">Crédits / mois</span>
                 </div>
               </div>
 
-              <div className="auth-left-meta">
+              <div className="auth-meta">
                 <span className="auth-dotbar" />
-                <span>FORJE_STUDIO / v2.6 / SECURE_LOGIN</span>
+                <span>BLAISE STUDIO · CONNEXION SÉCURISÉE</span>
               </div>
             </section>
 
+            {/* ─── Colonne droite — card formulaire ─── */}
             <section className="auth-card">
               <div className="auth-card-head">
                 <div className="auth-card-kicker">
                   <span className="bar" />
-                  <span>{mode === 'login' ? 'Connexion' : 'Inscription'}</span>
+                  <span>{isLogin ? 'Connexion' : 'Inscription'}</span>
                 </div>
                 <h2 className="auth-card-title">
-                  {mode === 'login' ? 'Entrez dans votre studio' : 'Créez votre studio'}
+                  {isLogin ? 'Entre dans ton studio' : 'Crée ton studio'}
                 </h2>
                 <p className="auth-card-sub">
-                  {mode === 'login'
-                    ? 'Authentifiez-vous pour accéder à vos marques, sources et publications.'
-                    : 'Créez votre compte et commencez à forger votre identité de marque.'}
+                  {isLogin
+                    ? 'Retrouve ta marque, ta veille et tes posts.'
+                    : '50 crédits offerts pour forger ton identité avec Blaise et générer tes premiers posts. Sans carte bancaire.'}
                 </p>
               </div>
-
 
               <form className="auth-form" onSubmit={handleSubmit}>
                 <div className="auth-field">
@@ -155,7 +183,7 @@ const AuthScreen = ({ onAuth }) => {
                       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
                       <polyline points="22,6 12,13 2,6"/>
                     </svg>
-                    <input type="email" id="auth-email" placeholder="vous@studio.com"
+                    <input type="email" id="auth-email" placeholder="toi@tonmedia.fr"
                       value={email} onChange={function(e){ setEmail(e.target.value); }}
                       autoComplete="email" required />
                   </div>
@@ -170,8 +198,8 @@ const AuthScreen = ({ onAuth }) => {
                     </svg>
                     <input type={showPw ? 'text' : 'password'} id="auth-password" placeholder="••••••••••••"
                       value={password} onChange={function(e){ setPassword(e.target.value); }}
-                      autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required />
-                    <button type="button" className="auth-eye-toggle" onClick={function(){ setShowPw(!showPw); }} aria-label="Afficher le mot de passe">
+                      autoComplete={isLogin ? 'current-password' : 'new-password'} required />
+                    <button type="button" className="auth-eye-toggle" onClick={function(){ setShowPw(!showPw); }} aria-label={showPw ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}>
                       {showPw
                         ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
@@ -186,7 +214,7 @@ const AuthScreen = ({ onAuth }) => {
                   </div>
                 </div>
 
-                {mode === 'login' && (
+                {isLogin && (
                   <div className="auth-row">
                     <label className="auth-checkbox">
                       <input type="checkbox" defaultChecked />
@@ -202,18 +230,9 @@ const AuthScreen = ({ onAuth }) => {
                   <div className="auth-error">{error}</div>
                 )}
                 {error === '__EXISTING_ACCOUNT__' && (
-                  <div className="auth-error" style={{display:'flex', flexDirection:'column', gap:8}}>
-                    <span>Cet email a déjà un compte Forje.</span>
-                    <button
-                      type="button"
-                      onClick={function(){ switchMode('login'); }}
-                      style={{
-                        alignSelf:'flex-start', background:'rgba(110,160,255,0.15)',
-                        border:'1px solid rgba(110,160,255,0.4)', borderRadius:6,
-                        color:'#a0c4ff', padding:'4px 12px', fontSize:12,
-                        cursor:'pointer', fontFamily:'inherit'
-                      }}
-                    >
+                  <div className="auth-error auth-error--action">
+                    <span>Cet email a déjà un studio.</span>
+                    <button type="button" className="auth-error-cta" onClick={function(){ switchMode('login'); }}>
                       → Se connecter
                     </button>
                   </div>
@@ -221,7 +240,7 @@ const AuthScreen = ({ onAuth }) => {
                 {success && <div className="auth-success">{success}</div>}
 
                 <button type="submit" className="auth-submit" disabled={loading}>
-                  <span>{loading ? 'Un instant…' : mode === 'login' ? 'Entrer dans le studio' : 'Créer mon studio'}</span>
+                  <span>{loading ? 'Un instant…' : isLogin ? 'Entrer dans le studio' : 'Créer mon studio'}</span>
                   {!loading && (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="12" x2="19" y2="12"/>
@@ -231,13 +250,19 @@ const AuthScreen = ({ onAuth }) => {
                 </button>
               </form>
 
+              <div className="auth-card-switch">
+                {isLogin
+                  ? <>Pas encore de compte ?{' '}<button onClick={function(){ switchMode('signup'); }}>Créer mon studio — 50 crédits offerts</button></>
+                  : <>Déjà un compte ?{' '}<button onClick={function(){ switchMode('login'); }}>Se connecter</button></>}
+              </div>
+
               <div className="auth-card-foot">
                 <span className="auth-trust">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                   </svg>
-                  CHIFFRÉ DE BOUT EN BOUT
+                  Chiffré de bout en bout
                 </span>
                 <span>Besoin d'aide ? <a href="mailto:support@forje.studio">Support</a></span>
               </div>
@@ -247,15 +272,15 @@ const AuthScreen = ({ onAuth }) => {
         </main>
 
         <footer className="auth-foot">
-          <span>© 2026 FORJE STUDIO</span>
+          <span>© 2026 blaise studio</span>
           <div className="links">
-            <a href="#">CONFIDENTIALITÉ</a>
-            <a href="#">CONDITIONS</a>
-            <a href="#">STATUT</a>
+            <a href="/legal/confidentialite.html">Confidentialité</a>
+            <a href="/legal/cgu.html">Conditions</a>
+            <a href="mailto:support@forje.studio">Support</a>
           </div>
         </footer>
       </div>
-    </>
+    </div>
   );
 };
 
