@@ -231,7 +231,10 @@ body::after { display: none; }
 .price-card.featured .tick { color: #FFF8EE; }
 .closing::before {
   background: radial-gradient(closest-side, rgba(232, 117, 44, 0.14), transparent 70%);
+  animation: none;
 }
+/* Les radials indigo/cyan blur(40px) animés de forje-lux — LES reflets — off */
+.closing::after { display: none; }
 
 /* ─── Aurora : blobs indigo/cyan → lueurs braise posées sur papier ──────── */
 /* 5 blobs blur(90px) animés en continu pour un voile à ~10% — supprimés,
