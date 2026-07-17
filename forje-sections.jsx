@@ -172,118 +172,6 @@ const Formats = () => {
   );
 };
 
-// ───── 6bis. Vitrine Deep Dive — carousel pré-forgé du jour ─────────────
-// PAS de génération live (60-120s) : le cron forge un carousel par profil
-// démo chaque matin sur la meilleure actu du board (/api/demo/deepdive).
-// Les slides sont rendues ici avec les vraies polices (Canvas client),
-// exactement comme dans l'app. Chargement à l'approche de la section.
-const DeepDiveShowcase = () => {
-  const [carousels, setCarousels] = useS(null);   // { key: { name, topic, slides… } }
-  const [activeKey, setActiveKey] = useS(null);
-  const [rendered, setRendered]   = useS({});     // key → [dataUrl]
-  const [slideIdx, setSlideIdx]   = useS(0);
-  const hostRef  = useR(null);
-  const trackRef = useR(null);
-  const fetchedRef = useR(false);
-
-  // Fetch lazy : payload ~1-2 Mo, on ne le charge qu'à l'approche du viewport
-  useE(() => {
-    const el = hostRef.current;
-    if (!el || !('IntersectionObserver' in window)) { load(); return; }
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some(e => e.isIntersecting)) { io.disconnect(); load(); }
-    }, { rootMargin: '900px' });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  const load = async () => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
-    try {
-      const res = await fetch('/api/demo/deepdive');
-      if (!res.ok) return;                          // pas encore forgé → section masquée
-      const data = await res.json();
-      const keys = Object.keys(data.carousels || {});
-      if (!keys.length) return;
-      setCarousels(data.carousels);
-      setActiveKey(keys[0]);
-    } catch (_) {}
-  };
-
-  // Rendu Canvas (vraies polices) du carousel actif — une seule fois par profil
-  useE(() => {
-    if (!carousels || !activeKey || rendered[activeKey]) return;
-    let dead = false;
-    (async () => {
-      try {
-        const imgs = await window.__renderDeepDiveCarousel(carousels[activeKey]);
-        if (!dead) setRendered(prev => ({ ...prev, [activeKey]: imgs }));
-      } catch (e) { console.warn('[DeepDive vitrine] rendu:', e.message); }
-    })();
-    return () => { dead = true; };
-  }, [carousels, activeKey]);
-
-  // Suivi de la slide visible (dots)
-  const onScroll = () => {
-    const t = trackRef.current;
-    if (!t || !t.firstChild) return;
-    const w = t.firstChild.offsetWidth + 14;
-    setSlideIdx(Math.round(t.scrollLeft / w));
-  };
-  const goTo = (i) => {
-    const t = trackRef.current;
-    if (!t || !t.firstChild) return;
-    t.scrollTo({ left: i * (t.firstChild.offsetWidth + 14), behavior: 'smooth' });
-  };
-
-  if (!carousels) return <div ref={hostRef} />;    // sentinelle invisible pour l'IO
-
-  const active = carousels[activeKey];
-  const imgs   = rendered[activeKey] || [];
-  const keys   = Object.keys(carousels);
-
-  return (
-    <section className="section ddshow" ref={hostRef} id="deepdive">
-      <div className="section-label"><span className="bar" /> Le format signature</div>
-      <h2>Un deep dive complet. <span className="accent">Forgé ce matin.</span></h2>
-      <p className="ddshow-sub">
-        {active.total || imgs.length} slides sur « {active.topic} » — carousel généré
-        automatiquement depuis le board de veille, dans la charte de {active.name}. Swipe.
-      </p>
-
-      {keys.length > 1 && (
-        <div className="ddshow-tabs">
-          {keys.map(k => (
-            <button key={k}
-              className={'ddshow-tab' + (k === activeKey ? ' active' : '')}
-              onClick={() => { setActiveKey(k); setSlideIdx(0); }}>
-              {carousels[k].name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="ddshow-track" ref={trackRef} onScroll={onScroll}>
-        {imgs.length
-          ? imgs.map((src, i) => (
-              <div className="ddshow-slide" key={i}>
-                <img src={src} alt={'Slide ' + (i + 1) + ' du deep dive ' + active.name} draggable={false}/>
-              </div>
-            ))
-          : (active.slides || []).map((_, i) => <div className="ddshow-slide ddshow-slide--ghost" key={i}/>)}
-      </div>
-
-      <div className="ddshow-dots">
-        {(imgs.length ? imgs : active.slides || []).map((_, i) => (
-          <button key={i} className={'ddshow-dot' + (i === slideIdx ? ' active' : '')}
-            aria-label={'Slide ' + (i + 1)} onClick={() => goTo(i)}/>
-        ))}
-      </div>
-    </section>
-  );
-};
-
 // ───── 7. Pricing ───────────────────────────────────────────────────────
 const Pricing = () => (
   <section className="section" id="pricing">
@@ -387,8 +275,8 @@ const Closing = () => (
 const Foot = () => (
   <footer className="foot">
     <div className="foot-brand">
-      <img src="assets/brand/blaise-mark.svg" alt="Blaise" className="foot-logo" style={{ borderRadius: 0 }} />
-      <span>© 2026 blaise studio</span>
+      <img src="assets/forje-logo.png" alt="Forje" className="foot-logo" />
+      <span>© 2026 Forje Studio</span>
     </div>
     <div className="links">
       <a href="#pricing">Tarifs</a>
@@ -401,4 +289,4 @@ const Foot = () => (
   </footer>
 );
 
-Object.assign(window, { HowItWorks, Formats, DeepDiveShowcase, Pricing, Faq, Closing, Foot });
+Object.assign(window, { HowItWorks, Formats, Pricing, Faq, Closing, Foot });
