@@ -24,6 +24,7 @@
 <link id="css-l2" rel="stylesheet" href="forje-lux.css?v=3" media="none"/>
 <link id="css-l3" rel="stylesheet" href="forje-mark.css" media="none"/>
 <link id="css-l4" rel="stylesheet" href="forje-live.css?v=22" media="none"/>
+<link id="css-l5" rel="stylesheet" href="forje-blaise.css?v=1" media="none"/>
 
 <!-- App CSS — désactivé par défaut -->
 <link id="css-a1" rel="stylesheet" href="app.css?v=13" media="none"/>
@@ -64,7 +65,7 @@
 
   // ─── Crédits (doit refléter lib/credits.js côté serveur) ───
   window.FORJE_CREDITS = {
-    costs: { actu: 2, citation: 1, deep_dive_light: 3, deep_dive_premium: 8, logo_forge: 6 },
+    costs: { actu: 2, citation: 1, deep_dive_light: 3, deep_dive_premium: 8, logo_forge: 6, blaise_logo: 2, blaise_edit: 1 },
     // Plafond mensuel affiché dans la barre : 700 abonné / 50 essai
     cap: function (status) { return status === 'active' ? 700 : 50; },
   };
@@ -128,7 +129,7 @@
     'root.jsx',
   ];
 
-  const V = '?v=54';
+  const V = '?v=56';
 
   // Cache du JSX compilé : Babel (~2 Mo de JS) n'est chargé et exécuté que si
   // un fichier manque au cache — les visites suivantes démarrent instantanément.
