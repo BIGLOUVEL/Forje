@@ -38,7 +38,7 @@
 }
 
 /* Étoiles blanches invisibles sur papier — on les éteint proprement */
-.stars, .stars-2, .stars-sparkle { opacity: 0; }
+.stars, .stars-2, .stars-sparkle { display: none; }
 
 /* Vignette respirante (forje-lux) : voile sombre inutile sur papier */
 .page-bg::after { display: none; }
@@ -46,54 +46,18 @@
 /* ─── Marque ────────────────────────────────────────────────────────────── */
 .brand-suffix { color: rgba(27, 26, 21, 0.45); }
 
-/* ─── Étoiles filantes → escarbilles cuivre sur papier ──────────────────── */
-.streak {
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(194, 65, 12, 0.35) 44%,
-    rgba(232, 117, 44, 0.6) 58%,
-    rgba(194, 65, 12, 0.45) 74%,
-    rgba(232, 117, 44, 0.3) 88%,
-    transparent 100%);
-  filter: blur(0.3px) drop-shadow(0 0 6px rgba(232, 117, 44, 0.3));
-}
-.streak::before {
-  background: linear-gradient(90deg, transparent, rgba(232, 150, 60, 0.12) 50%, transparent);
-}
+/* ─── Étoiles filantes : quasi invisibles sur papier, floutées + animées —
+   supprimées (perf) ─────────────────────────────────────────────────────── */
+.streak { display: none; }
 
 /* ─── Couches d'ambiance héritées du dark, adaptées au papier ───────────── */
-/* Grain bleuté en overlay → grain chaud discret en multiply */
-body::after {
-  opacity: 0.035;
-  mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.4  0 0 0 0 0.32  0 0 0 0 0.2  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-}
-/* Piliers arc-en-ciel et halo curseur bleus : éteints / réchauffés */
-.pillars { opacity: 0; }
-.cursor-halo {
-  background: radial-gradient(closest-side, rgba(232, 117, 44, 0.08), transparent 70%);
-}
-/* Horizon bleu « screen » → bande braise posée sur le papier */
-.horizon {
-  background: linear-gradient(180deg, transparent 0%, rgba(232, 117, 44, 0.05) 60%, rgba(194, 65, 12, 0.09) 100%);
-  mix-blend-mode: normal;
-}
-.horizon::before {
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(194, 65, 12, 0.25) 20%,
-    rgba(232, 117, 44, 0.55) 50%,
-    rgba(242, 185, 61, 0.35) 75%,
-    transparent 100%);
-  box-shadow: 0 0 40px rgba(232, 117, 44, 0.20);
-}
-.horizon::after {
-  background:
-    radial-gradient(60% 100% at 50% 0%,
-      rgba(232, 117, 44, 0.08) 0%,
-      rgba(242, 185, 61, 0.05) 40%,
-      transparent 70%);
-}
+/* Grain plein écran en blend-mode : quasi invisible sur papier → off (perf) */
+body::after { display: none; }
+/* Piliers arc-en-ciel et halo curseur : supprimés (couches fixes inutiles) */
+.pillars { display: none; }
+.cursor-halo { display: none; }
+/* Horizon : bandes chromatiques floutées héritées du cosmos → supprimées */
+.horizon { display: none; }
 
 /* ─── CTA : le langage de l'app — bouton encre, ghost hairline ──────────── */
 .btn-primary {
@@ -270,8 +234,6 @@ body::after {
 }
 
 /* ─── Aurora : blobs indigo/cyan → lueurs braise posées sur papier ──────── */
-.aurora .b1 { background: radial-gradient(closest-side, rgba(232, 117, 44, 0.16), transparent 70%); }
-.aurora .b2 { background: radial-gradient(closest-side, rgba(242, 185, 61, 0.15), transparent 70%); }
-.aurora .b3 { background: radial-gradient(closest-side, rgba(194, 65, 12, 0.10), transparent 70%); }
-.aurora .b4 { background: radial-gradient(closest-side, rgba(242, 185, 61, 0.12), transparent 70%); }
-.aurora .b5 { background: radial-gradient(closest-side, rgba(232, 117, 44, 0.10), transparent 70%); }
+/* 5 blobs blur(90px) animés en continu pour un voile à ~10% — supprimés,
+   les radials statiques de .page-bg donnent déjà la chaleur (perf) */
+.aurora { display: none; }
