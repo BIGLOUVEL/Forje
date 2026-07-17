@@ -62,9 +62,9 @@ const App = () => {
       <div className="page">
         <nav className="nav" data-screen-label="nav">
           <div className="brand-mark">
-            <img src="assets/forje-logo.png" alt="" className="brand-mark-img" />
-            <span className="brand-wordmark">Forje</span>
-            <span className="brand-suffix">Studio</span>
+            <img src="assets/brand/blaise-mark.svg" alt="" className="brand-mark-img" style={{ borderRadius: 0 }} />
+            <span className="brand-wordmark">blaise</span>
+            <span className="brand-suffix">studio</span>
           </div>
           <div className="nav-links">
             <a href="#demo-live">Démo</a>
@@ -83,6 +83,7 @@ const App = () => {
         <LiveDemoScroll />
         <div data-screen-label="05 How It Works"><HowItWorks /></div>
         <div data-screen-label="06 Formats"><Formats /></div>
+        <div data-screen-label="06bis Deep Dive du jour"><DeepDiveShowcase /></div>
         <div data-screen-label="07 Pricing"><Pricing /></div>
         <div data-screen-label="08 FAQ"><Faq /></div>
         <div data-screen-label="09 Closing"><Closing /></div>
