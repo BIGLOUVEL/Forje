@@ -74,7 +74,7 @@ const App = () => {
             <a href="#faq">FAQ</a>
           </div>
           <div className="nav-right">
-            <a href="Forje App.html" style={{ color: 'rgba(210,225,255,0.82)', textDecoration:'none', fontSize:14, fontWeight:500 }}>Se connecter</a>
+            <a href="Forje App.html" style={{ color: 'var(--fg-dim)', textDecoration:'none', fontSize:14, fontWeight:500 }}>Se connecter</a>
             <a href="Forje App.html" className="btn btn-primary" style={{textDecoration:'none'}}>Rejoindre <Icon.Arrow /></a>
           </div>
         </nav>
