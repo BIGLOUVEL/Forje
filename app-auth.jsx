@@ -103,12 +103,13 @@ const AuthScreen = ({ onAuth }) => {
               {/* Posts démo = VRAIS posts sortis du pipeline Forje (generated_posts),
                  exportés en assets statiques (pas de fetch DB au runtime).
                  Pour les remplacer : node scripts/_export-auth-posts.js final assets/auth
-                 post-demo-1 ← 21a5debb-0f94-4bec-9d8e-c9d97108da6b (Ballon Bleu · SPORT · « BRÉSIL : LE CHAOS TOTAL »)
-                 post-demo-2 ← c9eacd99-4961-4a82-94b4-212e4e27811e (FRAME · CULTURE · « DONKEY KONG ÉCRASE TOUT ») */}
+                 post-demo-1 ← 6789d6e0-4f99-4d83-85ef-a7737f538ec0 (Ballon Bleu · SPORT · « AUBAMEYANG QUITTE L'OM »)   — signup
+                 post-demo-2 ← c9eacd99-4961-4a82-94b4-212e4e27811e (FRAME · CULTURE · « DONKEY KONG ÉCRASE TOUT »)      — signup
+                 post-demo-3 ← 183480b7-1403-46ed-b789-dbd65d059b4c (Ballon Bleu · SPORT · « COUP DUR POUR LES BLEUS ») — login */}
               {isLogin ? (
                 /* Login : un seul post démo incliné, sans texte (colonne plus courte, voulu) */
                 <div className="auth-fan auth-fan--solo">
-                  <img className="auth-post auth-post--1" src="assets/auth/post-demo-1.jpg"
+                  <img className="auth-post auth-post--1" src="assets/auth/post-demo-3.jpg"
                     alt="Post généré pour Ballon Bleu" draggable={false}/>
                 </div>
               ) : (

@@ -8,8 +8,9 @@ const { supabase } = require('../lib/supabase');
 const JOBS = process.argv[2] === 'final'
   ? [
       // Sélection finale (posts démo réels sortis du pipeline Forje)
-      ['21a5debb-0f94-4bec-9d8e-c9d97108da6b', 'post-demo-1.jpg'], // Ballon Bleu · SPORT · "BRÉSIL : LE CHAOS TOTAL"
-      ['c9eacd99-4961-4a82-94b4-212e4e27811e', 'post-demo-2.jpg'], // FRAME · CULTURE · "DONKEY KONG ÉCRASE TOUT"
+      ['6789d6e0-4f99-4d83-85ef-a7737f538ec0', 'post-demo-1.jpg'], // Ballon Bleu · SPORT · "AUBAMEYANG QUITTE L'OM"   (signup)
+      ['c9eacd99-4961-4a82-94b4-212e4e27811e', 'post-demo-2.jpg'], // FRAME · CULTURE · "DONKEY KONG ÉCRASE TOUT"      (signup)
+      ['183480b7-1403-46ed-b789-dbd65d059b4c', 'post-demo-3.jpg'], // Ballon Bleu · SPORT · "COUP DUR POUR LES BLEUS" (login)
     ]
   : [
       ['88c9e375-7049-4209-b47c-ee8031aedacc', 'cand-bb-olise.jpg'],

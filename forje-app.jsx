@@ -64,7 +64,6 @@ const App = () => {
           <div className="brand-mark">
             <img src="assets/brand/blaise-mark.svg" alt="" className="brand-mark-img" style={{ borderRadius: 0 }} />
             <span className="brand-wordmark">blaise</span>
-            <span className="brand-suffix">studio</span>
           </div>
           <div className="nav-links">
             <a href="#demo-live">Démo</a>

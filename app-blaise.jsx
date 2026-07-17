@@ -41,6 +41,26 @@ function blaiseCleanText(text) {
     .trim();
 }
 
+// Rendu markdown léger des messages de Blaise : **gras**, *italique*, `code`.
+// Le conteneur est en white-space: pre-wrap → les retours à la ligne passent
+// tels quels, on ne transforme que les marques inline (fini les ** bruts).
+function blaiseMd(text) {
+  var nodes = [];
+  var re = /\*\*([^*\n](?:[^*]*?[^*\s])?)\*\*|\*([^*\s\n](?:[^*\n]*?[^*\s])?)\*|`([^`\n]+?)`/g;
+  var str = String(text || '');
+  var last = 0, m, k = 0;
+  while ((m = re.exec(str))) {
+    if (m.index > last) nodes.push(str.slice(last, m.index));
+    if (m[1] != null)      nodes.push(<strong key={'b' + k}>{m[1]}</strong>);
+    else if (m[2] != null) nodes.push(<em key={'i' + k}>{m[2]}</em>);
+    else                   nodes.push(<code key={'c' + k} className="blaise-md-code">{m[3]}</code>);
+    k++;
+    last = m.index + m[0].length;
+  }
+  if (last < str.length) nodes.push(str.slice(last));
+  return nodes;
+}
+
 // Extrait la ligne "[chips: A | B | C]" → { text (sans la ligne), chips }
 function blaiseParseChips(text) {
   var chips = [];
@@ -335,34 +355,97 @@ var BlaiseRefs = function({ refs }) {
   );
 };
 
+// Lien "Annuler" (24h) sur les cards d'application — filet immédiat, pas un
+// versioning : après 24h la modification manuelle dans Identité reste possible.
+var BlaiseRevertLink = function({ changeId, changedAt, label, onReverted }) {
+  var [state, setState] = useState('idle'); // idle | busy | done | error
+  var fresh = changedAt && (Date.now() - new Date(changedAt).getTime() < 24 * 3600 * 1000);
+  if (!changeId || !fresh || state === 'done') return null;
+  var revert = async function() {
+    if (state === 'busy') return;
+    setState('busy');
+    try {
+      var res = await blaiseFetch('/blaise/revert-change', {
+        method: 'POST',
+        body: JSON.stringify({ clientId: __blaise.clientId, changeId: changeId }),
+      });
+      if (res.ok) {
+        setState('done');
+        onReverted();
+        if (window.__reloadClients) window.__reloadClients();
+      } else if (res.status === 409) { setState('done'); onReverted(); } // déjà annulé
+      else if (res.status === 410) { setState('done'); }                 // fenêtre 24h dépassée
+      else setState('error');
+    } catch (_) { setState('error'); }
+  };
+  return (
+    <button className="blaise-system-link blaise-system-link--muted" onClick={revert} disabled={state === 'busy'}>
+      {state === 'busy' ? 'Annulation…' : state === 'error' ? 'Réessayer' : label || 'Annuler'}
+    </button>
+  );
+};
+
 // Card système discrète quand un changement est appliqué
 var BlaiseSystemCard = function({ event, onNav }) {
+  var [reverted, setReverted] = useState(false);
   var t = event.tool, r = event.result || {};
   if (r.error) return null;
+  var onReverted = function() { setReverted(true); };
   if (t === 'update_brand_identity' && (r.applied || []).length) {
     var withLogo = (r.applied || []).indexOf('logo_url') !== -1;
+    if (reverted) {
+      return (
+        <div className="blaise-system-card blaise-system-card--reverted">
+          <span>↩ Annulé — {withLogo ? 'logo précédent restauré' : 'valeurs précédentes restaurées'}</span>
+        </div>
+      );
+    }
     return (
       <div className="blaise-system-card">
         <AppIcon name="check" size={13}/>
         <span>{withLogo ? 'Logo mis à jour dans ton identité' : 'Identité mise à jour'}</span>
         {onNav && <button className="blaise-system-link" onClick={function() { onNav('brand'); }}>Voir l'identité →</button>}
+        <BlaiseRevertLink changeId={r.change_id} changedAt={r.changed_at} onReverted={onReverted}/>
       </div>
     );
   }
   if (t === 'save_strategy' && r.saved) {
+    if (reverted) {
+      return (
+        <div className="blaise-system-card blaise-system-card--reverted">
+          <span>↩ Annulé — stratégie précédente restaurée</span>
+        </div>
+      );
+    }
     return (
       <div className="blaise-system-card">
         <AppIcon name="check" size={13}/>
         <span>Stratégie réseaux enregistrée</span>
+        <BlaiseRevertLink changeId={r.change_id} changedAt={r.changed_at} onReverted={onReverted}/>
       </div>
     );
   }
   if (t === 'save_editorial_rule' && r.saved) {
+    if (reverted) {
+      return (
+        <div className="blaise-system-card blaise-system-card--reverted">
+          <span>↩ Annulé — règle désactivée</span>
+        </div>
+      );
+    }
+    var disableRule = function() {
+      var sb = window.__supabase;
+      if (sb && r.rule_id) sb.from('client_editorial_rules').update({ active: false }).eq('id', r.rule_id).then(function() {});
+      setReverted(true);
+    };
     return (
       <div className="blaise-system-card">
         <AppIcon name="check" size={13}/>
         <span>Règle mémorisée : {r.rule}</span>
         {onNav && <button className="blaise-system-link" onClick={function() { onNav('brand'); }}>Voir mes règles →</button>}
+        {r.rule_id && (
+          <button className="blaise-system-link blaise-system-link--muted" onClick={disableRule}>Annuler</button>
+        )}
       </div>
     );
   }
@@ -438,7 +521,7 @@ var BlaiseMsg = function({ msg, mode, isLast, busy, onNav, onValidate, onRetouch
   return (
     <div className={'blaise-msg blaise-msg--blaise' + (msg.error ? ' blaise-msg--error' : '')}>
       <div className="blaise-msg-label">Blaise</div>
-      {parsed.text && <div className="blaise-msg-text">{parsed.text}</div>}
+      {parsed.text && <div className="blaise-msg-text">{blaiseMd(parsed.text)}</div>}
       {refsEvents.map(function(e, i) { return <BlaiseRefs key={'r' + i} refs={e.result.references}/>; })}
       {(msg.images || []).map(function(url, i) {
         return <BlaiseImage key={'i' + i} url={url} onValidate={onValidate} onRetouch={onRetouch} onOther={onOther} onImgLoad={onImgLoad}/>;
@@ -540,15 +623,31 @@ var BlaiseComposer = function({ clientId, mode, disabled }) {
     blaiseSend(clientId, t, mode, img);
   };
 
-  var onPickFile = function(e) {
-    var file = e.target.files && e.target.files[0];
-    e.target.value = '';
+  var loadImageFile = function(file) {
     if (!file || !/^image\//.test(file.type)) return;
     var reader = new FileReader();
     reader.onload = function() {
       setImage({ b64: String(reader.result).split(',')[1], mime: file.type, preview: String(reader.result) });
     };
     reader.readAsDataURL(file);
+  };
+
+  var onPickFile = function(e) {
+    var file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    loadImageFile(file);
+  };
+
+  // Coller une image (screenshot, copie depuis le web) directement dans l'input
+  var onPaste = function(e) {
+    var items = (e.clipboardData && e.clipboardData.items) || [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file' && /^image\//.test(items[i].type)) {
+        e.preventDefault();
+        loadImageFile(items[i].getAsFile());
+        return;
+      }
+    }
   };
 
   return (
@@ -589,6 +688,7 @@ var BlaiseComposer = function({ clientId, mode, disabled }) {
           rows={1}
           value={text}
           disabled={disabled}
+          onPaste={onPaste}
           onChange={function(e) { setText(e.target.value); }}
           onKeyDown={function(e) {
             if (slashMatches.length) {
@@ -605,6 +705,94 @@ var BlaiseComposer = function({ clientId, mode, disabled }) {
           <AppIcon name="arrowUp" size={15}/>
         </button>
       </div>
+    </div>
+  );
+};
+
+// ─── Menu ••• : les 3 niveaux de reset ───────────────────────────────────────
+// Niveau 1 Nouveau sujet (coupe l'historique récent) · Niveau 2 Reset mémoire
+// (purge aussi le résumé long terme) · Niveau 3 Repartir de zéro (archive tout).
+// Ce qui survit toujours : identité, règles, stratégie, posts générés.
+async function blaiseResetAction(clientId, endpoint) {
+  try {
+    var res = await blaiseFetch('/blaise/' + endpoint, {
+      method: 'POST', body: JSON.stringify({ clientId: clientId }),
+    });
+    if (res.ok) await blaiseLoad(clientId, true);
+  } catch (_) {}
+}
+
+var BlaiseConfirmModal = function({ title, body, confirmLabel, danger, onConfirm, onClose }) {
+  return (
+    <div className="blaise-modal-backdrop" onClick={onClose}>
+      <div className="blaise-modal" onClick={function(e) { e.stopPropagation(); }}>
+        <div className="blaise-modal-title">{title}</div>
+        <div className="blaise-modal-body">{body}</div>
+        <div className="blaise-modal-note">Ton identité, tes règles et tes posts ne bougent pas. Seule la conversation est concernée.</div>
+        <div className="blaise-modal-actions">
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Retour</button>
+          <button className={'btn btn-sm ' + (danger ? 'blaise-btn-danger' : 'btn-primary')}
+                  onClick={function() { onClose(); onConfirm(); }}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+var BlaiseMenu = function({ clientId }) {
+  var [open, setOpen] = useState(false);
+  var [modal, setModal] = useState(null); // 'memory' | 'full'
+  var ref = useRef(null);
+
+  useEffect(function() {
+    if (!open) return;
+    var onDoc = function(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return function() { document.removeEventListener('mousedown', onDoc); };
+  }, [open]);
+
+  return (
+    <div className="blaise-menu" ref={ref}>
+      <button className="blaise-menu-btn" title="Nouveau sujet, reset mémoire, repartir de zéro"
+              onClick={function() { setOpen(function(o) { return !o; }); }}>
+        <AppIcon name="more" size={14}/>
+        <span className="blaise-menu-btn-label">Conversation</span>
+      </button>
+      {open && (
+        <div className="blaise-menu-pop">
+          <button className="blaise-menu-item"
+                  onClick={function() { setOpen(false); blaiseResetAction(clientId, 'new-topic'); }}>
+            <AppIcon name="plus" size={13}/> Nouveau sujet
+          </button>
+          <button className="blaise-menu-item"
+                  onClick={function() { setOpen(false); setModal('memory'); }}>
+            <AppIcon name="refresh" size={13}/> Réinitialiser la mémoire
+          </button>
+          <button className="blaise-menu-item blaise-menu-item--danger"
+                  onClick={function() { setOpen(false); setModal('full'); }}>
+            <AppIcon name="trash" size={13}/> Repartir de zéro
+          </button>
+        </div>
+      )}
+      {modal === 'memory' && (
+        <BlaiseConfirmModal
+          title="Réinitialiser la mémoire de conversation"
+          body="Blaise oublie le fil et le résumé des échanges passés — utile s'il s'est mis une fausse idée en tête et qu'un Nouveau sujet n'a pas suffi."
+          confirmLabel="Réinitialiser"
+          onConfirm={function() { blaiseResetAction(clientId, 'reset-memory'); }}
+          onClose={function() { setModal(null); }}/>
+      )}
+      {modal === 'full' && (
+        <BlaiseConfirmModal
+          title="Repartir de zéro avec Blaise"
+          body="Toute la conversation est archivée (rien n'est supprimé) et le fil repart vierge."
+          confirmLabel="Tout effacer et repartir"
+          danger
+          onConfirm={function() { blaiseResetAction(clientId, 'reset-full'); }}
+          onClose={function() { setModal(null); }}/>
+      )}
     </div>
   );
 };
@@ -679,6 +867,18 @@ var BlaiseThread = function({ clientId, mode, onNav, emptyHint }) {
           </div>
         )}
         {state.thread.map(function(msg, i) {
+          // Marqueurs de reset : séparateur seul, pas de bulle de message
+          if (msg.message_type === 'topic_break' || msg.message_type === 'memory_reset') {
+            var d = msg.created_at ? new Date(msg.created_at) : new Date();
+            var dateLabel = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+            return (
+              <div key={i} className="blaise-brief-sep blaise-marker-sep">
+                <span>{msg.message_type === 'memory_reset'
+                  ? 'Mémoire de conversation réinitialisée · ' + dateLabel
+                  : 'Nouveau sujet · ' + dateLabel}</span>
+              </div>
+            );
+          }
           return (
             <React.Fragment key={i}>
               {msg.is_daily_brief && (
@@ -710,7 +910,16 @@ var BlaiseScreen = function({ clientId, onNav }) {
           <div className="blaise-empty-sub">Blaise a besoin d'un média à habiller — passe par Identité de marque.</div>
         </div>
       ) : (
-        <BlaiseThread clientId={clientId} mode="studio" onNav={onNav}/>
+        <>
+          <div className="blaise-screen-head">
+            <div className="blaise-screen-title">
+              <span className="blaise-screen-name">Blaise</span>
+              <span className="blaise-screen-sub">directeur artistique</span>
+            </div>
+            <BlaiseMenu clientId={clientId}/>
+          </div>
+          <BlaiseThread clientId={clientId} mode="studio" onNav={onNav}/>
+        </>
       )}
     </div>
   );
@@ -749,6 +958,7 @@ var BlaiseFloating = function({ clientId, onNav, hidden }) {
             <div className="blaise-drawer-head">
               <span className="blaise-drawer-title">Blaise</span>
               <span className="blaise-drawer-sub">directeur artistique</span>
+              <BlaiseMenu clientId={clientId}/>
               <button className="blaise-drawer-expand" title="Ouvrir en grand"
                       onClick={function() { setOpen(false); onNav && onNav('blaise'); }}>
                 <AppIcon name="arrowRight" size={13}/>

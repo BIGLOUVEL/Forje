@@ -1,0 +1,14 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=1440, initial-scale=1.0"/><title>h</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/app-auth.css?h=4"/><style>body{margin:0}</style></head><body>
+<div id="root"></div>
+<script src="/vendor/react/react.production.min.js"></script>
+<script src="/vendor/react/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script>window.__supabase={auth:{}};window.__goToLanding=function(){};</script>
+<script>(async()=>{const jsx=await(await fetch('/app-auth.jsx?h=4')).text();
+const code=Babel.transform(jsx,{presets:['react']}).code;const el=document.createElement('script');el.text=code;document.head.appendChild(el);
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window.__AuthScreen,{onAuth:function(){}}));
+if(/mode=signup/.test(location.search)){setTimeout(()=>{const b=document.querySelector('.auth-nav-right button');if(b)b.click();},400);}})();</script>
+</body></html>

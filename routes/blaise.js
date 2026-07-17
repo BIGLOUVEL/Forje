@@ -64,21 +64,43 @@ async function loadAuthedClient(req, res) {
 
 async function loadConversation(clientId) {
   const { data } = await supabase.from('blaise_messages')
-    .select('role, content, images, created_at, is_daily_brief')
+    .select('role, content, images, created_at, is_daily_brief, message_type')
     .eq('client_id', clientId)
+    .eq('archived', false)
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT);
   return (data || []).reverse();
 }
 
-function toClaudeMessages(rows) {
+// Marqueurs de fil (Nouveau sujet / Reset mémoire) : le contexte envoyé à
+// Claude repart du DERNIER marqueur — la pollution vit dans l'historique
+// récent, on la coupe net. L'UI, elle, affiche tout (séparateurs).
+const MARKER_TYPES = ['topic_break', 'memory_reset'];
+
+function rowsAfterLastMarker(rows) {
+  let cut = -1;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (MARKER_TYPES.includes(rows[i].message_type)) { cut = i; break; }
+  }
+  return cut === -1 ? rows : rows.slice(cut + 1);
+}
+
+// La mémoire vient d'être réinitialisée si le dernier événement du fil est le
+// marqueur memory_reset (aucun échange depuis).
+function isJustReset(rows) {
+  const last = rows[rows.length - 1];
+  return !!last && last.message_type === 'memory_reset';
+}
+
+function toClaudeMessages(allRows) {
+  const rows = rowsAfterLastMarker(allRows);
   const messages = [];
-  // Fenêtre pleine = début de conversation probablement tronqué → résumé d'une
-  // ligne en tête (l'identité détaillée est déjà dans le bloc system dynamique).
-  if (rows.length >= HISTORY_LIMIT) {
+  // Fenêtre pleine = début de conversation probablement tronqué → le résumé
+  // long terme (clients.blaise_summary) est injecté dans le bloc system.
+  if (allRows.length >= HISTORY_LIMIT && rows.length === allRows.length) {
     messages.push({
       role: 'user',
-      content: [{ type: 'text', text: "(Contexte : ceci est la suite d'une conversation plus ancienne. L'IDENTITÉ ACTUELLE DU CLIENT dans ton contexte système reflète déjà toutes les décisions validées — logo, palette, stratégie.)" }],
+      content: [{ type: 'text', text: "(Contexte : ceci est la suite d'une conversation plus ancienne — voir MÉMOIRE LONG TERME dans ton contexte système.)" }],
     });
   }
   for (const row of rows) {
@@ -139,13 +161,52 @@ async function saveTurn(clientId, userMessage, replyText, events, images) {
   if (error) console.error('[Blaise] save:', error.message);
 }
 
+// ─── Résumé long terme (clients.blaise_summary) ──────────────────────────────
+// Mis à jour en tâche de fond quand la fenêtre de contexte est pleine : les
+// échanges qui vont sortir de la fenêtre sont absorbés dans un résumé court,
+// injecté ensuite dans le bloc system dynamique. Purgé par le reset niveau 2.
+
+async function maybeUpdateSummary(client, rows) {
+  const active = rowsAfterLastMarker(rows);
+  if (active.length < HISTORY_LIMIT) return; // fenêtre pas pleine → rien à absorber
+  // Au plus une mise à jour toutes les 10 minutes — le résumé n'a pas besoin
+  // d'être frais au message près.
+  if (client.blaise_summary_updated_at &&
+      Date.now() - new Date(client.blaise_summary_updated_at).getTime() < 10 * 60 * 1000) return;
+
+  const transcript = active.map(r => {
+    const text = (Array.isArray(r.content) ? r.content : [])
+      .filter(b => b.type === 'text' && b.text && !String(b.text).startsWith('⟦'))
+      .map(b => b.text).join(' ');
+    return (r.role === 'user' ? 'CLIENT: ' : 'BLAISE: ') + text.slice(0, 400);
+  }).filter(l => l.length > 8).join('\n');
+
+  const resp = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001', max_tokens: 300,
+    messages: [{
+      role: 'user',
+      content: `Résumé de mémoire pour un assistant conversationnel (directeur artistique).
+${client.blaise_summary ? `RÉSUMÉ PRÉCÉDENT :\n${client.blaise_summary}\n` : ''}
+DERNIERS ÉCHANGES :\n${transcript}
+
+Fusionne le tout en un résumé FACTUEL de 2-4 phrases : décisions prises, préférences exprimées, sujets en cours. UNIQUEMENT des faits réellement présents ci-dessus — n'invente rien, n'extrapole pas. Retourne uniquement le résumé.`,
+    }],
+  });
+  track({ feature: 'blaise_summary', model: 'claude-haiku-4-5-20251001', inputTokens: resp.usage?.input_tokens, outputTokens: resp.usage?.output_tokens });
+  const summary = (resp.content || []).filter(b => b.type === 'text').map(b => b.text).join(' ').trim().slice(0, 1200);
+  if (!summary) return;
+  await supabase.from('clients')
+    .update({ blaise_summary: summary, blaise_summary_updated_at: new Date().toISOString() })
+    .eq('id', client.id);
+}
+
 // ─── Stepper onboarding : stage déduit par le serveur, jamais par le front ───
 // 1 Nom · 2 Style · 3 Logo · 4 C'est parti
 async function computeOnboardingStage(client, { imagesThisTurn = false, appliedThisTurn = false } = {}) {
   if (appliedThisTurn || client.logo_url || (client.onboarding_step || 0) >= 4) return 4;
   if (imagesThisTurn) return 3;
   const { data } = await supabase.from('blaise_messages')
-    .select('id').eq('client_id', client.id).not('images', 'is', null).limit(1);
+    .select('id').eq('client_id', client.id).eq('archived', false).not('images', 'is', null).limit(1);
   if (data && data.length) return 3;
   if (client.name) return 2;
   return 1;
@@ -189,7 +250,9 @@ router.post('/', async (req, res) => {
       } catch (e) { console.warn('[Blaise] upload image jointe:', e.message); }
     }
 
-    const history = toClaudeMessages(await loadConversation(client.id));
+    const rows = await loadConversation(client.id);
+    const history = toClaudeMessages(rows);
+    const justReset = isJustReset(rows);
     let messages = [...history, { role: 'user', content: userContent }];
     let iterations = 0;
     let lastText = '';
@@ -204,7 +267,7 @@ router.post('/', async (req, res) => {
         max_tokens: MAX_TOKENS,
         // Blocs system : stable (cache) + KB (cache) + identité (dynamique).
         // Le tableau tools porte cache_control sur son dernier élément.
-        system: buildBlaiseSystemBlocks(liveClient, mode, message),
+        system: buildBlaiseSystemBlocks(liveClient, mode, message, { justReset }),
         tools: BLAISE_TOOLS,
         messages,
       });
@@ -223,6 +286,8 @@ router.post('/', async (req, res) => {
       if (response.stop_reason !== 'tool_use') {
         const reply = extractText(response) || lastText || '…';
         await saveTurn(client.id, persistedMessage, reply, events, images);
+        // Mémoire long terme absorbée en tâche de fond (jamais bloquant)
+        maybeUpdateSummary(client, rows).catch(e => console.warn('[Blaise/summary]', e.message));
         return res.json({
           reply, events, images,
           onboardingStage: mode === 'onboarding' ? await turnStage(liveClient, events, images) : undefined,
@@ -325,6 +390,7 @@ router.get('/history', async (req, res) => {
       events: eventsBlock ? eventsBlock.events : [],
       images: r.images || [],
       is_daily_brief: !!r.is_daily_brief,
+      message_type: r.message_type || null,
       created_at: r.created_at,
     };
   });
@@ -368,7 +434,7 @@ async function buildDailyBriefFor(client) {
   if (!comptes || !comptes.length) return { skipped: 'no_compte' };
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const { data: news } = await supabase.from('news_scored')
-    .select('score_total, format_suggere, pourquoi_ce_score, news_raw(title, source, url)')
+    .select('score_total, format_suggere, pourquoi_ce_score, news_raw(titre, source, url)')
     .in('compte_id', comptes.map(c => c.id))
     .gte('created_at', since)
     .gte('score_total', BRIEF_MIN_SCORE)
@@ -379,7 +445,7 @@ async function buildDailyBriefFor(client) {
 
   // 3. Un appel Claude court → 3 idées au gabarit + une reco
   const lines = news.map((n, i) =>
-    `${i + 1}. [${n.score_total}/10] ${n.news_raw?.title || '?'} (${n.news_raw?.source || '?'})${n.format_suggere ? ' — format suggéré : ' + n.format_suggere : ''}`
+    `${i + 1}. [${n.score_total}/10] ${n.news_raw?.titre || '?'} (${n.news_raw?.source || '?'})${n.format_suggere ? ' — format suggéré : ' + n.format_suggere : ''}`
   ).join('\n');
   const rules = require('../lib/editorialRules').editorialRulesLine(client);
   const prompt = `Tu es Blaise, directeur artistique du média Instagram "${client.name || 'du client'}". Tu tutoies, direct et chaleureux.
@@ -388,7 +454,7 @@ ${client.strategy ? `Stratégie : cible ${client.strategy.target_audience || '�
 Les meilleures actus du board de veille ce matin :
 ${lines}
 
-Écris le BRIEF DU JOUR (court, énergique, zéro blabla) :
+Écris le BRIEF DU JOUR (court, énergique, zéro blabla, AUCUN titre ni ligne "#" — le fil affiche déjà "Brief du jour") :
 - Une phrase d'ouverture (une seule).
 - 3 idées de posts, une ligne chacune, gabarit STRICT :
   "1. **Titre accrocheur** — contexte en quelques mots → Actu · 2 cr" (formats : Actu · 2 cr / Citation · 1 cr / Deep Dive · 3 cr)
@@ -449,12 +515,95 @@ router.post('/daily-brief', async (req, res) => {
   }
 });
 
-// ─── POST /api/blaise/reset — efface la conversation ─────────────────────────
+// ═══ SYSTÈME DE RESET — 3 niveaux, jamais destructif ═════════════════════════
+// Ce qui SURVIT toujours : identité, règles éditoriales, stratégie, templates,
+// posts générés. La conversation est jetable ; le travail appliqué, jamais.
+
+async function insertMarker(clientId, type) {
+  const { error } = await supabase.from('blaise_messages').insert({
+    client_id: clientId, role: 'assistant', content: [], message_type: type,
+  });
+  return error;
+}
+
+// NIVEAU 1 — Nouveau sujet : coupe l'historique récent au marqueur.
+// Le résumé long terme, les règles et l'identité passent.
+router.post('/new-topic', async (req, res) => {
+  const client = await loadAuthedClient(req, res);
+  if (!client) return;
+  const error = await insertMarker(client.id, 'topic_break');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// NIVEAU 2 — Reset mémoire : purge le résumé long terme + coupe l'historique.
+// Pour l'hallucination absorbée dans le résumé qui se réinjecte à chaque tour.
+router.post('/reset-memory', async (req, res) => {
+  const client = await loadAuthedClient(req, res);
+  if (!client) return;
+  const { error: e1 } = await supabase.from('clients')
+    .update({ blaise_summary: null, blaise_summary_updated_at: null })
+    .eq('id', client.id);
+  if (e1) return res.status(500).json({ error: e1.message });
+  const e2 = await insertMarker(client.id, 'memory_reset');
+  if (e2) return res.status(500).json({ error: e2.message });
+  res.json({ ok: true });
+});
+
+// NIVEAU 3 — Repartir de zéro : TOUTE la conversation archivée (rien n'est
+// supprimé — traçabilité, debug, images liées aux posts), fil vierge.
+router.post('/reset-full', async (req, res) => {
+  const client = await loadAuthedClient(req, res);
+  if (!client) return;
+  const { error: e1 } = await supabase.from('blaise_messages')
+    .update({ archived: true }).eq('client_id', client.id);
+  if (e1) return res.status(500).json({ error: e1.message });
+  const { error: e2 } = await supabase.from('clients')
+    .update({ blaise_summary: null, blaise_summary_updated_at: null })
+    .eq('id', client.id);
+  if (e2) return res.status(500).json({ error: e2.message });
+  res.json({ ok: true });
+});
+
+// ─── POST /api/blaise/revert-change — annule une action appliquée (24h) ──────
+// Restaure les valeurs `old` du journal identity_changes. Le reset nettoie la
+// CONVERSATION ; ceci annule l'ACTION (le logo violet halluciné ET appliqué).
+const REVERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+router.post('/revert-change', async (req, res) => {
+  const client = await loadAuthedClient(req, res);
+  if (!client) return;
+  const { changeId } = req.body || {};
+  if (!changeId) return res.status(400).json({ error: 'changeId requis' });
+
+  const { data: change } = await supabase.from('identity_changes')
+    .select('*').eq('id', changeId).eq('client_id', client.id).maybeSingle();
+  if (!change) return res.status(404).json({ error: 'Changement introuvable' });
+  if (change.reverted) return res.status(409).json({ error: 'Déjà annulé' });
+  if (Date.now() - new Date(change.created_at).getTime() > REVERT_WINDOW_MS) {
+    return res.status(410).json({ error: "Fenêtre d'annulation dépassée (24h) — modifie manuellement dans Identité de marque." });
+  }
+
+  const restore = {};
+  for (const [field, vals] of Object.entries(change.changed_fields || {})) {
+    if (vals && typeof vals === 'object' && 'old' in vals) restore[field] = vals.old;
+  }
+  if (!Object.keys(restore).length) return res.status(400).json({ error: 'Rien à restaurer' });
+
+  const { error: e1 } = await supabase.from('clients').update(restore).eq('id', client.id);
+  if (e1) return res.status(500).json({ error: e1.message });
+  await supabase.from('identity_changes').update({ reverted: true }).eq('id', changeId);
+  res.json({ ok: true, restored: Object.keys(restore) });
+});
+
+// ─── POST /api/blaise/reset — legacy dev (équivalent niveau 3) ───────────────
 router.post('/reset', async (req, res) => {
   const client = await loadAuthedClient(req, res);
   if (!client) return;
-  const { error } = await supabase.from('blaise_messages').delete().eq('client_id', client.id);
+  const { error } = await supabase.from('blaise_messages')
+    .update({ archived: true }).eq('client_id', client.id);
   if (error) return res.status(500).json({ error: error.message });
+  await supabase.from('clients').update({ blaise_summary: null, blaise_summary_updated_at: null }).eq('id', client.id);
   res.json({ ok: true });
 });
 
