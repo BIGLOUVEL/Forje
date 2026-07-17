@@ -177,9 +177,61 @@ body::after {
   border-color: rgba(232, 174, 61, 0.10);
 }
 
-/* Dans les fenêtres sombres, les textes/chips gardent leurs styles dark
-   d'origine — on réchauffe juste les teintes bleues les plus visibles */
+/* ─── CLEF DU CONTRASTE : dans les fenêtres sombres, on redéclare les
+   tokens SOMBRES. Tout l'intérieur (titres d'actus, labels, cards) qui
+   consomme var(--fg/--muted/--card/--border) redevient lisible d'un coup. */
+.fs-window, .hero-mockup {
+  --fg:      #F7F2E7;
+  --fg-dim:  rgba(245, 236, 218, 0.82);
+  --muted:   rgba(228, 200, 160, 0.55);
+  --muted-2: rgba(228, 200, 160, 0.35);
+  --card:        rgba(255, 255, 255, 0.045);
+  --card-strong: rgba(255, 255, 255, 0.08);
+  --border:        rgba(232, 174, 61, 0.14);
+  --border-strong: rgba(232, 174, 61, 0.28);
+  color: var(--fg-dim);
+}
 .fs-window .fs-tabs { background: rgba(0, 0, 0, 0.35); }
+
+/* ─── Section deep dive (ddshow) : textes et tabs pensés dark → encre ───── */
+.ddshow-sub { color: rgba(27, 26, 21, 0.62); }
+.ddshow-tab {
+  border-color: rgba(27, 26, 21, 0.16);
+  background: rgba(27, 26, 21, 0.04);
+  color: rgba(27, 26, 21, 0.62);
+}
+.ddshow-tab:hover {
+  border-color: rgba(194, 65, 12, 0.45);
+  color: #1B1A15;
+  background: rgba(194, 65, 12, 0.05);
+}
+.ddshow-tab.active {
+  border-color: #1B1A15;
+  background: #1B1A15;
+  color: #FAFAF8;
+}
+
+/* ─── Pricing : card papier premium (réf composant 21st) — fond blanc,
+   bordure cuivre, hiérarchie franche, halo braise discret ─────────────── */
+.price-card {
+  background: #FFFFFF;
+  border: 1px solid rgba(27, 26, 21, 0.12);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgba(27, 26, 21, 0.05), 0 12px 32px -16px rgba(27, 26, 21, 0.12);
+}
+.price-card.featured {
+  background: #FFFFFF;
+  border: 2px solid rgba(194, 65, 12, 0.60);
+  box-shadow:
+    0 1px 2px rgba(27, 26, 21, 0.05),
+    0 24px 56px -20px rgba(194, 65, 12, 0.28);
+}
+.price-card.featured::after {
+  background: radial-gradient(50% 50% at 50% 0%, rgba(232, 117, 44, 0.14), transparent 70%);
+}
+.price-kind { color: #C2410C; }
+.price-amount .num { color: #1B1A15; }
+.price-amount .per, .price-sub, .price-mix, .price-list li, .price-compare { color: rgba(27, 26, 21, 0.65); }
 
 /* Titres de section : l'accent bleu délavé (#93BAFF) devient cuivre */
 .section h2 .accent {
