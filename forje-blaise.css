@@ -131,6 +131,92 @@ body::after {
 }
 .eyebrow .sep { color: rgba(194, 65, 12, 0.4); }
 
+/* ═══ Sections basses — inversion des surfaces sombres restantes ═════════ */
+
+/* Fenêtres produit (hero mockup + board live) : cadres SOMBRES assumés —
+   sur papier, l'écran charbon ressort. Charbon Blaise, plus l'indigo. */
+.hero-mockup {
+  background: #16130E;
+  border-color: rgba(232, 174, 61, 0.18);
+  box-shadow:
+    0 60px 120px rgba(27, 26, 21, 0.35),
+    0 24px 48px rgba(27, 26, 21, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+.hero-mockup-chrome {
+  background: linear-gradient(180deg, #221D14, #17130D);
+  border-bottom-color: rgba(232, 174, 61, 0.14);
+}
+.hero-mockup-chrome span { background: rgba(232, 174, 61, 0.25); }
+.hero-mockup-url {
+  color: rgba(228, 200, 160, 0.6);
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(232, 174, 61, 0.12);
+}
+.hero-mockup-floor {
+  background: radial-gradient(closest-side, rgba(194, 65, 12, 0.25), transparent 70%);
+}
+.fs-window {
+  background: linear-gradient(180deg, rgba(26, 22, 15, 0.97), rgba(19, 16, 11, 0.98));
+  border-color: rgba(232, 174, 61, 0.16);
+  box-shadow:
+    0 40px 90px rgba(27, 26, 21, 0.30),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset;
+}
+.fs-titlebar {
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom-color: rgba(232, 174, 61, 0.10);
+}
+.fs-dots i {
+  background: rgba(232, 174, 61, 0.20);
+  border-color: rgba(232, 174, 61, 0.12);
+}
+.fs-url {
+  color: rgba(228, 200, 160, 0.55);
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(232, 174, 61, 0.10);
+}
+
+/* Dans les fenêtres sombres, les textes/chips gardent leurs styles dark
+   d'origine — on réchauffe juste les teintes bleues les plus visibles */
+.fs-window .fs-tabs { background: rgba(0, 0, 0, 0.35); }
+
+/* Titres de section : l'accent bleu délavé (#93BAFF) devient cuivre */
+.section h2 .accent {
+  background: none;
+  -webkit-background-clip: unset; background-clip: unset;
+  color: #C2410C;
+}
+
+/* Pilule de label de section : chip papier, plus de lavis bleu */
+.section-label {
+  background: rgba(27, 26, 21, 0.05);
+  border-color: rgba(27, 26, 21, 0.10);
+  color: rgba(27, 26, 21, 0.55);
+}
+
+/* Chips & accents bleus des sections how / formats / faq / pricing */
+.how-idx {
+  color: #C2410C;
+  background: rgba(194, 65, 12, 0.10);
+}
+.format-visual { background: rgba(27, 26, 21, 0.04); }
+.format-cost { background: rgba(194, 65, 12, 0.08); }
+.faq-item.open { border-color: rgba(194, 65, 12, 0.35); }
+.price-card::before {
+  background: linear-gradient(90deg, transparent, rgba(194, 65, 12, 0.45), transparent);
+}
+.price-card.featured::before { box-shadow: 0 0 16px rgba(232, 117, 44, 0.35); }
+.price-list .tick {
+  background: rgba(194, 65, 12, 0.10);
+  border-color: rgba(194, 65, 12, 0.25);
+  color: #C2410C;
+}
+.price-card.featured .tick { color: #FFF8EE; }
+.closing::before {
+  background: radial-gradient(closest-side, rgba(232, 117, 44, 0.14), transparent 70%);
+}
+
 /* ─── Aurora : blobs indigo/cyan → lueurs braise posées sur papier ──────── */
 .aurora .b1 { background: radial-gradient(closest-side, rgba(232, 117, 44, 0.16), transparent 70%); }
 .aurora .b2 { background: radial-gradient(closest-side, rgba(242, 185, 61, 0.15), transparent 70%); }
