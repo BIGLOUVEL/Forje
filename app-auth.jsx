@@ -75,7 +75,6 @@ const AuthScreen = ({ onAuth }) => {
           <button className="auth-brand" onClick={function() { window.__goToLanding?.(); }}>
             <img src="assets/brand/blaise-mark.svg" alt="" className="auth-brand-img" />
             <span className="auth-brand-wordmark">blaise</span>
-            <span className="auth-brand-suffix">studio</span>
           </button>
           <div className="auth-nav-right">
             {isLogin
@@ -107,34 +106,25 @@ const AuthScreen = ({ onAuth }) => {
               </p>
 
               {isLogin ? (
-                /* ─── Card "Pendant ton absence" ─── */
-                <div className="auth-proof auth-proof--absence">
-                  <div className="auth-proof-label">Pendant ton absence</div>
-                  <ul className="auth-absence-list">
-                    <li><span className="dot" />La veille surveille tes sujets</li>
-                    <li><span className="dot" />Les actus sont scorées en temps réel</li>
-                    <li><span className="dot" />Blaise prépare ton brief du matin</li>
-                  </ul>
+                /* Login : un seul post démo incliné, sans texte (colonne plus courte, voulu) */
+                <div className="auth-fan auth-fan--solo">
+                  <img className="auth-post auth-post--1" src="assets/demo/post-ballon-bleu.png"
+                    alt="Post généré pour Ballon Bleu" draggable={false}/>
                 </div>
               ) : (
-                /* ─── Mini-conversation Blaise (style du vrai chat) ─── */
-                <div className="auth-proof auth-proof--chat">
-                  <div className="auth-chat-msg auth-chat-msg--blaise">
-                    <span className="auth-chat-label">Blaise</span>
-                    <p className="auth-chat-text">3 actus chaudes ce matin. La 1<sup>re</sup> est faite pour toi : <strong>score 94</strong>.</p>
+                /* Signup : éventail de 2 posts générés réels (charte de chaque média) */
+                <>
+                  <div className="auth-fan">
+                    <img className="auth-post auth-post--1" src="assets/demo/post-ballon-bleu.png"
+                      alt="Post généré pour Ballon Bleu" draggable={false}/>
+                    <img className="auth-post auth-post--2" src="assets/demo/post-frame.png"
+                      alt="Post généré pour FRAME" draggable={false}/>
                   </div>
-                  <div className="auth-chat-msg auth-chat-msg--user">
-                    <span className="auth-chat-bubble">Génère-la</span>
-                  </div>
-                  <div className="auth-chat-msg auth-chat-msg--blaise">
-                    <span className="auth-chat-label">Blaise</span>
-                    <p className="auth-chat-text">Ça part. → <span className="auth-chat-meta">Actu · 2 crédits</span></p>
-                  </div>
-                  <div className="auth-chat-system">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3.5 3.5L13 5"/></svg>
-                    Post généré en 87 secondes
-                  </div>
-                </div>
+                  <p className="auth-fan-caption">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3.5 3.5L13 5"/></svg>
+                    Générés en 87 et 92 secondes — dans la charte de chaque média
+                  </p>
+                </>
               )}
 
               <div className="auth-stats">

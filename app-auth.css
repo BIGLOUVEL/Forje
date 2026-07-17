@@ -110,63 +110,38 @@
   max-width: 480px;
 }
 
-/* ─── Card preuve (commune) ─── */
-.auth-proof {
-  background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 20px 22px;
-  max-width: 440px;
+/* ─── Éventail de posts générés (preuve produit, sans card de fond) ─── */
+.auth-fan {
+  position: relative;
+  height: 372px;
+  margin-top: 6px;
 }
-.auth-proof-label {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.11em;
-  text-transform: uppercase; color: var(--ink-4);
-  margin-bottom: 13px;
-}
-
-/* Card "Pendant ton absence" (login) */
-.auth-absence-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
-.auth-absence-list li {
-  display: flex; align-items: center; gap: 11px;
-  font-size: 14.5px; color: var(--ink-2); line-height: 1.4;
-}
-.auth-absence-list .dot {
-  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  background: var(--copper);
-}
-
-/* Mini-conversation Blaise (signup) */
-.auth-proof--chat { display: flex; flex-direction: column; gap: 12px; }
-.auth-chat-msg { display: flex; flex-direction: column; gap: 5px; }
-.auth-chat-msg--blaise { align-items: flex-start; max-width: 94%; }
-.auth-chat-msg--user { align-items: flex-end; align-self: flex-end; }
-.auth-chat-label {
-  font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em;
-  text-transform: uppercase; color: var(--ink-4);
-}
-.auth-chat-text {
-  margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink);
-}
-.auth-chat-text strong { color: var(--copper); font-weight: 700; }
-.auth-chat-text sup { font-size: 0.68em; }
-.auth-chat-meta { color: var(--ink-3); }
-.auth-chat-bubble {
+.auth-post {
+  position: absolute;
+  width: 260px;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.10);
   background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 13px;
-  font-size: 14px; color: var(--ink);
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease, z-index 0s;
 }
-.auth-chat-system {
-  display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  padding: 8px 12px;
-  font-size: 13px; color: var(--ink-2);
-  background: var(--surface);
+.auth-post--1 { top: 0; left: 4px; transform: rotate(-3deg); z-index: 1; }
+.auth-post--2 { top: 26px; left: 200px; transform: rotate(2deg); z-index: 2; }
+.auth-post:hover {
+  transform: scale(1.02) rotate(0deg);
+  z-index: 5;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.16);
 }
-.auth-chat-system svg { color: #1F9D6A; flex-shrink: 0; }
+.auth-fan--solo { height: 336px; }
+.auth-fan--solo .auth-post--1 { left: 8px; }
+
+.auth-fan-caption {
+  display: flex; align-items: center; gap: 8px;
+  margin: 2px 0 0;
+  font-size: 13px; color: var(--ink-3);
+}
+.auth-fan-caption svg { color: var(--copper); flex-shrink: 0; }
 
 /* ─── Stats ─── */
 .auth-stats {
