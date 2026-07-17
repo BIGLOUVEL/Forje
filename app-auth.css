@@ -82,23 +82,9 @@
   .auth-left { display: none; }
 }
 
-/* ─── Colonne gauche — pitch ─── */
-.auth-eyebrow {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 13px 6px 10px; border-radius: 999px;
-  background: rgba(27,26,21,0.045);
-  border: 1px solid var(--line-2);
-  font-size: 12.5px; font-weight: 500; color: var(--ink-2);
-  letter-spacing: 0.005em;
-}
-.auth-eyebrow-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--ember);
-  box-shadow: 0 0 0 3px rgba(224,93,37,0.14);
-}
-
+/* ─── Colonne gauche — pitch (commence directement par le titre) ─── */
 .auth-title {
-  margin: 22px 0 16px;
+  margin: 0 0 16px;
   font-size: 60px; line-height: 0.98; font-weight: 700;
   letter-spacing: -0.038em; color: var(--ink);
 }
@@ -110,35 +96,40 @@
   max-width: 480px;
 }
 
-/* ─── Éventail de posts générés (preuve produit, sans card de fond) ─── */
+/* ─── Éventail de posts générés (preuve produit, sans card de fond) ───
+   Conteneur à hauteur RÉSERVÉE = extension réelle des posts inclinés (rotation
+   comprise) → aucun débordement sur le sous-titre (au-dessus) ni la légende
+   (dessous). Posts : 224px large, 4:5 → 280px haut.
+   Post 2 à top 22px + 280 + slack rotation ≈ 308px. */
 .auth-fan {
   position: relative;
-  height: 372px;
-  margin-top: 6px;
+  height: 310px;
+  margin-top: 8px; /* + margin-bottom 30px du sous-titre ⇒ ≥ 32px de garde au-dessus */
 }
 .auth-post {
   position: absolute;
-  width: 260px;
+  width: 224px;
   aspect-ratio: 4 / 5;
   object-fit: cover;
   border-radius: 12px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.10);
   background: var(--surface-2);
-  transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease, z-index 0s;
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease;
 }
-.auth-post--1 { top: 0; left: 4px; transform: rotate(-3deg); z-index: 1; }
-.auth-post--2 { top: 26px; left: 200px; transform: rotate(2deg); z-index: 2; }
+.auth-post--1 { top: 0;    left: 0;   transform: rotate(-3deg); z-index: 1; }
+.auth-post--2 { top: 22px; left: 168px; transform: rotate(2deg);  z-index: 2; } /* ~25% de recouvrement */
 .auth-post:hover {
   transform: scale(1.02) rotate(0deg);
   z-index: 5;
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.16);
 }
-.auth-fan--solo { height: 336px; }
-.auth-fan--solo .auth-post--1 { left: 8px; }
+.auth-fan--solo { height: 292px; } /* un seul post 280px + slack rotation */
+.auth-fan--solo .auth-post--1 { left: 6px; }
 
+/* Légende : SOUS le conteneur, 20px de marge, jamais recouverte */
 .auth-fan-caption {
   display: flex; align-items: center; gap: 8px;
-  margin: 2px 0 0;
+  margin: 20px 0 0;
   font-size: 13px; color: var(--ink-3);
 }
 .auth-fan-caption svg { color: var(--copper); flex-shrink: 0; }

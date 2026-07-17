@@ -88,11 +88,6 @@ const AuthScreen = ({ onAuth }) => {
 
             {/* ─── Colonne gauche — pitch ─── */}
             <section className="auth-left">
-              <span className="auth-eyebrow">
-                <span className="auth-eyebrow-dot" />
-                <span>Ton studio Instagram, forgé par l'IA</span>
-              </span>
-
               <h1 className="auth-title">
                 {isLogin
                   ? <>Bon retour<br/><span className="accent">dans la forge.</span></>
@@ -105,19 +100,24 @@ const AuthScreen = ({ onAuth }) => {
                   : <>Blaise forge ton identité. La veille surveille ton actu.<br/>Le studio génère posts et stories dans ta charte exacte.</>}
               </p>
 
+              {/* Posts démo = VRAIS posts sortis du pipeline Forje (generated_posts),
+                 exportés en assets statiques (pas de fetch DB au runtime).
+                 Pour les remplacer : node scripts/_export-auth-posts.js final assets/auth
+                 post-demo-1 ← 21a5debb-0f94-4bec-9d8e-c9d97108da6b (Ballon Bleu · SPORT · « BRÉSIL : LE CHAOS TOTAL »)
+                 post-demo-2 ← c9eacd99-4961-4a82-94b4-212e4e27811e (FRAME · CULTURE · « DONKEY KONG ÉCRASE TOUT ») */}
               {isLogin ? (
                 /* Login : un seul post démo incliné, sans texte (colonne plus courte, voulu) */
                 <div className="auth-fan auth-fan--solo">
-                  <img className="auth-post auth-post--1" src="assets/demo/post-ballon-bleu.png"
+                  <img className="auth-post auth-post--1" src="assets/auth/post-demo-1.jpg"
                     alt="Post généré pour Ballon Bleu" draggable={false}/>
                 </div>
               ) : (
                 /* Signup : éventail de 2 posts générés réels (charte de chaque média) */
                 <>
                   <div className="auth-fan">
-                    <img className="auth-post auth-post--1" src="assets/demo/post-ballon-bleu.png"
+                    <img className="auth-post auth-post--1" src="assets/auth/post-demo-1.jpg"
                       alt="Post généré pour Ballon Bleu" draggable={false}/>
-                    <img className="auth-post auth-post--2" src="assets/demo/post-frame.png"
+                    <img className="auth-post auth-post--2" src="assets/auth/post-demo-2.jpg"
                       alt="Post généré pour FRAME" draggable={false}/>
                   </div>
                   <p className="auth-fan-caption">
